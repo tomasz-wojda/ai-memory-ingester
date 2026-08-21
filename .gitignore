@@ -1,0 +1,28 @@
+# SQLite database files and temporary WAL / shared memory locks
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+memory.db
+data/memory.db
+
+# Compiled bytecode and cache
+*.class
+.groovy/
+
+# Session prompt logs
+prompt.log
+
+# Agent customizations and skills
+.agents/
+
+# Markdown documents
+*.md
+
+# Analysis data cache
+data/archive_analysis.json
+data/*.json

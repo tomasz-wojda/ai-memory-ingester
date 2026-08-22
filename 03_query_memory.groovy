@@ -100,7 +100,7 @@ if (args.length > 0) {
         printStats(engine)
     } else if (input == ':dbs' || input == 'dbs' || input == 'databases') {
         printDatabases()
-    } else if (input == ':archives' || input == 'archives') {
+    } else if (input == ':archives' || input == 'archives' || input == ':archs' || input == 'archs') {
         printArchives(engine)
     } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
         String arch = input.startsWith(':egest ') ? input.substring(':egest '.length()).trim() : input.substring('egest '.length()).trim()
@@ -192,6 +192,16 @@ while (true) {
         printHelp()
     } else if (line == ':stats') {
         printStats(engine)
+    } else if (line == ':dbs' || line == ':databases') {
+        printDatabases()
+    } else if (line == ':archives' || line == ':archs') {
+        printArchives(engine)
+    } else if (line.startsWith(':egest ')) {
+        executeEgest(engine, line.substring(':egest '.length()).trim())
+    } else if (line.startsWith(':rename ')) {
+        def parts = line.substring(':rename '.length()).trim().split('\\s+')
+        if (parts.length >= 2) executeRename(engine, parts[0], parts[1])
+        else println "Usage: :rename <old_name> <new_name>"
     } else if (line.startsWith(':limit ')) {
         try {
             replDefaultLimit = line.substring(':limit '.length()).trim().toInteger()
@@ -524,19 +534,32 @@ static void printDatabases() {
  */
 static void printArchives(MemoryEngine engine) {
     List<Map> archives = engine.listArchives()
-    println "=" * 70
+    println "=" * 75
     println "Active Database Archives (${archives.size()} recorded):"
-    println "=" * 70
+    println "=" * 75
     if (archives.isEmpty()) {
         println "  No archives recorded in database."
         return
     }
-    printf "  %-25s %8s %12s %12s %s%n", "Archive Name", "Docs", "Text Size", "Compressed", "Ingested At"
-    printf "  %-25s %8s %12s %12s %s%n", "-" * 25, "-" * 8, "-" * 12, "-" * 12, "-" * 19
+    printf "  %-25s %8s %12s %16s %s%n", "Archive Name", "Docs", "Text Size", "Compressed Size", "Ingested At"
+    printf "  %-25s %8s %12s %16s %s%n", "-" * 25, "-" * 8, "-" * 12, "-" * 16, "-" * 19
     archives.each { Map a ->
-        printf "  %-25s %8d %12s %12d %s%n",
-            a.source_archive, a.live_documents, formatSize(a.live_text_bytes as long),
-            a.compressed_documents, a.ingested_at ?: '-'
+        long textBytes = a.live_text_bytes as long
+        long storedBytes = a.stored_bytes != null ? (a.stored_bytes as long) : textBytes
+        long compDocs = a.compressed_documents as long
+        long liveDocs = a.live_documents as long
+
+        String compDisplay
+        if (compDocs == 0 || textBytes == 0) {
+            compDisplay = "0.0% (raw)"
+        } else {
+            double ratio = ((textBytes - storedBytes) * 100.0) / (double) textBytes
+            compDisplay = "${formatSize(storedBytes)} (${String.format('%.1f%%', Math.max(0.0, ratio))})"
+        }
+
+        printf "  %-25s %8d %12s %16s %s%n",
+            a.source_archive, liveDocs, formatSize(textBytes),
+            compDisplay, a.ingested_at ?: '-'
     }
     println ""
 }

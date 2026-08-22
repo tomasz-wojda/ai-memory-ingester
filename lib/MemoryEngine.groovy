@@ -599,7 +599,8 @@ class MemoryEngine {
                    m.total_text_bytes, m.origin_path, m.origin_hash, m.content_hash, m.ingested_at,
                    COALESCE(COUNT(d.id), 0) AS live_documents,
                    COALESCE(SUM(CASE WHEN d.is_compressed = 1 THEN 1 ELSE 0 END), 0) AS compressed_documents,
-                   COALESCE(SUM(d.size_bytes), 0) AS live_text_bytes
+                   COALESCE(SUM(d.size_bytes), 0) AS live_text_bytes,
+                   COALESCE(SUM(LENGTH(d.content)), 0) AS stored_bytes
             FROM ingestion_manifest m
             LEFT JOIN documents d ON d.source_archive = m.source_archive
             GROUP BY m.source_archive
@@ -616,7 +617,8 @@ class MemoryEngine {
                 ingested_at:          row.ingested_at,
                 live_documents:       row.live_documents,
                 compressed_documents: row.compressed_documents,
-                live_text_bytes:      row.live_text_bytes
+                live_text_bytes:      row.live_text_bytes,
+                stored_bytes:         row.stored_bytes
             ]
         }
         return results

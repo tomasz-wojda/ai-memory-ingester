@@ -241,7 +241,12 @@ class TestQuerySuite {
 
         runTest("9.2 Archive Listing (archives command)",
             ["archives"],
-            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") }
+            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") && out.contains("Compressed Size") }
+        )
+
+        runTest("9.2b Archive Listing Alias (archs command)",
+            ["archs"],
+            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") && out.contains("Compressed Size") }
         )
 
         runTest("9.3 Directory Ingestion (--dir lib --as lib_test)",

@@ -37,6 +37,7 @@ Map<String, String> commands = [
     'dbs':            '03_query_memory.groovy',
     'databases':      '03_query_memory.groovy',
     'archives':       '03_query_memory.groovy',
+    'archs':          '03_query_memory.groovy',
     'egest':          '03_query_memory.groovy',
     'rename':         '03_query_memory.groovy',
     'rename-archive': '03_query_memory.groovy',
@@ -79,7 +80,7 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println ""
     println "Management & Streaming Commands:"
     println "  dbs / databases                List all discovered databases in data/ directory"
-    println "  archives                       List all archives in active database"
+    println "  archs / archives               List all archives in active database"
     println "  egest <archive_name>           Purge archive and clear FTS5 index"
     println "  rename-archive <old> <new>     Rename archive metadata across documents and manifest"
     println "  stream --archive <name>        Ingest/stream text from stdin pipe"
@@ -93,7 +94,7 @@ String[] scriptArgs = filteredArgs.size() > 1 ? filteredArgs[1..-1] as String[] 
 String scriptFile = commands[command]
 
 // Inject commandName into sub-script if needed
-if (['dbs', 'databases', 'archives', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
+if (['dbs', 'databases', 'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command
     System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)

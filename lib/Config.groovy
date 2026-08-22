@@ -26,8 +26,60 @@ class Config {
     /** Output directory for generated data (SQLite DB, reports). */
     static final File DATA_DIR = new File('data').canonicalFile
 
-    /** SQLite database file path. */
-    static final File DB_PATH = new File(DATA_DIR, 'memory.db')
+    /** Default SQLite database file path. */
+    static File defaultDbPath = new File(DATA_DIR, 'memory.db')
+
+    /** Active SQLite database file path (can be overridden via --db flag). */
+    static File DB_PATH = defaultDbPath
+
+    /**
+     * Resolves a database file by name or path.
+     * Supports .db, .sqlite, and .sqlite3 extensions.
+     */
+    static File resolveDatabase(String nameOrPath) {
+        if (!nameOrPath || nameOrPath.trim().isEmpty()) {
+            return DB_PATH
+        }
+        String clean = nameOrPath.trim().replaceAll("^['\"]+|['\"]+\$", '')
+        File f = new File(clean)
+        if (f.isAbsolute()) {
+            return f.canonicalFile
+        }
+        // If file exists in current directory, use it
+        if (f.exists()) {
+            return f.canonicalFile
+        }
+        // Check in DATA_DIR
+        File inData = new File(DATA_DIR, clean)
+        if (inData.exists()) {
+            return inData.canonicalFile
+        }
+        // If no extension, try appending .db and .sqlite
+        if (!clean.contains('.')) {
+            File withDb = new File(DATA_DIR, clean + '.db')
+            if (withDb.exists()) return withDb.canonicalFile
+            File withSqlite = new File(DATA_DIR, clean + '.sqlite')
+            if (withSqlite.exists()) return withSqlite.canonicalFile
+            return withDb.canonicalFile
+        }
+        return inData.canonicalFile
+    }
+
+    /**
+     * Discovers all SQLite database files in the data/ directory.
+     * Supported extensions: .db, .sqlite, .sqlite3
+     */
+    static List<File> listDatabases() {
+        ensureDataDir()
+        List<File> dbs = []
+        DATA_DIR.eachFile { f ->
+            String name = f.name.toLowerCase()
+            if (f.isFile() && (name.endsWith('.db') || name.endsWith('.sqlite') || name.endsWith('.sqlite3')) && !name.contains('-wal') && !name.contains('-shm') && !name.contains('-journal')) {
+                dbs << f
+            }
+        }
+        return dbs.sort { a, b -> a.name.toLowerCase() <=> b.name.toLowerCase() }
+    }
 
     /** Path to 7-Zip executable for RAR extraction. */
     static final String SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe'

@@ -27,13 +27,20 @@ if (binding.hasVariable('commandName')) {
 }
 
 if (args && args.length > 0) {
-    if (args[0].equalsIgnoreCase('compress') || args[0].equalsIgnoreCase('decompress') || args[0].equalsIgnoreCase('uncompress')) {
-        action = args[0].toLowerCase()
-        if (args.length > 1) {
-            targetArchive = args[1].trim()
+    int aIdx = 0
+    while (aIdx < args.length) {
+        String a = args[aIdx]
+        if (a.equalsIgnoreCase('compress') || a.equalsIgnoreCase('decompress') || a.equalsIgnoreCase('uncompress')) {
+            action = a.toLowerCase()
+        } else if ((a == '--archive' || a == '-A' || a == '-a') && aIdx + 1 < args.length) {
+            targetArchive = args[aIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+            aIdx++
+        } else if (a.startsWith('--archive=')) {
+            targetArchive = a.substring('--archive='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+        } else if (!a.startsWith('-') && targetArchive == null) {
+            targetArchive = a.trim().replaceAll("^['\"]+|['\"]+\$", '')
         }
-    } else {
-        targetArchive = args[0].trim()
+        aIdx++
     }
 }
 

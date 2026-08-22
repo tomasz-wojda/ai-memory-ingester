@@ -317,6 +317,51 @@ class ArchiveHandler {
     }
 
     // -----------------------------------------------------------------------
+    // Directory Scanning & File Reading
+    // -----------------------------------------------------------------------
+
+    /**
+     * Recursively lists all file entries within a directory on disk.
+     *
+     * @param dir Directory to scan
+     * @return List of ArchiveEntry instances with relative paths
+     */
+    static List<ArchiveEntry> listDirectoryEntries(File dir) {
+        if (!dir || !dir.exists() || !dir.isDirectory()) {
+            return []
+        }
+        List<ArchiveEntry> entries = []
+        String baseCanonical = dir.canonicalPath.replace('\\', '/')
+        if (!baseCanonical.endsWith('/')) {
+            baseCanonical += '/'
+        }
+
+        dir.eachFileRecurse(groovy.io.FileType.FILES) { File f ->
+            String fullPath = f.canonicalPath.replace('\\', '/')
+            String relPath = fullPath.startsWith(baseCanonical) ? fullPath.substring(baseCanonical.length()) : f.name
+            entries << ArchiveEntry.fromPath(relPath, f.length())
+        }
+        return entries
+    }
+
+    /**
+     * Opens an InputStream for a file within a directory and passes it to the provided closure.
+     *
+     * @param dir          Root directory
+     * @param relativePath Relative path within the directory
+     * @param action       Closure receiving the InputStream
+     */
+    static void withDirectoryEntryStream(File dir, String relativePath, Closure action) {
+        File f = new File(dir, relativePath)
+        if (!f.exists()) {
+            throw new FileNotFoundException("File not found in directory: ${f.absolutePath}")
+        }
+        f.withInputStream { is ->
+            action.call(is)
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Utility
     // -----------------------------------------------------------------------
 

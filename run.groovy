@@ -24,36 +24,81 @@ import groovy.sql.Sql
 // -----------------------------------------------------------------------
 
 Map<String, String> commands = [
-    'analyze':    '01_analyze_archives.groovy',
-    '01':         '01_analyze_archives.groovy',
-    'ingest':     '02_ingest_archive.groovy',
-    '02':         '02_ingest_archive.groovy',
-    'query':      '03_query_memory.groovy',
-    '03':         '03_query_memory.groovy',
-    'compress':   '04_compress_memory.groovy',
-    'decompress': '04_compress_memory.groovy',
-    'uncompress': '04_compress_memory.groovy',
-    '04':         '04_compress_memory.groovy'
+    'analyze':        '01_analyze_archives.groovy',
+    '01':             '01_analyze_archives.groovy',
+    'ingest':         '02_ingest_archive.groovy',
+    '02':             '02_ingest_archive.groovy',
+    'query':          '03_query_memory.groovy',
+    '03':             '03_query_memory.groovy',
+    'compress':       '04_compress_memory.groovy',
+    'decompress':     '04_compress_memory.groovy',
+    'uncompress':     '04_compress_memory.groovy',
+    '04':             '04_compress_memory.groovy',
+    'dbs':            '03_query_memory.groovy',
+    'databases':      '03_query_memory.groovy',
+    'archives':       '03_query_memory.groovy',
+    'egest':          '03_query_memory.groovy',
+    'rename':         '03_query_memory.groovy',
+    'rename-archive': '03_query_memory.groovy',
+    'stream':         '02_ingest_archive.groovy',
+    'ingest-stream':  '02_ingest_archive.groovy',
+    'append':         '02_ingest_archive.groovy',
+    'ingest-text':    '02_ingest_archive.groovy'
 ]
 
-if (args.length == 0 || !commands.containsKey(args[0])) {
+// Extract global --db flag if present
+String customDb = null
+List<String> rawArgsList = args as List
+List<String> filteredArgs = []
+int aI = 0
+while (aI < rawArgsList.size()) {
+    String a = rawArgsList[aI]
+    if ((a == '--db' || a == '-D') && aI + 1 < rawArgsList.size()) {
+        customDb = rawArgsList[aI + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+        aI += 2
+    } else if (a.startsWith('--db=')) {
+        customDb = a.substring('--db='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+        aI++
+    } else {
+        filteredArgs << a
+        aI++
+    }
+}
+
+if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase())) {
     println "Archive Memory Context Engine"
     println ""
-    println "Usage: groovy run.groovy <command> [args]"
+    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>]"
     println ""
-    println "Commands:"
-    println "  analyze          Analyze all archives in configured directory"
-    println "  ingest [name]    Ingest archive into memory DB (use 'all' for all archives)"
-    println "  query [terms]    Query the memory DB (supports --ext, --no-ext, --archive, --limit, :doc)"
-    println "  compress         Compress existing documents in-place (reduces disk size)"
-    println "  decompress       Decompress existing documents in-place (maximizes speed)"
+    println "Core Commands:"
+    println "  analyze [--dir <path>]         Analyze archives or uncompressed folder"
+    println "  ingest [name|all|--dir <path>] Ingest archives or directory into memory DB"
+    println "  query [terms]                  Query the memory DB (supports --ext, --no-ext, --archive, --limit)"
+    println "  compress [--archive <name>]    Compress documents in-place (zlib + VACUUM)"
+    println "  decompress [--archive <name>]  Decompress documents in-place to UTF-8 plaintext"
+    println ""
+    println "Management & Streaming Commands:"
+    println "  dbs / databases                List all discovered databases in data/ directory"
+    println "  archives                       List all archives in active database"
+    println "  egest <archive_name>           Purge archive and clear FTS5 index"
+    println "  rename-archive <old> <new>     Rename archive metadata across documents and manifest"
+    println "  stream --archive <name>        Ingest/stream text from stdin pipe"
+    println "  append --text <txt> --file <f> Append text chunk to living document"
     println ""
     System.exit(1)
 }
 
-String command = args[0]
-String[] scriptArgs = args.length > 1 ? args[1..-1] as String[] : new String[0]
+String command = filteredArgs[0].toLowerCase()
+String[] scriptArgs = filteredArgs.size() > 1 ? filteredArgs[1..-1] as String[] : new String[0]
 String scriptFile = commands[command]
+
+// Inject commandName into sub-script if needed
+if (['dbs', 'databases', 'archives', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
+    String[] augmentedArgs = new String[scriptArgs.length + 1]
+    augmentedArgs[0] = command
+    System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)
+    scriptArgs = augmentedArgs
+}
 
 // -----------------------------------------------------------------------
 // Compile library sources into a shared classloader
@@ -79,6 +124,11 @@ groovy.grape.Grape.grab(
 // Load library modules in dependency order
 ['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
+}
+
+Class configClass = gcl.loadClass('Config')
+if (customDb) {
+    configClass.DB_PATH = configClass.resolveDatabase(customDb)
 }
 
 // -----------------------------------------------------------------------

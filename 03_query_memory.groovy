@@ -96,8 +96,23 @@ if (args.length > 0) {
     }
 
     String input = queryTokens.join(' ').trim()
-    if (input == ':stats') {
+    if (input == ':stats' || input == 'stats') {
         printStats(engine)
+    } else if (input == ':dbs' || input == 'dbs' || input == 'databases') {
+        printDatabases()
+    } else if (input == ':archives' || input == 'archives') {
+        printArchives(engine)
+    } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
+        String arch = input.startsWith(':egest ') ? input.substring(':egest '.length()).trim() : input.substring('egest '.length()).trim()
+        executeEgest(engine, arch)
+    } else if (input.startsWith(':rename ') || input.startsWith('rename-archive ')) {
+        String rest = input.startsWith(':rename ') ? input.substring(':rename '.length()).trim() : input.substring('rename-archive '.length()).trim()
+        def parts = rest.split('\\s+')
+        if (parts.length >= 2) {
+            executeRename(engine, parts[0], parts[1])
+        } else {
+            println "Usage: :rename <old_name> <new_name>"
+        }
     } else if (input == ':files' || input.startsWith(':files ') || input.startsWith(':files')) {
         String pattern = input.startsWith(':files ') ? input.substring(':files '.length()).trim() : (input.length() > 6 ? input.substring(6).trim() : '%')
         executeFileList(engine, pattern.isEmpty() ? '%' : pattern, limit)
@@ -481,6 +496,74 @@ static void printStats(MemoryEngine engine) {
             printf "    %-15s %d%n", ext, count
         }
     }
+}
+
+/**
+ * Lists all discovered database files in data/ directory.
+ */
+static void printDatabases() {
+    List<File> dbs = Config.listDatabases()
+    println "=" * 70
+    println "Discovered Memory Databases (${dbs.size()} found):"
+    println "=" * 70
+    if (dbs.isEmpty()) {
+        println "  No database files found in ${Config.DATA_DIR.absolutePath}"
+        return
+    }
+    printf "  %-30s %12s  %s%n", "Database Name", "Disk Size", "Status"
+    printf "  %-30s %12s  %s%n", "-" * 30, "-" * 12, "-" * 15
+    dbs.each { File db ->
+        String activeMarker = (db.canonicalPath == Config.DB_PATH.canonicalPath) ? " [ACTIVE]" : ""
+        printf "  %-30s %12s %s%n", db.name, formatSize(db.length()), activeMarker
+    }
+    println ""
+}
+
+/**
+ * Lists all distinct archives in the active database.
+ */
+static void printArchives(MemoryEngine engine) {
+    List<Map> archives = engine.listArchives()
+    println "=" * 70
+    println "Active Database Archives (${archives.size()} recorded):"
+    println "=" * 70
+    if (archives.isEmpty()) {
+        println "  No archives recorded in database."
+        return
+    }
+    printf "  %-25s %8s %12s %12s %s%n", "Archive Name", "Docs", "Text Size", "Compressed", "Ingested At"
+    printf "  %-25s %8s %12s %12s %s%n", "-" * 25, "-" * 8, "-" * 12, "-" * 12, "-" * 19
+    archives.each { Map a ->
+        printf "  %-25s %8d %12s %12d %s%n",
+            a.source_archive, a.live_documents, formatSize(a.live_text_bytes as long),
+            a.compressed_documents, a.ingested_at ?: '-'
+    }
+    println ""
+}
+
+/**
+ * Egests (purges) an archive from the active database.
+ */
+static void executeEgest(MemoryEngine engine, String archiveName) {
+    if (!archiveName || archiveName.trim().isEmpty()) {
+        println "Usage: egest <archive_name>"
+        return
+    }
+    String clean = archiveName.trim().replaceAll("^['\"]+|['\"]+\$", '')
+    println "Egesting archive '${clean}' from database..."
+    Map res = engine.egestArchive(clean)
+    println "Egest Complete: Purged ${res.deleted_documents} document(s) and cleared FTS5 index."
+}
+
+/**
+ * Renames an archive across stored documents and manifest.
+ */
+static void executeRename(MemoryEngine engine, String oldName, String newName) {
+    String cleanOld = oldName.trim().replaceAll("^['\"]+|['\"]+\$", '')
+    String cleanNew = newName.trim().replaceAll("^['\"]+|['\"]+\$", '')
+    println "Renaming archive '${cleanOld}' -> '${cleanNew}'..."
+    int updated = engine.renameArchive(cleanOld, cleanNew)
+    println "Rename Complete: Updated ${updated} document(s)."
 }
 
 /**

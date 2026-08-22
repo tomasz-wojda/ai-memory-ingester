@@ -102,9 +102,21 @@ class MemoryEngine {
                 archive_size_bytes INTEGER DEFAULT 0,
                 ingested_documents INTEGER DEFAULT 0,
                 total_text_bytes INTEGER DEFAULT 0,
+                origin_path TEXT,
+                origin_hash TEXT,
+                content_hash TEXT,
                 ingested_at TEXT DEFAULT (datetime('now'))
             )
         ''')
+
+        // Ensure origin_path, origin_hash, content_hash exist for existing databases
+        Set<String> manifestCols = [] as Set
+        sql.eachRow('PRAGMA table_info(ingestion_manifest)') { row ->
+            manifestCols << row.name.toString()
+        }
+        if (!manifestCols.contains('origin_path')) sql.execute('ALTER TABLE ingestion_manifest ADD COLUMN origin_path TEXT')
+        if (!manifestCols.contains('origin_hash')) sql.execute('ALTER TABLE ingestion_manifest ADD COLUMN origin_hash TEXT')
+        if (!manifestCols.contains('content_hash')) sql.execute('ALTER TABLE ingestion_manifest ADD COLUMN content_hash TEXT')
 
         // Optimized contentless FTS5 virtual table:
         // - content='': prevents duplicate text storage, storing only the token inverted index
@@ -179,21 +191,27 @@ class MemoryEngine {
     /**
      * Records or updates ingestion manifest metadata for an archive.
      *
-     * @param sourceArchive   Archive filename (e.g., "cms_R1.zip")
+     * @param sourceArchive    Archive filename (e.g., "cms_R1.zip")
      * @param archiveSizeBytes Size of archive file in bytes
-     * @param documentCount   Total indexed document count
-     * @param totalTextBytes  Total extracted text in bytes
+     * @param documentCount    Total indexed document count
+     * @param totalTextBytes   Total extracted text in bytes
+     * @param originPath       Original directory path on disk
+     * @param originHash       Fast origin path fingerprint (xxHash64 / SHA-256)
+     * @param contentHash      Merkle root content hash for deduplication
      */
-    void recordManifest(String sourceArchive, long archiveSizeBytes, int documentCount, long totalTextBytes) {
+    void recordManifest(String sourceArchive, long archiveSizeBytes, int documentCount, long totalTextBytes, String originPath = null, String originHash = null, String contentHash = null) {
         sql.execute('''
-            INSERT INTO ingestion_manifest (source_archive, archive_size_bytes, ingested_documents, total_text_bytes, ingested_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
+            INSERT INTO ingestion_manifest (source_archive, archive_size_bytes, ingested_documents, total_text_bytes, origin_path, origin_hash, content_hash, ingested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(source_archive) DO UPDATE SET
                 archive_size_bytes=excluded.archive_size_bytes,
                 ingested_documents=excluded.ingested_documents,
                 total_text_bytes=excluded.total_text_bytes,
+                origin_path=COALESCE(excluded.origin_path, ingestion_manifest.origin_path),
+                origin_hash=COALESCE(excluded.origin_hash, ingestion_manifest.origin_hash),
+                content_hash=COALESCE(excluded.content_hash, ingestion_manifest.content_hash),
                 ingested_at=datetime('now')
-        ''', [sourceArchive, archiveSizeBytes, documentCount, totalTextBytes])
+        ''', [sourceArchive, archiveSizeBytes, documentCount, totalTextBytes, originPath, originHash, contentHash])
     }
 
     /**
@@ -578,7 +596,7 @@ class MemoryEngine {
         List<Map> results = []
         sql.eachRow('''
             SELECT m.source_archive, m.archive_size_bytes, m.ingested_documents,
-                   m.total_text_bytes, m.ingested_at,
+                   m.total_text_bytes, m.origin_path, m.origin_hash, m.content_hash, m.ingested_at,
                    COALESCE(COUNT(d.id), 0) AS live_documents,
                    COALESCE(SUM(CASE WHEN d.is_compressed = 1 THEN 1 ELSE 0 END), 0) AS compressed_documents,
                    COALESCE(SUM(d.size_bytes), 0) AS live_text_bytes
@@ -592,6 +610,9 @@ class MemoryEngine {
                 archive_size_bytes:   row.archive_size_bytes,
                 ingested_documents:   row.ingested_documents,
                 total_text_bytes:     row.total_text_bytes,
+                origin_path:          row.origin_path,
+                origin_hash:          row.origin_hash,
+                content_hash:         row.content_hash,
                 ingested_at:          row.ingested_at,
                 live_documents:       row.live_documents,
                 compressed_documents: row.compressed_documents,
@@ -599,6 +620,85 @@ class MemoryEngine {
             ]
         }
         return results
+    }
+
+    /**
+     * Renames an archive across all stored documents and manifest tracking.
+     *
+     * @param oldName Existing archive name
+     * @param newName New archive name
+     * @return Number of documents updated
+     */
+    int renameArchive(String oldName, String newName) {
+        int updated = 0
+        sql.withTransaction {
+            updated = sql.executeUpdate('UPDATE documents SET source_archive = ? WHERE source_archive = ?', [newName, oldName])
+            sql.executeUpdate('UPDATE ingestion_manifest SET source_archive = ? WHERE source_archive = ?', [newName, oldName])
+        }
+        return updated
+    }
+
+    /**
+     * Egests (purges) an archive and all its associated documents, FTS5 indexes, and manifest metadata.
+     *
+     * @param archiveName Archive name to egest
+     * @return Map with archive name and deleted document count
+     */
+    Map egestArchive(String archiveName) {
+        int deletedDocs = 0
+        sql.withTransaction {
+            deletedDocs = sql.executeUpdate('DELETE FROM documents WHERE source_archive = ?', [archiveName])
+            sql.executeUpdate('DELETE FROM ingestion_manifest WHERE source_archive = ?', [archiveName])
+        }
+        optimizeIndex()
+        return [
+            archive:           archiveName,
+            deleted_documents: deletedDocs
+        ]
+    }
+
+    /**
+     * Appends text content into an existing document or creates a new document if it does not exist.
+     * Newly appended content is immediately indexed into FTS5 for sub-millisecond query availability.
+     *
+     * @param sourceArchive Archive or stream identifier
+     * @param filePath      Relative file path or stream name
+     * @param fileName      Base file name
+     * @param extension     File extension (e.g., ".log")
+     * @param textChunk     Text content to append
+     * @return The document row ID
+     */
+    long appendDocument(String sourceArchive, String filePath, String fileName, String extension, String textChunk) {
+        if (textChunk == null) return -1
+        long docId = -1
+        sql.withTransaction {
+            def existing = sql.firstRow('SELECT id, content, size_bytes, is_compressed FROM documents WHERE source_archive = ? AND file_path = ?', [sourceArchive, filePath])
+            if (existing) {
+                docId = existing.id as long
+                String oldContent = (existing.is_compressed == 1) ? decompressText(existing.content) : (existing.content != null ? existing.content.toString() : '')
+                String newContent = oldContent + (oldContent.isEmpty() || oldContent.endsWith('\n') ? '' : '\n') + textChunk
+                byte[] rawBytes = newContent.getBytes(StandardCharsets.UTF_8)
+                sql.executeUpdate('UPDATE documents SET content = ?, size_bytes = ?, is_compressed = 0 WHERE id = ?', [newContent, rawBytes.length, docId])
+            } else {
+                byte[] rawBytes = textChunk.getBytes(StandardCharsets.UTF_8)
+                def res = sql.executeInsert('''
+                    INSERT INTO documents (source_archive, file_path, file_name, extension, size_bytes, content, is_compressed)
+                    VALUES (?, ?, ?, ?, ?, ?, 0)
+                ''', [sourceArchive, filePath, fileName, extension, rawBytes.length, textChunk])
+                docId = res[0][0] as long
+            }
+
+            // Upsert manifest
+            sql.execute('''
+                INSERT INTO ingestion_manifest (source_archive, archive_size_bytes, ingested_documents, total_text_bytes, ingested_at)
+                VALUES (?, 0, 1, ?, datetime('now'))
+                ON CONFLICT(source_archive) DO UPDATE SET
+                    ingested_documents = (SELECT COUNT(*) FROM documents WHERE source_archive = ?),
+                    total_text_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM documents WHERE source_archive = ?),
+                    ingested_at = datetime('now')
+            ''', [sourceArchive, textChunk.length(), sourceArchive, sourceArchive])
+        }
+        return docId
     }
 
     /**

@@ -230,6 +230,81 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
+        // Group 9: Multi-Database, Directory Ingestion, Renaming & Egest
+        // -------------------------------------------------------------------
+        println "\n--- GROUP 9: Multi-Database, Directory Ingestion & Egest ---"
+
+        runTest("9.1 Multi-Database Discovery (dbs command)",
+            ["dbs"],
+            { out -> out.contains("Discovered Memory Databases") && out.contains("memory.db") }
+        )
+
+        runTest("9.2 Archive Listing (archives command)",
+            ["archives"],
+            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") }
+        )
+
+        runTest("9.3 Directory Ingestion (--dir lib --as lib_test)",
+            ["ingest", "--dir", "lib", "--as", "lib_test", "--on-conflict", "replace"],
+            { out -> out.contains("Directory Ingestion Complete") && out.contains("lib_test") }
+        )
+
+        runTest("9.4 Query Directory Ingested Archive",
+            ["query", "Config", "--archive", "lib_test", "--limit", "2"],
+            { out -> out.contains("Archive: lib_test") }
+        )
+
+        runTest("9.5 Archive Renaming (rename-archive lib_test lib_renamed)",
+            ["rename-archive", "lib_test", "lib_renamed"],
+            { out -> out.contains("Rename Complete") }
+        )
+
+        runTest("9.6 Query Renamed Archive",
+            ["query", "Config", "--archive", "lib_renamed", "--limit", "2"],
+            { out -> out.contains("Archive: lib_renamed") }
+        )
+
+        runTest("9.7 Archive Egest (egest lib_renamed)",
+            ["egest", "lib_renamed"],
+            { out -> out.contains("Egest Complete") && out.contains("cleared FTS5 index") }
+        )
+
+        // -------------------------------------------------------------------
+        // Group 10: Real-Time Append, Stdin Stream & Per-Archive Compression
+        // -------------------------------------------------------------------
+        println "\n--- GROUP 10: Real-Time Append & Selective Compression ---"
+
+        runTest("10.1 Real-Time Text Append (append --archive live_events)",
+            ["append", "--archive", "live_events", "--file", "syslog.txt", "--text", "ERR_DATABASE_TIMEOUT occurred on node-04"],
+            { out -> out.contains("Successfully ingested/appended document") && out.contains("live_events") }
+        )
+
+        runTest("10.2 Sub-Millisecond Search on Appended Text",
+            ["query", "ERR_DATABASE_TIMEOUT", "--archive", "live_events"],
+            { out -> out.contains("ERR_DATABASE_TIMEOUT") && out.contains("Archive: live_events") }
+        )
+
+        runTest("10.3 Selective Per-Archive Compression (--archive live_events)",
+            ["compress", "--archive", "live_events"],
+            { out -> out.contains("Compression Complete:") && out.contains("live_events") }
+        )
+
+        runTest("10.4 Query Transparently Decompressed Snippet",
+            ["query", "ERR_DATABASE_TIMEOUT", "--archive", "live_events"],
+            { out -> out.contains("ERR_DATABASE_TIMEOUT") && out.contains("Archive: live_events") }
+        )
+
+        runTest("10.5 Selective Per-Archive Decompression (--archive live_events)",
+            ["decompress", "--archive", "live_events"],
+            { out -> out.contains("Decompression Complete:") && out.contains("live_events") }
+        )
+
+        runTest("10.6 Clean up Live Events Test Archive (egest live_events)",
+            ["egest", "live_events"],
+            { out -> out.contains("Egest Complete") }
+        )
+
+        // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------
         long totalElapsedMs = System.currentTimeMillis() - suiteStartTime

@@ -15,13 +15,51 @@ import groovy.json.JsonOutput
 
 // Classes loaded by run.groovy: Config, ArchiveHandler, ContentExtractor, MemoryEngine
 
-Config.ensureDataDir()
+File targetDir = null
+int aIdx = 0
+while (aIdx < args.length) {
+    String a = args[aIdx]
+    if ((a == '--dir' || a == '-d') && aIdx + 1 < args.length) {
+        targetDir = new File(args[aIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')).canonicalFile
+        aIdx += 2
+    } else if (a.startsWith('--dir=')) {
+        targetDir = new File(a.substring('--dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')).canonicalFile
+        aIdx++
+    } else {
+        aIdx++
+    }
+}
+
+File sourceRoot = targetDir ?: Config.ARCHIVE_DIR
 
 println "=" * 70
 println "Archive Analyzer"
 println "=" * 70
-println "Source directory: ${Config.ARCHIVE_DIR.absolutePath}"
+println "Source location: ${sourceRoot.absolutePath}"
 println ""
+
+if (targetDir) {
+    if (!targetDir.exists() || !targetDir.isDirectory()) {
+        println "ERROR: Directory not found: ${targetDir.absolutePath}"
+        System.exit(1)
+    }
+
+    println "Analyzing directory: ${targetDir.name}"
+    def entries = ArchiveHandler.listDirectoryEntries(targetDir)
+    println "  Total files found: ${entries.size()}"
+    println ""
+    def byExtension = entries.groupBy { it.extension }
+    printf "  %-25s %6s  %s%n", "Extension", "Count", "Strategy"
+    printf "  %-25s %6s  %s%n", "-" * 25, "-" * 6, "-" * 15
+    byExtension.sort { -it.value.size() }.each { ext, entryList ->
+        String displayExt = ext ?: '(no extension)'
+        def strategy = ContentExtractor.classify(ext)
+        String stratLabel = strategy.name().replace('_', ' ')
+        printf "  %-25s %6d  %s%n", displayExt, entryList.size(), stratLabel
+    }
+    println ""
+    return
+}
 
 // Collect all archive files (ZIP + RAR)
 List<File> archives = []

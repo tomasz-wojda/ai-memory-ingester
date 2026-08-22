@@ -534,20 +534,23 @@ static void printDatabases() {
  */
 static void printArchives(MemoryEngine engine) {
     List<Map> archives = engine.listArchives()
-    println "=" * 75
+    println "=" * 85
     println "Active Database Archives (${archives.size()} recorded):"
-    println "=" * 75
+    println "=" * 85
     if (archives.isEmpty()) {
         println "  No archives recorded in database."
         return
     }
-    printf "  %-25s %8s %12s %16s %s%n", "Archive Name", "Docs", "Text Size", "Compressed Size", "Ingested At"
-    printf "  %-25s %8s %12s %16s %s%n", "-" * 25, "-" * 8, "-" * 12, "-" * 16, "-" * 19
+    printf "  %-25s %8s %12s %13s %16s %s%n", "Archive Name", "Docs", "Text Size", "Density", "Compressed Size", "Ingested At"
+    printf "  %-25s %8s %12s %13s %16s %s%n", "-" * 25, "-" * 8, "-" * 12, "-" * 13, "-" * 16, "-" * 19
     archives.each { Map a ->
         long textBytes = a.live_text_bytes as long
         long storedBytes = a.stored_bytes != null ? (a.stored_bytes as long) : textBytes
         long compDocs = a.compressed_documents as long
         long liveDocs = a.live_documents as long
+
+        double densityBytes = liveDocs > 0 ? (textBytes / (double) liveDocs) : 0.0
+        String densityStr = formatDensity(densityBytes)
 
         String compDisplay
         if (compDocs == 0 || textBytes == 0) {
@@ -557,11 +560,34 @@ static void printArchives(MemoryEngine engine) {
             compDisplay = "${formatSize(storedBytes)} (${String.format('%.1f%%', Math.max(0.0, ratio))})"
         }
 
-        printf "  %-25s %8d %12s %16s %s%n",
+        printf "  %-25s %8d %12s %13s %16s %s%n",
             a.source_archive, liveDocs, formatSize(textBytes),
-            compDisplay, a.ingested_at ?: '-'
+            densityStr, compDisplay, a.ingested_at ?: '-'
     }
     println ""
+}
+
+/**
+ * Formats average document density (bytes per doc) keeping at most 4 digits.
+ *
+ * @param bytesPerDoc Average size in bytes per document
+ * @return Formatted string (e.g., "4.1 MB/doc", "40.5 KB/doc", "850 B/doc")
+ */
+static String formatDensity(double bytesPerDoc) {
+    if (bytesPerDoc <= 0) return "0 B/doc"
+    if (bytesPerDoc < 1024) {
+        return String.format("%.0f B/doc", bytesPerDoc)
+    }
+    double kb = bytesPerDoc / 1024.0
+    if (kb < 1024) {
+        if (kb < 10.0) return String.format("%.2f KB/doc", kb)
+        if (kb < 100.0) return String.format("%.1f KB/doc", kb)
+        return String.format("%.0f KB/doc", kb)
+    }
+    double mb = kb / 1024.0
+    if (mb < 10.0) return String.format("%.2f MB/doc", mb)
+    if (mb < 100.0) return String.format("%.1f MB/doc", mb)
+    return String.format("%.0f MB/doc", mb)
 }
 
 /**

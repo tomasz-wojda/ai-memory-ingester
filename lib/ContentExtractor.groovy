@@ -101,16 +101,16 @@ class ContentExtractor {
     /**
      * Extracts full text from a PDF stream with structured page boundaries.
      * Uses Apache PDFBox (PDDocument + PDFTextStripper).
+     * Loads the complete stream directly into PDFBox to parse large multi-megabyte documents.
      *
      * @param stream InputStream of the PDF file
      * @return Extracted plain text with page headers, or null on error
      */
     static String extractPdf(InputStream stream) {
+        if (stream == null) return null
         try {
-            byte[] bytes = readBytesLimited(stream)
-            if (bytes == null || bytes.length == 0) return null
-
-            PDDocument pdDoc = PDDocument.load(bytes)
+            // External call: PDDocument.load parses complete PDF stream (including EOF trailer/xref)
+            PDDocument pdDoc = PDDocument.load(stream)
             try {
                 int numPages = pdDoc.numberOfPages
                 if (numPages <= 0) return null
@@ -126,8 +126,8 @@ class ContentExtractor {
                         sb.append("=== [Page ").append(page).append("] ===\n")
                         sb.append(pageText.trim()).append("\n\n")
                     }
-                    if (sb.length() > Config.MAX_FILE_SIZE) {
-                        sb.append("\n... [Truncated at maximum file size]\n")
+                    if (sb.length() > Config.MAX_FILE_SIZE * 5) {
+                        sb.append("\n... [Truncated at maximum content size]\n")
                         break
                     }
                 }

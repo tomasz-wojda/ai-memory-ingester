@@ -26,6 +26,9 @@ class Config {
     /** Output directory for generated data (SQLite DB, reports). */
     static final File DATA_DIR = new File('data').canonicalFile
 
+    /** Set registry JSON configuration file path. */
+    static final File SETS_FILE = new File(DATA_DIR, 'sets.json').canonicalFile
+
     /** Default SQLite database file path. */
     static File defaultDbPath = new File(DATA_DIR, 'memory.db')
 
@@ -33,36 +36,76 @@ class Config {
     static File DB_PATH = defaultDbPath
 
     /**
-     * Resolves a database file by name or path.
+     * Validates that a database identifier does not contain path traversal elements.
+     * Throws IllegalArgumentException if invalid.
+     *
+     * @param name Database name or identifier to validate
+     * @return Cleaned database identifier string
+     */
+    static String validateDatabaseIdentifier(String name) {
+        if (!name || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Database identifier cannot be empty")
+        }
+        String clean = name.trim().replaceAll("^['\"]+|['\"]+\$", '')
+        if (clean.contains('..') || clean.contains('/') || clean.contains('\\')) {
+            throw new IllegalArgumentException("Invalid database identifier '${name}': path traversal and directory separators are forbidden")
+        }
+        return clean
+    }
+
+    /**
+     * Resolves a database file by name or path within the data directory.
      * Supports .db, .sqlite, and .sqlite3 extensions.
+     * Enforces path safety: resolved database must reside strictly within DATA_DIR.
+     *
+     * @param nameOrPath Database name or identifier
+     * @return Canonical File reference inside DATA_DIR
      */
     static File resolveDatabase(String nameOrPath) {
         if (!nameOrPath || nameOrPath.trim().isEmpty()) {
             return DB_PATH
         }
-        String clean = nameOrPath.trim().replaceAll("^['\"]+|['\"]+\$", '')
-        File f = new File(clean)
-        if (f.isAbsolute()) {
-            return f.canonicalFile
+        String clean = validateDatabaseIdentifier(nameOrPath)
+        ensureDataDir()
+
+        // Check if exact file exists in DATA_DIR
+        File inData = new File(DATA_DIR, clean).canonicalFile
+        if (inData.exists() && inData.isFile()) {
+            verifyPathSafety(inData)
+            return inData
         }
-        // If file exists in current directory, use it
-        if (f.exists()) {
-            return f.canonicalFile
-        }
-        // Check in DATA_DIR
-        File inData = new File(DATA_DIR, clean)
-        if (inData.exists()) {
-            return inData.canonicalFile
-        }
+
         // If no extension, try appending .db and .sqlite
         if (!clean.contains('.')) {
-            File withDb = new File(DATA_DIR, clean + '.db')
-            if (withDb.exists()) return withDb.canonicalFile
-            File withSqlite = new File(DATA_DIR, clean + '.sqlite')
-            if (withSqlite.exists()) return withSqlite.canonicalFile
-            return withDb.canonicalFile
+            File withDb = new File(DATA_DIR, clean + '.db').canonicalFile
+            if (withDb.exists() && withDb.isFile()) {
+                verifyPathSafety(withDb)
+                return withDb
+            }
+            File withSqlite = new File(DATA_DIR, clean + '.sqlite').canonicalFile
+            if (withSqlite.exists() && withSqlite.isFile()) {
+                verifyPathSafety(withSqlite)
+                return withSqlite
+            }
+            verifyPathSafety(withDb)
+            return withDb
         }
-        return inData.canonicalFile
+
+        verifyPathSafety(inData)
+        return inData
+    }
+
+    /**
+     * Verifies that a resolved file resides strictly within the data/ directory.
+     *
+     * @param file File to verify
+     */
+    static void verifyPathSafety(File file) {
+        String dataDirPath = DATA_DIR.canonicalPath
+        String filePath = file.canonicalPath
+        if (!filePath.startsWith(dataDirPath)) {
+            throw new SecurityException("Security violation: Database path '${filePath}' escapes data directory '${dataDirPath}'")
+        }
     }
 
     /**

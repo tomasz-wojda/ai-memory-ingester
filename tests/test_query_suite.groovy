@@ -31,27 +31,27 @@ class TestQuerySuite {
         println "--- Group 1: Basic Full-Text Search ---"
         runTest("1.1 Simple Keyword Search",
             ["query", "BusinessPartner"],
-            { out -> out.contains("Searching: \"BusinessPartner\"") && out.contains("Found ") && out.contains("ms") }
+            { out -> out.contains("Searching") && out.contains("\"BusinessPartner\"") && out.contains("Found ") && out.contains("ms") }
         )
 
         runTest("1.2 Multi-word Search",
             ["query", "customer contract"],
-            { out -> out.contains("Searching: \"customer contract\"") && out.contains("Found ") }
+            { out -> out.contains("Searching") && out.contains("\"customer contract\"") && out.contains("Found ") }
         )
 
         runTest("1.3 Exact Phrase Query",
             ["query", '"CUSTOMER.NEW"'],
-            { out -> out.contains("Searching:") && out.contains("Found ") }
+            { out -> out.contains("Searching") && out.contains("Found ") }
         )
 
         runTest("1.4 Prefix Wildcard Query",
             ["query", '"Provis*"'],
-            { out -> out.contains("Searching: \"Provis*\"") && out.contains("Found ") }
+            { out -> out.contains("Searching") && out.contains("Found ") }
         )
 
         runTest("1.5 Column-Scoped Filter",
             ["query", "file_name:Registry"],
-            { out -> out.contains("Searching: \"file_name:Registry\"") && out.contains("Found ") }
+            { out -> out.contains("Searching") && out.contains("Registry") && out.contains("Found ") }
         )
 
         // -------------------------------------------------------------------
@@ -186,7 +186,7 @@ class TestQuerySuite {
         println "--- Group 7: Flag Combinations & Edge Cases ---"
         runTest("7.1 Combined Column Filter + Custom Limit + Custom Snippet Size",
             ["query", "file_name:Contract", "--limit", "3", "-s", "128"],
-            { out -> out.contains("Searching: \"file_name:Contract\"") && out.contains("(limit: 3, snippet-size: 128)") && out.contains("Found 3 result(s)") }
+            { out -> out.contains("Searching") && out.contains("\"file_name:Contract\"") && out.contains("(limit: 3, snippet-size: 128)") && out.contains("Found 3 result(s)") }
         )
 
         // -------------------------------------------------------------------
@@ -310,6 +310,67 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
+        // Group 11: Database Sets, Set-First Routing & Federated Search
+        // -------------------------------------------------------------------
+        println ""
+        println "--- Group 11: Database Sets & Federated Search Battery ---"
+        runTest("11.1 Create Database Set (set create test_physics memory.db)",
+            ["set", "create", "test_physics", "memory.db"],
+            { out -> out.contains("Successfully created database set 'test_physics'") }
+        )
+
+        runTest("11.2 List Database Sets (sets command)",
+            ["sets"],
+            { out -> out.contains("Discovered Database Sets") && out.contains("test_physics") && out.contains("memory.db") }
+        )
+
+        runTest("11.3 Add Database to Set (set add-db test_physics auxiliary.db)",
+            ["set", "add-db", "test_physics", "auxiliary.db"],
+            { out -> out.contains("Successfully added database 'auxiliary.db' to set 'test_physics'") }
+        )
+
+        runTest("11.4 Remove Database from Set (set remove-db test_physics auxiliary.db)",
+            ["set", "remove-db", "test_physics", "auxiliary.db"],
+            { out -> out.contains("Successfully removed database 'auxiliary.db' from set 'test_physics'") }
+        )
+
+        runTest("11.5 Rename Database Set (set rename test_physics test_physics_renamed)",
+            ["set", "rename", "test_physics", "test_physics_renamed"],
+            { out -> out.contains("Successfully renamed database set 'test_physics' -> 'test_physics_renamed'") }
+        )
+
+        runTest("11.6 Single Database Query Preservation (--db memory.db)",
+            ["query", "BusinessPartner", "--db", "memory.db", "--limit", "3"],
+            { out -> out.contains("Searching: \"BusinessPartner\"") && out.contains("Found 3 result(s)") && !out.contains("RRF:") }
+        )
+
+        runTest("11.7 Explicit Set Federated Query (--set test_physics_renamed)",
+            ["query", "BusinessPartner", "--set", "test_physics_renamed", "--limit", "3"],
+            { out -> out.contains("Searching Set [test_physics_renamed]:") && out.contains("RRF:") && out.contains("Found 3 result(s)") }
+        )
+
+        runTest("11.8 Switch Active Default Set (set use test_physics_renamed)",
+            ["set", "use", "test_physics_renamed"],
+            { out -> out.contains("Active database set switched to: test_physics_renamed") }
+        )
+
+        runTest("11.9 Implicit Default Set Query Execution",
+            ["query", "BusinessPartner", "--limit", "3"],
+            { out -> out.contains("Searching Set [test_physics_renamed]:") && out.contains("RRF:") && out.contains("Found 3 result(s)") }
+        )
+
+        runTest("11.10 Path Safety Enforcement (Reject ../ Traversal)",
+            ["query", "test", "--db", "../secret.db"],
+            { out -> out.contains("path traversal") || out.contains("Security violation") || out.contains("forbidden") || out.contains("ERROR") },
+            true
+        )
+
+        runTest("11.11 Delete Database Set (set delete test_physics_renamed)",
+            ["set", "delete", "test_physics_renamed"],
+            { out -> out.contains("Successfully deleted database set 'test_physics_renamed'") }
+        )
+
+        // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------
         long totalElapsedMs = System.currentTimeMillis() - suiteStartTime
@@ -336,11 +397,12 @@ class TestQuerySuite {
     /**
      * Executes a single query test via subprocess and evaluates the assertion closure.
      *
-     * @param testName    Descriptive name of the test case
-     * @param cliArgs     List of CLI arguments to pass to run.groovy
-     * @param validator   Closure accepting output String and returning boolean
+     * @param testName          Descriptive name of the test case
+     * @param cliArgs           List of CLI arguments to pass to run.groovy
+     * @param validator         Closure accepting output String and returning boolean
+     * @param allowNonZeroExit  Whether non-zero exit code is allowed (for error/security tests)
      */
-    private static void runTest(String testName, List<String> cliArgs, Closure<Boolean> validator) {
+    private static void runTest(String testName, List<String> cliArgs, Closure<Boolean> validator, boolean allowNonZeroExit = false) {
         totalTests++
         long startNanos = System.nanoTime()
 
@@ -357,7 +419,7 @@ class TestQuerySuite {
 
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
 
-            boolean isPass = (exitCode == 0) && validator.call(output)
+            boolean isPass = (allowNonZeroExit || exitCode == 0) && validator.call(output)
 
             if (isPass) {
                 passedTests++

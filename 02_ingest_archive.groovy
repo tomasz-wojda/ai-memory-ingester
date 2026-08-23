@@ -28,10 +28,11 @@ boolean autoCompress = true
 List<String> targetNames = []
 File targetDir = null
 String asName = null
-String conflictMode = 'replace' // replace, rename, merge, skip
+String conflictMode = 'replace'
 String streamMode = null
 String appendText = null
 String targetFilePath = null
+String targetSetName = null
 
 int argIdx = 0
 while (argIdx < args.length) {
@@ -54,6 +55,12 @@ while (argIdx < args.length) {
         continue
     } else if (a.startsWith('--as=')) {
         asName = a.substring('--as='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+    } else if ((a == '--set' || a == '-S') && argIdx + 1 < args.length) {
+        targetSetName = args[argIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+        argIdx += 2
+        continue
+    } else if (a.startsWith('--set=')) {
+        targetSetName = a.substring('--set='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
     } else if ((a == '--on-conflict' || a == '--conflict') && argIdx + 1 < args.length) {
         conflictMode = args[argIdx + 1].trim().toLowerCase()
         argIdx += 2
@@ -204,6 +211,15 @@ if (targetDir != null) {
         print "Compressing ${archiveName} in-place (zlib + VACUUM)... "
         Map compRes = engine.compressDatabase(archiveName)
         printf "Done (Saved %s, Final DB: %s)%n", formatSize(compRes.saved_bytes as long), formatSize(compRes.final_size_bytes as long)
+    }
+
+    if (targetSetName != null) {
+        try {
+            SetRegistry.addDatabaseToSet(targetSetName, Config.DB_PATH.name)
+            println "Registered database '${Config.DB_PATH.name}' to database set '${targetSetName}'."
+        } catch (Exception e) {
+            println "WARNING: Failed to register database to set '${targetSetName}': ${e.message}"
+        }
     }
 
     engine.close()
@@ -393,6 +409,15 @@ if (finalStats.manifest) {
         printf "  - %-25s %6d docs | %9s text | %-12s | archive %9s | %s%n",
             m.source_archive, m.ingested_documents, formatSize(m.total_text_bytes as long),
             compState, formatSize(m.archive_size_bytes as long), m.ingested_at
+    }
+}
+
+if (targetSetName != null) {
+    try {
+        SetRegistry.addDatabaseToSet(targetSetName, Config.DB_PATH.name)
+        println "Registered database '${Config.DB_PATH.name}' to database set '${targetSetName}'."
+    } catch (Exception e) {
+        println "WARNING: Failed to register database to set '${targetSetName}': ${e.message}"
     }
 }
 

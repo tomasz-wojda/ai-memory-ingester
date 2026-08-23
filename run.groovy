@@ -24,27 +24,35 @@ import groovy.sql.Sql
 // -----------------------------------------------------------------------
 
 Map<String, String> commands = [
-    'analyze':        '01_analyze_archives.groovy',
-    '01':             '01_analyze_archives.groovy',
-    'ingest':         '02_ingest_archive.groovy',
-    '02':             '02_ingest_archive.groovy',
-    'query':          '03_query_memory.groovy',
-    '03':             '03_query_memory.groovy',
-    'compress':       '04_compress_memory.groovy',
-    'decompress':     '04_compress_memory.groovy',
-    'uncompress':     '04_compress_memory.groovy',
-    '04':             '04_compress_memory.groovy',
-    'dbs':            '03_query_memory.groovy',
-    'databases':      '03_query_memory.groovy',
-    'archives':       '03_query_memory.groovy',
-    'archs':          '03_query_memory.groovy',
-    'egest':          '03_query_memory.groovy',
-    'rename':         '03_query_memory.groovy',
-    'rename-archive': '03_query_memory.groovy',
-    'stream':         '02_ingest_archive.groovy',
-    'ingest-stream':  '02_ingest_archive.groovy',
-    'append':         '02_ingest_archive.groovy',
-    'ingest-text':    '02_ingest_archive.groovy'
+    'analyze':            '01_analyze_archives.groovy',
+    '01':                 '01_analyze_archives.groovy',
+    'ingest':             '02_ingest_archive.groovy',
+    '02':                 '02_ingest_archive.groovy',
+    'query':              '03_query_memory.groovy',
+    '03':                 '03_query_memory.groovy',
+    'compress':           '04_compress_memory.groovy',
+    'decompress':         '04_compress_memory.groovy',
+    'uncompress':         '04_compress_memory.groovy',
+    '04':                 '04_compress_memory.groovy',
+    'sets':               '03_query_memory.groovy',
+    'set':                '03_query_memory.groovy',
+    'use-set':            '03_query_memory.groovy',
+    'create-set':         '03_query_memory.groovy',
+    'delete-set':         '03_query_memory.groovy',
+    'rename-set':         '03_query_memory.groovy',
+    'add-db-to-set':      '03_query_memory.groovy',
+    'remove-db-from-set': '03_query_memory.groovy',
+    'dbs':                '03_query_memory.groovy',
+    'databases':          '03_query_memory.groovy',
+    'archives':           '03_query_memory.groovy',
+    'archs':              '03_query_memory.groovy',
+    'egest':              '03_query_memory.groovy',
+    'rename':             '03_query_memory.groovy',
+    'rename-archive':     '03_query_memory.groovy',
+    'stream':             '02_ingest_archive.groovy',
+    'ingest-stream':      '02_ingest_archive.groovy',
+    'append':             '02_ingest_archive.groovy',
+    'ingest-text':        '02_ingest_archive.groovy'
 ]
 
 // Extract global --db flag if present
@@ -69,14 +77,23 @@ while (aI < rawArgsList.size()) {
 if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase())) {
     println "Archive Memory Context Engine"
     println ""
-    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>]"
+    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>] [--set <set_name>]"
     println ""
     println "Core Commands:"
     println "  analyze [--dir <path>]         Analyze archives or uncompressed folder"
     println "  ingest [name|all|--dir <path>] Ingest archives or directory into memory DB"
-    println "  query [terms]                  Query the memory DB (supports --ext, --no-ext, --archive, --limit)"
+    println "  query [terms]                  Query the memory DB / sets (supports --set, --db, --ext, --limit)"
     println "  compress [--archive <name>]    Compress documents in-place (zlib + VACUUM)"
     println "  decompress [--archive <name>]  Decompress documents in-place to UTF-8 plaintext"
+    println ""
+    println "Database Set & Federation Commands:"
+    println "  sets                           List all database sets and member databases"
+    println "  set use <name>                 Switch active default database set"
+    println "  set create <name> [dbs...]     Create a new database set"
+    println "  set delete <name>              Delete a database set definition (preserves databases)"
+    println "  set rename <old> <new>         Rename a database set"
+    println "  set add-db <set> <db>          Add database to a set"
+    println "  set remove-db <set> <db>       Remove database from a set"
     println ""
     println "Management & Streaming Commands:"
     println "  dbs / databases                List all discovered databases in data/ directory"
@@ -94,7 +111,8 @@ String[] scriptArgs = filteredArgs.size() > 1 ? filteredArgs[1..-1] as String[] 
 String scriptFile = commands[command]
 
 // Inject commandName into sub-script if needed
-if (['dbs', 'databases', 'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
+if (['sets', 'set', 'use-set', 'create-set', 'delete-set', 'rename-set', 'add-db-to-set', 'remove-db-from-set',
+     'dbs', 'databases', 'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command
     System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)
@@ -123,13 +141,18 @@ groovy.grape.Grape.grab(
 )
 
 // Load library modules in dependency order
-['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine'].each { name ->
+['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'SetRegistry', 'FederatedEngine'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }
 
 Class configClass = gcl.loadClass('Config')
 if (customDb) {
     configClass.DB_PATH = configClass.resolveDatabase(customDb)
+    String[] augmentedWithDb = new String[scriptArgs.length + 2]
+    System.arraycopy(scriptArgs, 0, augmentedWithDb, 0, scriptArgs.length)
+    augmentedWithDb[scriptArgs.length] = '--db'
+    augmentedWithDb[scriptArgs.length + 1] = customDb
+    scriptArgs = augmentedWithDb
 }
 
 // -----------------------------------------------------------------------

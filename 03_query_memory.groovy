@@ -1,147 +1,226 @@
 /**
  * 03_query_memory.groovy
  *
- * Phase 4: Interactive Query CLI
+ * Interactive Query CLI & Database Sets Federation Controller for Archive Memory Context Engine.
+ * Supports single-database queries (direct FTS5/BM25), federated database set searches (with Reciprocal
+ * Rank Fusion RRF), set inspection/mutation commands, and an interactive REPL with set switching.
  *
- * Provides a command-line interface for querying the Archive Memory Context
- * database using FTS5 full-text search. Supports both single-shot CLI
- * queries and an interactive REPL mode.
- *
- * Usage:
- *   Interactive: groovy 03_query_memory.groovy
- *   Single-shot: groovy 03_query_memory.groovy "search query"
- *
- * REPL Commands:
- *   <text>        - FTS5 full-text search
- *   :stats        - Display database statistics
- *   :doc <id>     - Display full document content by ID
- *   :ext <.ext>   - List files with given extension
- *   :files <pat>  - List files matching path pattern (SQL LIKE)
- *   :help         - Show command reference
- *   :quit         - Exit the REPL
+ * Role in Project:
+ * Primary search entry point and query dispatch controller for single-database and federated set searches.
+ * Loaded by run.groovy (`groovy run.groovy query ...`).
  */
 
-// Classes loaded by run.groovy: Config, ArchiveHandler, ContentExtractor, MemoryEngine
+Config.ensureDataDir()
 
-if (!Config.DB_PATH.exists()) {
-    println "ERROR: Database not found at ${Config.DB_PATH.absolutePath}"
-    println "Run 02_ingest_archive.groovy first to populate the database."
-    System.exit(1)
+// -----------------------------------------------------------------------
+// CLI Argument & Flag Parsing
+// -----------------------------------------------------------------------
+
+int limit = 20
+int snippetSize = 64
+int maxLines = 200
+boolean raw = false
+List<String> extFilter = []
+String archiveFilter = null
+String explicitDb = null
+String explicitSet = null
+List<String> queryTokens = []
+
+int i = 0
+while (i < args.length) {
+    String arg = args[i]
+    if ((arg == '--limit' || arg == '-n' || arg == '-l') && i + 1 < args.length) {
+        try { limit = args[i + 1].toInteger() } catch (Exception ignored) {}
+        i += 2
+    } else if (arg.startsWith('--limit=')) {
+        try { limit = arg.substring('--limit='.length()).toInteger() } catch (Exception ignored) {}
+        i++
+    } else if ((arg == '--snippet-size' || arg == '-s') && i + 1 < args.length) {
+        try { snippetSize = args[i + 1].toInteger() } catch (Exception ignored) {}
+        i += 2
+    } else if (arg.startsWith('--snippet-size=')) {
+        try { snippetSize = arg.substring('--snippet-size='.length()).toInteger() } catch (Exception ignored) {}
+        i++
+    } else if (arg == '--no-ext') {
+        extFilter.add('')
+        i++
+    } else if ((arg == '--ext' || arg == '-e' || arg == '--extension') && i + 1 < args.length) {
+        extFilter.addAll(args[i + 1].split(',').collect { it.trim() })
+        i += 2
+    } else if (arg.startsWith('--ext=')) {
+        extFilter.addAll(arg.substring('--ext='.length()).split(',').collect { it.trim() })
+        i++
+    } else if (arg.startsWith('--extension=')) {
+        extFilter.addAll(arg.substring('--extension='.length()).split(',').collect { it.trim() })
+        i++
+    } else if ((arg == '--archive' || arg == '-A') && i + 1 < args.length) {
+        archiveFilter = args[i + 1].trim()
+        i += 2
+    } else if (arg.startsWith('--archive=')) {
+        archiveFilter = arg.substring('--archive='.length()).trim()
+        i++
+    } else if ((arg == '--db' || arg == '-D') && i + 1 < args.length) {
+        explicitDb = args[i + 1].trim()
+        i += 2
+    } else if (arg.startsWith('--db=')) {
+        explicitDb = arg.substring('--db='.length()).trim()
+        i++
+    } else if ((arg == '--set' || arg == '-S') && i + 1 < args.length) {
+        explicitSet = args[i + 1].trim()
+        i += 2
+    } else if (arg.startsWith('--set=')) {
+        explicitSet = arg.substring('--set='.length()).trim()
+        i++
+    } else if ((arg == '--lines' || arg == '-L') && i + 1 < args.length) {
+        try { maxLines = args[i + 1].toInteger() } catch (Exception ignored) {}
+        i += 2
+    } else if (arg.startsWith('--lines=')) {
+        try { maxLines = arg.substring('--lines='.length()).toInteger() } catch (Exception ignored) {}
+        i++
+    } else if (arg == '--all' || arg == '-a') {
+        maxLines = Integer.MAX_VALUE
+        i++
+    } else if (arg == '--raw' || arg == '-r') {
+        raw = true
+        i++
+    } else if (arg == '--sets' || arg == 'sets') {
+        printSets()
+        System.exit(0)
+    } else if (arg == '--create-set' && i + 1 < args.length) {
+        String setName = args[i + 1]
+        List<String> dbs = (i + 2 < args.length) ? args[(i + 2)..-1].toList() : []
+        executeSetCreate(setName, dbs)
+        System.exit(0)
+    } else if (arg == '--delete-set' && i + 1 < args.length) {
+        executeSetDelete(args[i + 1])
+        System.exit(0)
+    } else if (arg == '--rename-set' && i + 2 < args.length) {
+        executeSetRename(args[i + 1], args[i + 2])
+        System.exit(0)
+    } else if (arg == '--add-db-to-set' && i + 2 < args.length) {
+        executeSetAddDb(args[i + 1], args[i + 2])
+        System.exit(0)
+    } else if (arg == '--remove-db-from-set' && i + 2 < args.length) {
+        executeSetRemoveDb(args[i + 1], args[i + 2])
+        System.exit(0)
+    } else if (arg == '--use-set' && i + 1 < args.length) {
+        executeSetUse(args[i + 1])
+        System.exit(0)
+    } else {
+        queryTokens << arg
+        i++
+    }
 }
 
-MemoryEngine engine = new MemoryEngine(Config.DB_PATH.absolutePath)
-
 // -----------------------------------------------------------------------
-// -----------------------------------------------------------------------
-// Single-shot mode: query passed as CLI argument
+// Direct Command Dispatches
 // -----------------------------------------------------------------------
 
-if (args.length > 0) {
-    int limit = 20
-    int snippetSize = 64
-    int maxLines = 200
-    boolean raw = false
-    List<String> extFilter = []
-    String archiveFilter = null
-    List<String> queryTokens = []
-    int i = 0
-    while (i < args.length) {
-        String arg = args[i]
-        if ((arg == '--limit' || arg == '-n' || arg == '-l') && i + 1 < args.length) {
-            try { limit = args[i + 1].toInteger() } catch (Exception ignored) {}
-            i += 2
-        } else if (arg.startsWith('--limit=')) {
-            try { limit = arg.substring('--limit='.length()).toInteger() } catch (Exception ignored) {}
-            i++
-        } else if ((arg == '--snippet-size' || arg == '-s') && i + 1 < args.length) {
-            try { snippetSize = args[i + 1].toInteger() } catch (Exception ignored) {}
-            i += 2
-        } else if (arg.startsWith('--snippet-size=')) {
-            try { snippetSize = arg.substring('--snippet-size='.length()).toInteger() } catch (Exception ignored) {}
-            i++
-        } else if (arg == '--no-ext') {
-            extFilter.add('')
-            i++
-        } else if ((arg == '--ext' || arg == '-e' || arg == '--extension') && i + 1 < args.length) {
-            extFilter.addAll(args[i + 1].split(',').collect { it.trim() })
-            i += 2
-        } else if (arg.startsWith('--ext=')) {
-            extFilter.addAll(arg.substring('--ext='.length()).split(',').collect { it.trim() })
-            i++
-        } else if (arg.startsWith('--extension=')) {
-            extFilter.addAll(arg.substring('--extension='.length()).split(',').collect { it.trim() })
-            i++
-        } else if ((arg == '--archive' || arg == '-A') && i + 1 < args.length) {
-            archiveFilter = args[i + 1].trim()
-            i += 2
-        } else if (arg.startsWith('--archive=')) {
-            archiveFilter = arg.substring('--archive='.length()).trim()
-            i++
-        } else if ((arg == '--lines' || arg == '-L') && i + 1 < args.length) {
-            try { maxLines = args[i + 1].toInteger() } catch (Exception ignored) {}
-            i += 2
-        } else if (arg.startsWith('--lines=')) {
-            try { maxLines = arg.substring('--lines='.length()).toInteger() } catch (Exception ignored) {}
-            i++
-        } else if (arg == '--all' || arg == '-a') {
-            maxLines = Integer.MAX_VALUE
-            i++
-        } else if (arg == '--raw' || arg == '-r') {
-            raw = true
-            i++
-        } else {
-            queryTokens << arg
-            i++
-        }
-    }
+String input = queryTokens.join(' ').trim()
 
-    String input = queryTokens.join(' ').trim()
-    if (input == ':stats' || input == 'stats') {
-        printStats(engine)
-    } else if (input == ':dbs' || input == 'dbs' || input == 'databases') {
+if (!input.isEmpty()) {
+    if (input == 'sets' || input == ':sets') {
+        printSets()
+        System.exit(0)
+    } else if (input == 'dbs' || input == ':dbs' || input == 'databases') {
         printDatabases()
+        System.exit(0)
+    } else if (input.startsWith('set ') || input.startsWith(':set ')) {
+        handleSetSubcommand(input.startsWith(':set ') ? input.substring(':set '.length()).trim() : input.substring('set '.length()).trim())
+        System.exit(0)
+    } else if (input.startsWith('use ') || input.startsWith(':use ')) {
+        String targetName = input.startsWith(':use ') ? input.substring(':use '.length()).trim() : input.substring('use '.length()).trim()
+        executeSetUse(targetName)
+        System.exit(0)
+    } else if (input == ':stats' || input == 'stats') {
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        printStats(eng)
+        eng.close()
+        System.exit(0)
     } else if (input == ':archives' || input == 'archives' || input == ':archs' || input == 'archs') {
-        printArchives(engine)
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        printArchives(eng)
+        eng.close()
+        System.exit(0)
     } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
         String arch = input.startsWith(':egest ') ? input.substring(':egest '.length()).trim() : input.substring('egest '.length()).trim()
-        executeEgest(engine, arch)
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        executeEgest(eng, arch)
+        eng.close()
+        System.exit(0)
     } else if (input.startsWith(':rename ') || input.startsWith('rename-archive ')) {
         String rest = input.startsWith(':rename ') ? input.substring(':rename '.length()).trim() : input.substring('rename-archive '.length()).trim()
         def parts = rest.split('\\s+')
         if (parts.length >= 2) {
-            executeRename(engine, parts[0], parts[1])
+            File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+            MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+            executeRename(eng, parts[0], parts[1])
+            eng.close()
         } else {
-            println "Usage: :rename <old_name> <new_name>"
+            println "Usage: rename-archive <old_name> <new_name>"
         }
+        System.exit(0)
     } else if (input == ':files' || input.startsWith(':files ') || input.startsWith(':files')) {
         String pattern = input.startsWith(':files ') ? input.substring(':files '.length()).trim() : (input.length() > 6 ? input.substring(6).trim() : '%')
-        executeFileList(engine, pattern.isEmpty() ? '%' : pattern, limit)
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        executeFileList(eng, pattern.isEmpty() ? '%' : pattern, limit)
+        eng.close()
+        System.exit(0)
     } else if (input.startsWith(':doc ') || input.startsWith(':doc')) {
         String idStr = input.startsWith(':doc ') ? input.substring(':doc '.length()).trim() : input.substring(4).trim()
-        executeDocView(engine, idStr, raw, maxLines)
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        executeDocView(eng, idStr, raw, maxLines)
+        eng.close()
+        System.exit(0)
     } else if (input == ':ext' || input.startsWith(':ext ') || input.startsWith(':ext')) {
         String ext = input.startsWith(':ext ') ? input.substring(':ext '.length()).trim() : (input.length() > 4 ? input.substring(4).trim() : '')
-        executeExtList(engine, ext, limit)
+        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        executeExtList(eng, ext, limit)
+        eng.close()
+        System.exit(0)
     } else if (input == ':help' || input == ':h') {
         printHelp()
+        System.exit(0)
     } else if (input.startsWith(':')) {
         println "Unknown command: ${input}. Type :help for available commands."
-    } else if (!input.isEmpty()) {
-        executeSearch(engine, input, limit, raw, snippetSize, extFilter, archiveFilter)
+        System.exit(0)
+    } else {
+        // Search Query Routing: 3-Tier Precedence
+        if (explicitDb != null) {
+            // Tier 1: Single Database Search (raw BM25, no federation)
+            File targetDb = Config.resolveDatabase(explicitDb)
+            if (!targetDb.exists()) {
+                println "ERROR: Database not found: ${targetDb.absolutePath}"
+                System.exit(1)
+            }
+            MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+            executeSearch(eng, input, limit, raw, snippetSize, extFilter, archiveFilter)
+            eng.close()
+        } else {
+            // Tier 2 & 3: Database Set Federated Search with RRF Fusion
+            String targetSet = explicitSet ?: SetRegistry.getActiveSet()
+            executeFederatedSearch(targetSet, input, limit, raw, snippetSize, extFilter, archiveFilter)
+        }
+        System.exit(0)
     }
-    engine.close()
-    System.exit(0)
 }
 
 // -----------------------------------------------------------------------
-// Interactive REPL mode
+// Interactive REPL Mode
 // -----------------------------------------------------------------------
 
+String activeSet = SetRegistry.getActiveSet()
 println "=" * 70
-println "Memory Query Engine"
+println "Memory Query Engine — Interactive REPL"
 println "=" * 70
-printStats(engine)
-println ""
+println "Active Database Set: ${activeSet}"
+printSets()
 println "Type a search query, or :help for commands. :quit to exit."
 println ""
 
@@ -151,10 +230,9 @@ int replDefaultLimit = 20
 int replDefaultSnippetSize = 64
 
 while (true) {
-    print "memory> "
+    print "memory{${activeSet}}> "
     line = reader.readLine()
 
-    // Handle EOF (Ctrl+D / Ctrl+Z)
     if (line == null) {
         println ""
         break
@@ -163,62 +241,55 @@ while (true) {
     line = line.trim()
     if (line.isEmpty()) continue
 
-    // Check for inline flags in REPL
-    int limit = replDefaultLimit
-    int snippetSize = replDefaultSnippetSize
+    // Inline flag parsing in REPL
+    int curLimit = replDefaultLimit
+    int curSnippet = replDefaultSnippetSize
     if (line.contains('--') || line.contains(' -')) {
         def parts = line.split('\\s+')
         List<String> cleanParts = []
-        int i = 0
-        while (i < parts.length) {
-            if ((parts[i] == '--limit' || parts[i] == '-n') && i + 1 < parts.length) {
-                try { limit = parts[i + 1].toInteger() } catch (Exception ignored) {}
-                i += 2
-            } else if ((parts[i] == '--snippet-size' || parts[i] == '-s') && i + 1 < parts.length) {
-                try { snippetSize = parts[i + 1].toInteger() } catch (Exception ignored) {}
-                i += 2
+        int j = 0
+        while (j < parts.length) {
+            if ((parts[j] == '--limit' || parts[j] == '-n') && j + 1 < parts.length) {
+                try { curLimit = parts[j + 1].toInteger() } catch (Exception ignored) {}
+                j += 2
+            } else if ((parts[j] == '--snippet-size' || parts[j] == '-s') && j + 1 < parts.length) {
+                try { curSnippet = parts[j + 1].toInteger() } catch (Exception ignored) {}
+                j += 2
             } else {
-                cleanParts << parts[i]
-                i++
+                cleanParts << parts[j]
+                j++
             }
         }
         line = cleanParts.join(' ').trim()
     }
 
-    // Command dispatch
     if (line == ':quit' || line == ':q') {
         break
     } else if (line == ':help' || line == ':h') {
         printHelp()
-    } else if (line == ':stats') {
-        printStats(engine)
-    } else if (line == ':dbs' || line == ':databases') {
+    } else if (line == ':sets' || line == 'sets') {
+        printSets()
+    } else if (line == ':dbs' || line == ':databases' || line == 'dbs') {
         printDatabases()
+    } else if (line.startsWith(':use ') || line.startsWith(':set ')) {
+        String newSet = (line.startsWith(':use ') ? line.substring(':use '.length()) : line.substring(':set '.length())).trim()
+        try {
+            SetRegistry.setActiveSet(newSet)
+            activeSet = SetRegistry.getActiveSet()
+            println "Active set switched to: ${activeSet}"
+        } catch (Exception e) {
+            println "ERROR: ${e.message}"
+        }
+    } else if (line == ':stats') {
+        File targetDb = Config.resolveDatabase(Config.DB_PATH.name)
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        printStats(eng)
+        eng.close()
     } else if (line == ':archives' || line == ':archs') {
-        printArchives(engine)
-    } else if (line.startsWith(':egest ')) {
-        executeEgest(engine, line.substring(':egest '.length()).trim())
-    } else if (line.startsWith(':rename ')) {
-        def parts = line.substring(':rename '.length()).trim().split('\\s+')
-        if (parts.length >= 2) executeRename(engine, parts[0], parts[1])
-        else println "Usage: :rename <old_name> <new_name>"
-    } else if (line.startsWith(':limit ')) {
-        try {
-            replDefaultLimit = line.substring(':limit '.length()).trim().toInteger()
-            println "Default result limit set to: ${replDefaultLimit}"
-        } catch (Exception e) {
-            println "Invalid limit number."
-        }
-    } else if (line.startsWith(':snippet ')) {
-        try {
-            replDefaultSnippetSize = line.substring(':snippet '.length()).trim().toInteger()
-            println "Default snippet size set to: ${replDefaultSnippetSize} tokens"
-        } catch (Exception e) {
-            println "Invalid snippet size number."
-        }
-    } else if (line == ':files' || line.startsWith(':files ') || line.startsWith(':files')) {
-        String pattern = line.startsWith(':files ') ? line.substring(':files '.length()).trim() : (line.length() > 6 ? line.substring(6).trim() : '%')
-        executeFileList(engine, pattern.isEmpty() ? '%' : pattern, limit)
+        File targetDb = Config.resolveDatabase(Config.DB_PATH.name)
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        printArchives(eng)
+        eng.close()
     } else if (line.startsWith(':doc ') || line.startsWith(':doc')) {
         String sub = line.startsWith(':doc ') ? line.substring(':doc '.length()).trim() : line.substring(4).trim()
         boolean isRaw = false
@@ -246,37 +317,236 @@ while (true) {
             isRaw = true
             sub = sub.replaceAll(' --raw|-r', '').trim()
         }
-        executeDocView(engine, sub, isRaw, docMaxLines)
-    } else if (line == ':ext' || line.startsWith(':ext ') || line.startsWith(':ext')) {
-        String ext = line.startsWith(':ext ') ? line.substring(':ext '.length()).trim() : (line.length() > 4 ? input.substring(4).trim() : '')
-        executeExtList(engine, ext, limit)
+        File targetDb = Config.resolveDatabase(Config.DB_PATH.name)
+        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+        executeDocView(eng, sub, isRaw, docMaxLines)
+        eng.close()
     } else if (line.startsWith(':')) {
-        println "Unknown command: ${line}. Type :help for available commands."
+        println "Unknown command: ${line}. Type :help for commands."
     } else {
-        executeSearch(engine, line, limit, false, snippetSize)
+        executeFederatedSearch(activeSet, line, curLimit, false, curSnippet)
     }
 
     println ""
 }
 
-engine.close()
 println "Session ended."
 
 // -----------------------------------------------------------------------
-// Command implementations
+// Helper Implementations
 // -----------------------------------------------------------------------
 
 /**
- * Executes an FTS5 search query and displays ranked results with snippets
- * along with high-precision query retrieval latency in milliseconds.
- *
- * @param engine        MemoryEngine instance
- * @param query         FTS5 match expression
- * @param limit         Maximum number of results (default: 20)
- * @param raw           If true, outputs raw snippets without gutter formatting
- * @param snippetSize   Maximum token length for the excerpt window (default: 64)
- * @param extensions    Optional list of file extensions to filter by
- * @param archiveFilter Optional archive name to filter by
+ * Handles set subcommands from CLI arguments.
+ */
+static void handleSetSubcommand(String commandString) {
+    def parts = commandString.split('\\s+')
+    if (parts.length == 0) return
+    String sub = parts[0].toLowerCase()
+
+    if (sub == 'list') {
+        printSets()
+    } else if (sub == 'use' || sub == 'default') {
+        if (parts.length >= 2) executeSetUse(parts[1])
+        else println "Usage: set use <set_name>"
+    } else if (sub == 'create') {
+        if (parts.length >= 2) {
+            String sName = parts[1]
+            List<String> dbs = (parts.length > 2) ? parts[2..-1].toList() : []
+            executeSetCreate(sName, dbs)
+        } else {
+            println "Usage: set create <set_name> [db1,db2,...]"
+        }
+    } else if (sub == 'delete' || sub == 'remove') {
+        if (parts.length >= 2) executeSetDelete(parts[1])
+        else println "Usage: set delete <set_name>"
+    } else if (sub == 'rename') {
+        if (parts.length >= 3) executeSetRename(parts[1], parts[2])
+        else println "Usage: set rename <old_name> <new_name>"
+    } else if (sub == 'add-db' || sub == 'add') {
+        if (parts.length >= 3) executeSetAddDb(parts[1], parts[2])
+        else println "Usage: set add-db <set_name> <db_name>"
+    } else if (sub == 'remove-db' || sub == 'rm-db') {
+        if (parts.length >= 3) executeSetRemoveDb(parts[1], parts[2])
+        else println "Usage: set remove-db <set_name> <db_name>"
+    } else {
+        println "Unknown set command: ${sub}. Available: list, use, create, delete, rename, add-db, remove-db"
+    }
+}
+
+/**
+ * Creates a database set.
+ */
+static void executeSetCreate(String setName, List<String> databases) {
+    try {
+        SetRegistry.createSet(setName, databases)
+        println "Successfully created database set '${setName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to create set '${setName}': ${e.message}"
+    }
+}
+
+/**
+ * Deletes a database set.
+ */
+static void executeSetDelete(String setName) {
+    try {
+        SetRegistry.deleteSet(setName)
+        println "Successfully deleted database set '${setName}'. Physical database files were preserved."
+    } catch (Exception e) {
+        println "ERROR: Failed to delete set '${setName}': ${e.message}"
+    }
+}
+
+/**
+ * Renames a database set.
+ */
+static void executeSetRename(String oldName, String newName) {
+    try {
+        SetRegistry.renameSet(oldName, newName)
+        println "Successfully renamed database set '${oldName}' -> '${newName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to rename set: ${e.message}"
+    }
+}
+
+/**
+ * Adds a database to a set.
+ */
+static void executeSetAddDb(String setName, String dbName) {
+    try {
+        SetRegistry.addDatabaseToSet(setName, dbName)
+        println "Successfully added database '${dbName}' to set '${setName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to add database to set: ${e.message}"
+    }
+}
+
+/**
+ * Removes a database from a set.
+ */
+static void executeSetRemoveDb(String setName, String dbName) {
+    try {
+        SetRegistry.removeDatabaseFromSet(setName, dbName)
+        println "Successfully removed database '${dbName}' from set '${setName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to remove database from set: ${e.message}"
+    }
+}
+
+/**
+ * Switches the active default set.
+ */
+static void executeSetUse(String setName) {
+    try {
+        SetRegistry.setActiveSet(setName)
+        println "Active database set switched to: ${SetRegistry.getActiveSet()}"
+    } catch (Exception e) {
+        println "ERROR: Failed to switch active set: ${e.message}"
+    }
+}
+
+/**
+ * Displays the Database Sets table.
+ */
+static void printSets() {
+    List<Map> sets = SetRegistry.listSets()
+    println "=" * 104
+    println "Discovered Database Sets (${sets.size()} found):"
+    println "=" * 104
+    if (sets.isEmpty()) {
+        println "  No database sets defined in ${Config.SETS_FILE.absolutePath}"
+        return
+    }
+    printf "  %-16s %-10s %15s %16s %s%n", "Set Name", "Status", "Databases Count", "Total Text Size", "Member Databases"
+    printf "  %-16s %-10s %15s %16s %s%n", "-" * 16, "-" * 10, "-" * 15, "-" * 16, "-" * 35
+    sets.each { Map s ->
+        String status = s.is_active ? "[ACTIVE]" : ""
+        printf "  %-16s %-10s %15d %16s  %s%n",
+            s.name, status, s.database_count, formatSize(s.total_bytes as long), s.members_formatted
+    }
+    println "=" * 104
+    println ""
+}
+
+/**
+ * Executes a federated search across all databases in a set with RRF fusion.
+ */
+static void executeFederatedSearch(
+    String setName,
+    String query,
+    int limit = 20,
+    boolean raw = false,
+    int snippetSize = 64,
+    List<String> extensions = null,
+    String archiveFilter = null
+) {
+    if (!raw) {
+        println "-" * 50
+        StringBuilder header = new StringBuilder("Searching Set [${setName}]: \"${query}\"")
+        if (extensions != null && !extensions.isEmpty()) {
+            List<String> displayExts = extensions.collect { ext ->
+                String clean = ext ? ext.trim().replaceAll("^['\"]+|['\"]+\$", '') : ''
+                (clean.isEmpty() || clean == 'none' || clean == 'empty') ? '(no ext)' : clean
+            }
+            header.append(" [ext: ").append(displayExts.join(', ')).append("]")
+        }
+        if (archiveFilter != null && !archiveFilter.isEmpty()) {
+            header.append(" [archive: ").append(archiveFilter).append("]")
+        }
+        if (snippetSize != 64) {
+            header.append(" (limit: ${limit}, snippet-size: ${snippetSize})")
+        } else {
+            header.append(" (limit: ${limit})")
+        }
+        println header.toString()
+        println "-" * 50
+    }
+
+    boolean noExt = (extensions != null && extensions.contains(''))
+    List<String> cleanExts = extensions ? extensions.findAll { it != '' } : null
+
+    Map res = FederatedEngine.searchSet(
+        setName,
+        query,
+        limit,
+        cleanExts,
+        noExt,
+        archiveFilter,
+        snippetSize
+    )
+
+    List<Map> matches = (res.results as List<Map>) ?: []
+
+    if (matches.isEmpty()) {
+        printf "No results found across %d database(s) in %.2f ms.%n", res.database_count, res.total_duration_ms
+        return
+    }
+
+    matches.eachWithIndex { Map doc, int idx ->
+        double rrf = (doc.rrf_score as double) ?: 0.0
+        printf "[%d] [%s] ID:%d  %s%n", (idx + 1), doc.origin_db, doc.id, doc.file_path
+        printf "    Archive: %s  |  Type: %s  |  RRF: %.4f%n", doc.source_archive, doc.extension, rrf
+        String snippet = (doc.snippet ?: '').toString()
+        snippet = snippet.replaceAll('\\s+', ' ').trim()
+        if (snippet.length() > 240) {
+            snippet = snippet.substring(0, 240) + '...'
+        }
+        if (snippet) {
+            printHangingSnippet(snippet, 95)
+        }
+        println ""
+    }
+
+    if (!raw) {
+        println "-" * 50
+    }
+    printf "Found %d result(s) across %d database(s) in %.2f ms (Fusion: %.2f ms)%n",
+        matches.size(), res.successful_databases, res.total_duration_ms, res.fusion_duration_ms
+}
+
+/**
+ * Executes a single-database FTS5 search query.
  */
 static void executeSearch(MemoryEngine engine, String query, int limit = 20, boolean raw = false, int snippetSize = 64, List<String> extensions = null, String archiveFilter = null) {
     if (!raw) {
@@ -309,13 +579,6 @@ static void executeSearch(MemoryEngine engine, String query, int limit = 20, boo
 
         if (results.isEmpty()) {
             printf "No results found (%.2f ms).%n", elapsedMs
-            if (!raw) {
-                println ""
-                println "Tips:"
-                println "  - Use * for prefix matching:  Address*"
-                println "  - Use quotes for phrases:     \"CREATE TABLE\""
-                println "  - Use column filters:         file_name:Main"
-            }
             return
         }
 
@@ -339,17 +602,11 @@ static void executeSearch(MemoryEngine engine, String query, int limit = 20, boo
         printf "Found %d result(s) in %.2f ms%n", results.size(), elapsedMs
     } catch (Exception e) {
         println "Search error: ${e.message}"
-        println "Ensure your query uses valid FTS5 syntax."
     }
 }
 
 /**
- * Displays full content of a document by its ID.
- *
- * @param engine   MemoryEngine instance
- * @param idStr    String representation of the document ID
- * @param raw      If true, outputs pure document text without headers or line numbering
- * @param maxLines Maximum number of lines to display in formatted mode (default: 200)
+ * Displays full content of a document by ID.
  */
 static void executeDocView(MemoryEngine engine, String idStr, boolean raw = false, int maxLines = 200) {
     try {
@@ -381,8 +638,8 @@ static void executeDocView(MemoryEngine engine, String idStr, boolean raw = fals
         String content = doc.content?.toString() ?: ''
         List<String> lines = content.readLines()
         int displayLines = Math.min(lines.size(), maxLines)
-        lines.take(displayLines).eachWithIndex { String l, int i ->
-            printf "%4d | %s%n", (i + 1), l
+        lines.take(displayLines).eachWithIndex { String l, int idx ->
+            printf "%4d | %s%n", (idx + 1), l
         }
         if (lines.size() > displayLines) {
             println "... (${lines.size() - displayLines} more lines truncated. Use --all or --lines N to view more)"
@@ -395,11 +652,7 @@ static void executeDocView(MemoryEngine engine, String idStr, boolean raw = fals
 }
 
 /**
- * Lists all files with a given extension.
- *
- * @param engine    MemoryEngine instance
- * @param extension Extension to filter (with or without leading dot)
- * @param limit     Maximum results (default: 50)
+ * Lists all files matching extension.
  */
 static void executeExtList(MemoryEngine engine, String extension, int limit = 50) {
     String clean = extension ? extension.trim().replaceAll('^[\'"\\\\\\s]+|[\'"\\\\\\s]+$', '') : ''
@@ -411,7 +664,6 @@ static void executeExtList(MemoryEngine engine, String extension, int limit = 50
     }
 
     List<Map> results = engine.listByExtension(targetExt, limit)
-
     String displayLabel = targetExt.isEmpty() ? '(no extension)' : targetExt
     if (results.isEmpty()) {
         println "No files found with extension: ${displayLabel}"
@@ -426,20 +678,14 @@ static void executeExtList(MemoryEngine engine, String extension, int limit = 50
 }
 
 /**
- * Lists files matching a path pattern using SQL LIKE.
- *
- * @param engine  MemoryEngine instance
- * @param pattern Search pattern (automatically wrapped in %...% if no wildcards)
- * @param limit   Maximum results (default: 50)
+ * Lists files matching path pattern.
  */
 static void executeFileList(MemoryEngine engine, String pattern, int limit = 50) {
-    // Auto-wrap with wildcards if user didn't include them
     if (!pattern.contains('%') && !pattern.contains('_')) {
         pattern = "%${pattern}%"
     }
 
     List<Map> results = engine.listFiles(pattern, limit)
-
     if (results.isEmpty()) {
         println "No files matching pattern: ${pattern}"
         return
@@ -453,9 +699,7 @@ static void executeFileList(MemoryEngine engine, String pattern, int limit = 50)
 }
 
 /**
- * Prints database statistics and recorded archive manifests.
- *
- * @param engine MemoryEngine instance
+ * Prints database statistics.
  */
 static void printStats(MemoryEngine engine) {
     Map stats = engine.getStats()
@@ -491,20 +735,6 @@ static void printStats(MemoryEngine engine) {
                 compState, formatSize(m.archive_size_bytes as long), m.ingested_at
         }
         println ""
-    }
-
-    if (stats.by_archive) {
-        println "  By archive:"
-        stats.by_archive.each { archive, count ->
-            printf "    %-30s %d docs%n", archive, count
-        }
-    }
-
-    if (stats.by_extension) {
-        println "  Top extensions:"
-        stats.by_extension.each { ext, count ->
-            printf "    %-15s %d%n", ext, count
-        }
     }
 }
 
@@ -568,16 +798,11 @@ static void printArchives(MemoryEngine engine) {
 }
 
 /**
- * Formats average document density (bytes per doc) keeping at most 4 digits.
- *
- * @param bytesPerDoc Average size in bytes per document
- * @return Formatted string (e.g., "4.1 MB/doc", "40.5 KB/doc", "850 B/doc")
+ * Formats average document density string.
  */
 static String formatDensity(double bytesPerDoc) {
     if (bytesPerDoc <= 0) return "0 B/doc"
-    if (bytesPerDoc < 1024) {
-        return String.format("%.0f B/doc", bytesPerDoc)
-    }
+    if (bytesPerDoc < 1024) return String.format("%.0f B/doc", bytesPerDoc)
     double kb = bytesPerDoc / 1024.0
     if (kb < 1024) {
         if (kb < 10.0) return String.format("%.2f KB/doc", kb)
@@ -591,13 +816,9 @@ static String formatDensity(double bytesPerDoc) {
 }
 
 /**
- * Egests (purges) an archive from the active database.
+ * Egests archive.
  */
 static void executeEgest(MemoryEngine engine, String archiveName) {
-    if (!archiveName || archiveName.trim().isEmpty()) {
-        println "Usage: egest <archive_name>"
-        return
-    }
     String clean = archiveName.trim().replaceAll("^['\"]+|['\"]+\$", '')
     println "Egesting archive '${clean}' from database..."
     Map res = engine.egestArchive(clean)
@@ -605,7 +826,7 @@ static void executeEgest(MemoryEngine engine, String archiveName) {
 }
 
 /**
- * Renames an archive across stored documents and manifest.
+ * Renames archive.
  */
 static void executeRename(MemoryEngine engine, String oldName, String newName) {
     String cleanOld = oldName.trim().replaceAll("^['\"]+|['\"]+\$", '')
@@ -616,52 +837,39 @@ static void executeRename(MemoryEngine engine, String oldName, String newName) {
 }
 
 /**
- * Prints the REPL help text.
+ * Prints REPL help reference.
  */
 static void printHelp() {
     println """
-Commands:
-  <text>          FTS5 full-text search (supports --limit N, --snippet-size N, --raw)
-  :limit <N>      Change default result limit (e.g. :limit 10)
-  :snippet <N>    Change default snippet size (e.g. :snippet 128)
-  :stats          Database statistics and compression states
-  :doc <id>       View document by ID (supports --all, --lines N, --raw)
-  :ext <.ext>     List files by extension (e.g., :ext .sql)
-  :files <pat>    List files matching path pattern (e.g., :files Address)
-  :help           This help text
-  :quit           Exit
+Search Commands:
+  <query>               Federated FTS5 search across active database set
+  <query> --db <name>   Direct single-database search (bypasses federation)
+  <query> --set <name>  Federated search across specific database set
 
-Document Inspection Flags:
-  :doc <id>               Display first 200 lines (default)
-  :doc <id> --lines <N>   Display first N lines with line numbers
-  :doc <id> --all         Display all lines with line numbers
-  :doc <id> --raw         Display verbatim raw text without header or numbers
+Set Management:
+  sets                  List all database sets and member databases
+  set use <name>        Switch the active default database set
+  set create <n> [dbs]  Create a new database set
+  set delete <name>     Delete a database set definition
+  set rename <old> <n>  Rename a database set
+  set add-db <set> <db> Add a database identifier to a set
+  set remove-db <s> <d> Remove a database identifier from a set
 
-Search Filtering Flags:
-  --ext <.ext>            Filter by extension (e.g. --ext pdf, --ext java,xml, --ext '')
-  --no-ext                Filter exclusively for files with no file extension
-  --archive <name>        Filter by archive (e.g. --archive sample_archive.zip)
-  --limit <N> / -n <N>    Maximum result count (default: 20)
-  --snippet-size <N>      Snippet token window size (default: 64)
-  --raw                   Output results without border framing
-
-FTS5 Search Syntax:
-  simple terms    address write
-  phrases         "CREATE TABLE"
-  prefix match    Address*
-  column filter   file_name:Registry
-  boolean         billing AND customer
-  NOT             billing NOT customer
-  ext filter      Provision* --ext pdf,md,txt,'' --limit 5
-  no-ext filter   Makefile --no-ext
+Inspection Commands:
+  :stats                Database statistics and compression states
+  :doc <id>             View document content (supports --all, --lines N, --raw)
+  :ext <.ext>           List files by extension (e.g. :ext .sql, :ext "")
+  :files <pattern>      List files matching SQL LIKE pattern
+  :dbs                  List all physical database files in data/
+  :sets                 List all database sets
+  :set <name>           Switch active set in REPL
+  :help                 Display this command reference
+  :quit                 Exit REPL
 """
 }
 
 /**
- * Formats a byte count into a human-readable size string.
- *
- * @param bytes Size in bytes
- * @return Formatted string (e.g., "12.5 MB")
+ * Formats byte count to human-readable string.
  */
 static String formatSize(long bytes) {
     if (bytes < 1024) return "${bytes} B"
@@ -671,11 +879,7 @@ static String formatSize(long bytes) {
 }
 
 /**
- * Prints a search result snippet with hanging indentation so wrapped lines
- * align precisely underneath the start of the snippet content.
- *
- * @param snippet  Snippet text to print
- * @param maxWidth Maximum character width per line before wrapping
+ * Prints hanging indentation snippet.
  */
 static void printHangingSnippet(String snippet, int maxWidth = 95) {
     if (!snippet) return
@@ -696,16 +900,10 @@ static void printHangingSnippet(String snippet, int maxWidth = 95) {
             currentLine.append(word)
         }
     }
-    if (currentLine.length() > 0) {
-        lines << currentLine.toString()
-    }
+    if (currentLine.length() > 0) lines << currentLine.toString()
 
-    lines.eachWithIndex { String l, int i ->
-        if (i == 0) {
-            println "${firstPrefix}${l}"
-        } else {
-            println "${hangingIndent}${l}"
-        }
+    lines.eachWithIndex { String l, int idx ->
+        if (idx == 0) println "${firstPrefix}${l}"
+        else println "${hangingIndent}${l}"
     }
 }
-

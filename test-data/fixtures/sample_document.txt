@@ -1,0 +1,1 @@
+Sample loose document content for direct directory ingestion testing.

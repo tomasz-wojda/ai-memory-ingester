@@ -1,0 +1,20 @@
+{
+    "schema_version": 1,
+    "active_dataset": "default",
+    "datasets": {
+        "default": {
+            "created_at": "2026-08-24T01:49:35.8775836",
+            "description": "Hermetic default test dataset",
+            "databases": [
+                "memory.db"
+            ]
+        },
+        "physics": {
+            "created_at": "2026-08-24T01:49:35.8805836",
+            "description": "Hermetic physics test dataset",
+            "databases": [
+                "auxiliary.db"
+            ]
+        }
+    }
+}

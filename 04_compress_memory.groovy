@@ -11,11 +11,14 @@
  *   groovy run.groovy uncompress
  */
 
+boolean inProcess = binding.hasVariable('inProcess') && Boolean.TRUE.equals(binding.getVariable('inProcess'))
+
 // MemoryEngine and Config are loaded via classloader in run.groovy
 if (!Config.DB_PATH.exists()) {
     println "Error: Memory database not found at ${Config.DB_PATH.absolutePath}"
     println "Run 'groovy run.groovy ingest' first."
-    System.exit(1)
+    if (!inProcess) System.exit(1)
+    return
 }
 
 // Determine target action: check command passed or CLI args

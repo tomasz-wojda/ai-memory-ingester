@@ -12,6 +12,14 @@
 
 Config.ensureDataDir()
 
+boolean inProcess = (binding != null && binding.hasVariable('inProcess') && Boolean.TRUE.equals(binding.getVariable('inProcess')))
+
+def exitApp = { int code = 0 ->
+    if (!inProcess) {
+        System.exit(code)
+    }
+}
+
 // -----------------------------------------------------------------------
 // CLI Argument & Flag Parsing
 // -----------------------------------------------------------------------
@@ -96,27 +104,27 @@ while (i < args.length) {
         i++
     } else if (arg == '--datasets' || arg == 'datasets' || arg == '--sets' || arg == 'sets') {
         printDatasets()
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--create-dataset' || arg == '--create-set') && i + 1 < args.length) {
         String setName = args[i + 1]
         List<String> dbs = (i + 2 < args.length) ? args[(i + 2)..-1].toList() : []
         executeDatasetCreate(setName, dbs)
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--delete-dataset' || arg == '--delete-set') && i + 1 < args.length) {
         executeDatasetDelete(args[i + 1])
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--rename-dataset' || arg == '--rename-set') && i + 2 < args.length) {
         executeDatasetRename(args[i + 1], args[i + 2])
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--add-db-to-dataset' || arg == '--add-db-to-set') && i + 2 < args.length) {
         executeDatasetAddDb(args[i + 1], args[i + 2])
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--remove-db-from-dataset' || arg == '--remove-db-from-set') && i + 2 < args.length) {
         executeDatasetRemoveDb(args[i + 1], args[i + 2])
-        System.exit(0)
+        exitApp(0); return
     } else if ((arg == '--use-dataset' || arg == '--use-set') && i + 1 < args.length) {
         executeDatasetUse(args[i + 1])
-        System.exit(0)
+        exitApp(0); return
     } else {
         queryTokens << arg
         i++
@@ -132,10 +140,10 @@ String input = queryTokens.join(' ').trim()
 if (!input.isEmpty()) {
     if (input == 'datasets' || input == ':datasets' || input == 'sets' || input == ':sets') {
         printDatasets()
-        System.exit(0)
+        exitApp(0); return
     } else if (input == 'dbs' || input == ':dbs' || input == 'databases') {
         printDatabases()
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith('dataset ') || input.startsWith(':dataset ') || input.startsWith('set ') || input.startsWith(':set ')) {
         String cmdStr = input
         if (cmdStr.startsWith(':dataset ')) cmdStr = cmdStr.substring(':dataset '.length()).trim()
@@ -143,11 +151,11 @@ if (!input.isEmpty()) {
         else if (cmdStr.startsWith(':set ')) cmdStr = cmdStr.substring(':set '.length()).trim()
         else cmdStr = cmdStr.substring('set '.length()).trim()
         handleDatasetSubcommand(cmdStr)
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith('use ') || input.startsWith(':use ')) {
         String targetName = input.startsWith(':use ') ? input.substring(':use '.length()).trim() : input.substring('use '.length()).trim()
         executeDatasetUse(targetName)
-        System.exit(0)
+        exitApp(0); return
     } else if (input == ':stats' || input == 'stats') {
         if (explicitDb != null) {
             File targetDb = Config.resolveDatabase(explicitDb)
@@ -158,7 +166,7 @@ if (!input.isEmpty()) {
             String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
             printDatasetStats(targetDataset)
         }
-        System.exit(0)
+        exitApp(0); return
     } else if (input == ':archives' || input == 'archives' || input == ':archs' || input == 'archs') {
         if (explicitDb != null) {
             File targetDb = Config.resolveDatabase(explicitDb)
@@ -169,14 +177,14 @@ if (!input.isEmpty()) {
             String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
             printDatasetArchives(targetDataset)
         }
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
         String arch = input.startsWith(':egest ') ? input.substring(':egest '.length()).trim() : input.substring('egest '.length()).trim()
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
         executeEgest(eng, arch)
         eng.close()
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith(':rename ') || input.startsWith('rename-archive ')) {
         String rest = input.startsWith(':rename ') ? input.substring(':rename '.length()).trim() : input.substring('rename-archive '.length()).trim()
         def parts = rest.split('\\s+')
@@ -188,34 +196,34 @@ if (!input.isEmpty()) {
         } else {
             println "Usage: rename-archive <old_name> <new_name>"
         }
-        System.exit(0)
+        exitApp(0); return
     } else if (input == ':files' || input.startsWith(':files ') || input.startsWith(':files')) {
         String pattern = input.startsWith(':files ') ? input.substring(':files '.length()).trim() : (input.length() > 6 ? input.substring(6).trim() : '%')
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
         executeFileList(eng, pattern.isEmpty() ? '%' : pattern, limit)
         eng.close()
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith(':doc ') || input.startsWith(':doc')) {
         String idStr = input.startsWith(':doc ') ? input.substring(':doc '.length()).trim() : input.substring(4).trim()
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
         executeDocView(eng, idStr, raw, maxLines)
         eng.close()
-        System.exit(0)
+        exitApp(0); return
     } else if (input == ':ext' || input.startsWith(':ext ') || input.startsWith(':ext')) {
         String ext = input.startsWith(':ext ') ? input.substring(':ext '.length()).trim() : (input.length() > 4 ? input.substring(4).trim() : '')
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
         executeExtList(eng, ext, limit)
         eng.close()
-        System.exit(0)
+        exitApp(0); return
     } else if (input == ':help' || input == ':h') {
         printHelp()
-        System.exit(0)
+        exitApp(0); return
     } else if (input.startsWith(':')) {
         println "Unknown command: ${input}. Type :help for available commands."
-        System.exit(0)
+        exitApp(0); return
     } else {
         // Search Query Routing: 3-Tier Precedence
         if (explicitDb != null) {
@@ -223,7 +231,7 @@ if (!input.isEmpty()) {
             File targetDb = Config.resolveDatabase(explicitDb)
             if (!targetDb.exists()) {
                 println "ERROR: Database not found: ${targetDb.absolutePath}"
-                System.exit(1)
+                exitApp(1); return
             }
             MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
             executeSearch(eng, input, limit, raw, snippetSize, extFilter, archiveFilter)
@@ -233,7 +241,7 @@ if (!input.isEmpty()) {
             String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
             executeFederatedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter)
         }
-        System.exit(0)
+        exitApp(0); return
     }
 }
 

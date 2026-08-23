@@ -101,6 +101,14 @@ while (argIdx < args.length) {
 
 MemoryEngine engine = new MemoryEngine(Config.DB_PATH.absolutePath)
 
+boolean inProcess = binding.hasVariable('inProcess') && Boolean.TRUE.equals(binding.getVariable('inProcess'))
+
+def exitApp = { int code = 0 ->
+    if (!inProcess) {
+        System.exit(code)
+    }
+}
+
 // -----------------------------------------------------------------------
 // Stream / Append Ingestion Modes
 // -----------------------------------------------------------------------
@@ -119,7 +127,7 @@ if (streamMode == 'stream' || streamMode == 'append') {
 
     if (contentToIngest == null || contentToIngest.trim().isEmpty()) {
         println "No content provided to stream/append. Exiting."
-        System.exit(0)
+        exitApp(0); return
     }
 
     println "=" * 70
@@ -146,7 +154,7 @@ if (streamMode == 'stream' || streamMode == 'append') {
 if (targetDir != null) {
     if (!targetDir.exists() || !targetDir.isDirectory()) {
         println "ERROR: Directory not found: ${targetDir.absolutePath}"
-        System.exit(1)
+        exitApp(1); return
     }
 
     String archiveName = asName ?: targetDir.name
@@ -258,7 +266,7 @@ if (targetSelector.equalsIgnoreCase('all') || targetSelector.equalsIgnoreCase('-
                 println "  - ${af.name} (${formatSize(af.length())})"
             }
         }
-        System.exit(1)
+        exitApp(1); return
     }
     archivesToProcess << f
 }

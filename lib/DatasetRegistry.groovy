@@ -48,17 +48,27 @@ class DatasetRegistry {
     }
 
     /**
-     * Normalizes a database name into a canonical database filename inside data/.
+     * Normalizes a database name or explicit path into a stored identifier.
+     * If explicit path: returns canonical path string.
+     * If simple name: validates identifier and appends .db if missing extension.
      *
-     * @param dbName Database name or identifier
-     * @return Normalized database filename (e.g., 'feynman.db')
+     * @param dbName Database name, path, or identifier
+     * @return Normalized database identifier or canonical path string
      */
     static String normalizeDbName(String dbName) {
-        String clean = Config.validateDatabaseIdentifier(dbName)
-        if (!clean.contains('.')) {
-            return clean + ".db"
+        if (!dbName || dbName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Database identifier cannot be empty")
         }
-        return clean
+        String clean = dbName.trim().replaceAll("^['\"]+|['\"]+\$", '')
+        if (Config.isExplicitPath(clean)) {
+            File directFile = Config.resolveDatabase(clean)
+            return directFile.canonicalPath
+        }
+        String validId = Config.validateDatabaseIdentifier(clean)
+        if (!validId.contains('.')) {
+            return validId + ".db"
+        }
+        return validId
     }
 
     /**
@@ -252,7 +262,9 @@ class DatasetRegistry {
             databases?.each { db ->
                 if (db) {
                     String norm = normalizeDbName(db)
-                    Config.verifyPathSafety(norm)
+                    if (!Config.isExplicitPath(db)) {
+                        Config.verifyPathSafety(norm)
+                    }
                     if (!validDbs.contains(norm)) validDbs << norm
                 }
             }
@@ -358,7 +370,9 @@ class DatasetRegistry {
     static void addDatabaseToDataset(String datasetName, String dbName) {
         String cleanSet = validateDatasetName(datasetName)
         String normDb = normalizeDbName(dbName)
-        Config.verifyPathSafety(normDb)
+        if (!Config.isExplicitPath(dbName)) {
+            Config.verifyPathSafety(normDb)
+        }
 
         synchronized (LOCK) {
             Map reg = loadRegistry()

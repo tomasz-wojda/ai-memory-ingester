@@ -63,8 +63,9 @@ Map<String, String> commands = [
     'ingest-text':        '02_ingest_archive.groovy'
 ]
 
-// Extract global --db flag if present
+// Extract global --db and --data-dir flags if present
 String customDb = null
+String customDataDir = null
 List<String> rawArgsList = args as List
 List<String> filteredArgs = []
 int aI = 0
@@ -76,6 +77,12 @@ while (aI < rawArgsList.size()) {
     } else if (a.startsWith('--db=')) {
         customDb = a.substring('--db='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
         aI++
+    } else if (a == '--data-dir' && aI + 1 < rawArgsList.size()) {
+        customDataDir = rawArgsList[aI + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+        aI += 2
+    } else if (a.startsWith('--data-dir=')) {
+        customDataDir = a.substring('--data-dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+        aI++
     } else {
         filteredArgs << a
         aI++
@@ -85,7 +92,7 @@ while (aI < rawArgsList.size()) {
 if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase())) {
     println "Archive Memory Context Engine"
     println ""
-    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>] [--dataset <name>]"
+    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>] [--dataset <name>] [--data-dir <path>]"
     println ""
     println "Core Commands:"
     println "  analyze [--dir <path>]         Analyze archives or uncompressed folder"
@@ -156,6 +163,14 @@ groovy.grape.Grape.grab(
 }
 
 Class configClass = gcl.loadClass('Config')
+if (customDataDir) {
+    configClass.setDataDir(customDataDir)
+    String[] augmentedWithDataDir = new String[scriptArgs.length + 2]
+    System.arraycopy(scriptArgs, 0, augmentedWithDataDir, 0, scriptArgs.length)
+    augmentedWithDataDir[scriptArgs.length] = '--data-dir'
+    augmentedWithDataDir[scriptArgs.length + 1] = customDataDir
+    scriptArgs = augmentedWithDataDir
+}
 if (customDb) {
     configClass.DB_PATH = configClass.resolveDatabase(customDb)
     String[] augmentedWithDb = new String[scriptArgs.length + 2]

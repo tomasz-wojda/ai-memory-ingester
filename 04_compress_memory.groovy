@@ -32,6 +32,13 @@ if (args && args.length > 0) {
         String a = args[aIdx]
         if (a.equalsIgnoreCase('compress') || a.equalsIgnoreCase('decompress') || a.equalsIgnoreCase('uncompress')) {
             action = a.toLowerCase()
+        } else if (a == '--data-dir' && aIdx + 1 < args.length) {
+            String customDir = args[aIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+            Config.setDataDir(customDir)
+            aIdx++
+        } else if (a.startsWith('--data-dir=')) {
+            String customDir = a.substring('--data-dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+            Config.setDataDir(customDir)
         } else if ((a == '--archive' || a == '-A' || a == '-a') && aIdx + 1 < args.length) {
             targetArchive = args[aIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
             aIdx++

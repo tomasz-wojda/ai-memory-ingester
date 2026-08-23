@@ -24,19 +24,53 @@ class Config {
     }()
 
     /** Output directory for generated data (SQLite DB, reports). */
-    static final File DATA_DIR = new File('data').canonicalFile
+    static File DATA_DIR = {
+        String envPath = System.getenv('MEMORY_DATA_DIR') ?: System.getenv('DATABASE_DIR')
+        if (envPath && !envPath.trim().isEmpty()) {
+            return new File(envPath.trim().replaceAll("^['\"]+|['\"]+\$", '')).canonicalFile
+        }
+        return new File('data').canonicalFile
+    }()
 
     /** Dataset registry JSON configuration file path. */
-    static final File DATASETS_FILE = new File(DATA_DIR, 'datasets.json').canonicalFile
+    static File DATASETS_FILE = new File(DATA_DIR, 'datasets.json').canonicalFile
 
     /** Backward compatibility pointer for datasets configuration file. */
-    static final File SETS_FILE = DATASETS_FILE
+    static File SETS_FILE = DATASETS_FILE
 
     /** Fallback default SQLite database file path. */
-    static File defaultDbPath = new File(DATA_DIR, 'memory.db')
+    static File defaultDbPath = new File(DATA_DIR, 'memory.db').canonicalFile
 
     /** Base SQLite database file path (can be overridden via explicit --db flag). */
     static File DB_PATH = defaultDbPath
+
+    /**
+     * Sets the custom root data directory and re-points all derived file paths.
+     *
+     * @param customPath Path to the target directory
+     */
+    static void setDataDir(String customPath) {
+        if (customPath && !customPath.trim().isEmpty()) {
+            String clean = customPath.trim().replaceAll("^['\"]+|['\"]+\$", '')
+            DATA_DIR = new File(clean).canonicalFile
+            DATASETS_FILE = new File(DATA_DIR, 'datasets.json').canonicalFile
+            SETS_FILE = DATASETS_FILE
+            defaultDbPath = new File(DATA_DIR, 'memory.db').canonicalFile
+            DB_PATH = defaultDbPath
+        }
+    }
+
+    /**
+     * Determines whether a given string is an explicit filesystem path.
+     *
+     * @param path Path or identifier string
+     * @return true if path represents an explicit filesystem path
+     */
+    static boolean isExplicitPath(String path) {
+        if (!path) return false
+        String clean = path.trim().replaceAll("^['\"]+|['\"]+\$", '')
+        return clean.contains('/') || clean.contains('\\') || clean.contains(':')
+    }
 
     /**
      * Validates that a database identifier does not contain path traversal elements.
@@ -50,42 +84,64 @@ class Config {
             throw new IllegalArgumentException("Database identifier cannot be empty")
         }
         String clean = name.trim().replaceAll("^['\"]+|['\"]+\$", '')
-        if (clean.contains('..') || clean.contains('/') || clean.contains('\\')) {
+        if (clean.contains('..') || clean.contains('/') || clean.contains('\\') || clean.contains(':')) {
             throw new IllegalArgumentException("Invalid database identifier '${name}': path traversal and directory separators are forbidden")
         }
         return clean
     }
 
     /**
-     * Resolves a database file by name or path within the data directory.
+     * Resolves a database file by name, relative path, or explicit filesystem path.
      * Supports .db, .sqlite, and .sqlite3 extensions.
-     * Enforces path safety: resolved database must reside strictly within DATA_DIR.
      *
-     * @param nameOrPath Database name or identifier
-     * @return Canonical File reference inside DATA_DIR
+     * Precedence:
+     * 1. If explicit path (contains '/', '\', or ':'): resolves directly on disk as canonical File.
+     * 2. If simple identifier: resolves strictly inside DATA_DIR with path safety validation.
+     *
+     * @param nameOrPath Database name or path identifier
+     * @return Canonical File reference
      */
     static File resolveDatabase(String nameOrPath) {
         if (!nameOrPath || nameOrPath.trim().isEmpty()) {
             return DB_PATH
         }
-        String clean = validateDatabaseIdentifier(nameOrPath)
+        String clean = nameOrPath.trim().replaceAll("^['\"]+|['\"]+\$", '')
+
+        // Explicit direct filesystem path handling
+        if (isExplicitPath(clean)) {
+            File directFile = new File(clean).canonicalFile
+            if (directFile.exists() && directFile.isFile()) {
+                return directFile
+            }
+            if (!clean.contains('.')) {
+                File withDb = new File(clean + '.db').canonicalFile
+                if (withDb.exists() && withDb.isFile()) return withDb
+                File withSqlite = new File(clean + '.sqlite').canonicalFile
+                if (withSqlite.exists() && withSqlite.isFile()) return withSqlite
+                return withDb
+            }
+            return directFile
+        }
+
+        // Simple identifier scoped strictly to active DATA_DIR
+        String validId = validateDatabaseIdentifier(clean)
         ensureDataDir()
 
         // Check if exact file exists in DATA_DIR
-        File inData = new File(DATA_DIR, clean).canonicalFile
+        File inData = new File(DATA_DIR, validId).canonicalFile
         if (inData.exists() && inData.isFile()) {
             verifyPathSafety(inData)
             return inData
         }
 
         // If no extension, try appending .db and .sqlite
-        if (!clean.contains('.')) {
-            File withDb = new File(DATA_DIR, clean + '.db').canonicalFile
+        if (!validId.contains('.')) {
+            File withDb = new File(DATA_DIR, validId + '.db').canonicalFile
             if (withDb.exists() && withDb.isFile()) {
                 verifyPathSafety(withDb)
                 return withDb
             }
-            File withSqlite = new File(DATA_DIR, clean + '.sqlite').canonicalFile
+            File withSqlite = new File(DATA_DIR, validId + '.sqlite').canonicalFile
             if (withSqlite.exists() && withSqlite.isFile()) {
                 verifyPathSafety(withSqlite)
                 return withSqlite

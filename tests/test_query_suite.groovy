@@ -376,6 +376,31 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
+        // Group 12: Custom Database Storage Paths & External Path Resolution
+        // -------------------------------------------------------------------
+        println ""
+        println "--- Group 12: Custom Database Paths & External Path Resolution ---"
+        runTest("12.1 Query using explicit --data-dir flag",
+            ["query", "BusinessPartner", "--data-dir", "data", "--limit", "2"],
+            { out -> out.contains("BusinessPartner") && out.contains("Found") }
+        )
+
+        runTest("12.2 List datasets using --data-dir flag",
+            ["datasets", "--data-dir", "data"],
+            { out -> out.contains("Discovered Datasets") && out.contains("default") }
+        )
+
+        runTest("12.3 Direct external database query via relative path (--db data/memory.db)",
+            ["query", "BusinessPartner", "--db", "data/memory.db", "--limit", "2"],
+            { out -> out.contains("Searching: \"BusinessPartner\"") && out.contains("Found 2 result(s)") }
+        )
+
+        runTest("12.4 Direct external database query via absolute path",
+            ["query", "BusinessPartner", "--db", new File("data/memory.db").canonicalPath, "--limit", "2"],
+            { out -> out.contains("Searching: \"BusinessPartner\"") && out.contains("Found 2 result(s)") }
+        )
+
+        // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------
         long totalElapsedMs = System.currentTimeMillis() - suiteStartTime

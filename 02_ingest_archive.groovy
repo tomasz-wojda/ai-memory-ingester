@@ -49,6 +49,14 @@ while (argIdx < args.length) {
         continue
     } else if (a.startsWith('--dir=')) {
         targetDir = new File(a.substring('--dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')).canonicalFile
+    } else if (a == '--data-dir' && argIdx + 1 < args.length) {
+        String customDir = args[argIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+        Config.setDataDir(customDir)
+        argIdx += 2
+        continue
+    } else if (a.startsWith('--data-dir=')) {
+        String customDir = a.substring('--data-dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+        Config.setDataDir(customDir)
     } else if ((a == '--as' || a == '--name') && argIdx + 1 < args.length) {
         asName = args[argIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
         argIdx += 2

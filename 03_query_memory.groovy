@@ -59,6 +59,14 @@ while (i < args.length) {
     } else if (arg.startsWith('--archive=')) {
         archiveFilter = arg.substring('--archive='.length()).trim()
         i++
+    } else if (arg == '--data-dir' && i + 1 < args.length) {
+        String customDir = args[i + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
+        Config.setDataDir(customDir)
+        i += 2
+    } else if (arg.startsWith('--data-dir=')) {
+        String customDir = arg.substring('--data-dir='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
+        Config.setDataDir(customDir)
+        i++
     } else if ((arg == '--db' || arg == '-D') && i + 1 < args.length) {
         explicitDb = args[i + 1].trim()
         i += 2

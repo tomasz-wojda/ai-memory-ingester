@@ -39,11 +39,17 @@ Map<String, String> commands = [
     'set':                '03_query_memory.groovy',
     'dataset':            '03_query_memory.groovy',
     'use-set':            '03_query_memory.groovy',
+    'use-dataset':        '03_query_memory.groovy',
     'create-set':         '03_query_memory.groovy',
+    'create-dataset':     '03_query_memory.groovy',
     'delete-set':         '03_query_memory.groovy',
+    'delete-dataset':     '03_query_memory.groovy',
     'rename-set':         '03_query_memory.groovy',
+    'rename-dataset':     '03_query_memory.groovy',
     'add-db-to-set':      '03_query_memory.groovy',
+    'add-db-to-dataset':  '03_query_memory.groovy',
     'remove-db-from-set': '03_query_memory.groovy',
+    'remove-db-from-dataset': '03_query_memory.groovy',
     'dbs':                '03_query_memory.groovy',
     'databases':          '03_query_memory.groovy',
     'archives':           '03_query_memory.groovy',
@@ -79,23 +85,23 @@ while (aI < rawArgsList.size()) {
 if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase())) {
     println "Archive Memory Context Engine"
     println ""
-    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>] [--set <set_name>]"
+    println "Usage: groovy run.groovy <command> [args] [--db <name_or_path>] [--dataset <name>]"
     println ""
     println "Core Commands:"
     println "  analyze [--dir <path>]         Analyze archives or uncompressed folder"
     println "  ingest [name|all|--dir <path>] Ingest archives or directory into memory DB"
-    println "  query [terms]                  Query the memory DB / sets (supports --set, --db, --ext, --limit)"
+    println "  query [terms]                  Query the memory DB / datasets (supports --dataset, --db, --ext, --limit)"
     println "  compress [--archive <name>]    Compress documents in-place (zlib + VACUUM)"
     println "  decompress [--archive <name>]  Decompress documents in-place to UTF-8 plaintext"
     println ""
-    println "Database Set & Federation Commands:"
-    println "  sets / datasets                List all database sets and member databases"
-    println "  set / dataset use <name>       Switch active default database set"
-    println "  set / dataset create <n> [dbs] Create a new database set"
-    println "  set / dataset delete <name>    Delete a database set definition (preserves databases)"
-    println "  set / dataset rename <old> <n> Rename a database set"
-    println "  set / dataset add-db <set> <d> Add database to a set"
-    println "  set / dataset remove-db <s> <d>Remove database from a set"
+    println "Dataset & Federation Commands:"
+    println "  datasets                       List all datasets and member databases in scope"
+    println "  dataset use <name>             Switch active default dataset"
+    println "  dataset create <name> [dbs...] Create a new dataset"
+    println "  dataset delete <name>          Delete a dataset definition (preserves databases)"
+    println "  dataset rename <old> <new>     Rename a dataset"
+    println "  dataset add-db <dataset> <db>  Add database to a dataset"
+    println "  dataset remove-db <set> <db>   Remove database from a dataset"
     println ""
     println "Management & Streaming Commands:"
     println "  dbs / databases                List all discovered databases in data/ directory"
@@ -113,8 +119,10 @@ String[] scriptArgs = filteredArgs.size() > 1 ? filteredArgs[1..-1] as String[] 
 String scriptFile = commands[command]
 
 // Inject commandName into sub-script if needed
-if (['sets', 'datasets', 'set', 'dataset', 'use-set', 'create-set', 'delete-set', 'rename-set', 'add-db-to-set', 'remove-db-from-set',
-     'dbs', 'databases', 'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
+if (['sets', 'datasets', 'set', 'dataset', 'use-set', 'use-dataset', 'create-set', 'create-dataset',
+     'delete-set', 'delete-dataset', 'rename-set', 'rename-dataset', 'add-db-to-set', 'add-db-to-dataset',
+     'remove-db-from-set', 'remove-db-from-dataset', 'dbs', 'databases', 'archives', 'archs', 'egest',
+     'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command
     System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)
@@ -143,7 +151,7 @@ groovy.grape.Grape.grab(
 )
 
 // Load library modules in dependency order
-['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'SetRegistry', 'FederatedEngine'].each { name ->
+['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }
 

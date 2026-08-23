@@ -32,9 +32,9 @@ class FederatedEngine {
     static final double RRF_K = 60.0
 
     /**
-     * Executes a federated search across all member databases of a specified set.
+     * Executes a federated search across all member databases of a specified dataset.
      *
-     * @param setName Name of the target set (null for active default set)
+     * @param datasetName Name of the target dataset (null for active default dataset)
      * @param query Search expression (FTS5 syntax)
      * @param limit Maximum final results to return (default: 20)
      * @param extList Optional list of extension filters
@@ -43,8 +43,8 @@ class FederatedEngine {
      * @param snippetTokenSize Approximate token window size for context excerpts
      * @return Map containing fused results and performance diagnostics
      */
-    static Map searchSet(
-        String setName,
+    static Map searchDataset(
+        String datasetName,
         String query,
         int limit = 20,
         List<String> extList = null,
@@ -53,12 +53,13 @@ class FederatedEngine {
         int snippetTokenSize = 64
     ) {
         long startNano = System.nanoTime()
-        String activeSetName = setName ?: SetRegistry.getActiveSet()
-        List<File> dbFiles = SetRegistry.getDatabasesForSet(activeSetName)
+        String activeDatasetName = datasetName ?: DatasetRegistry.getActiveDataset()
+        List<File> dbFiles = DatasetRegistry.getDatabasesForDataset(activeDatasetName)
 
         if (dbFiles.isEmpty()) {
             return [
-                set_name: activeSetName,
+                dataset_name: activeDatasetName,
+                set_name: activeDatasetName,
                 results: [],
                 total_results: 0,
                 database_count: 0,
@@ -199,7 +200,8 @@ class FederatedEngine {
         double totalDurationMs = (System.nanoTime() - startNano) / 1_000_000.0
 
         return [
-            set_name: activeSetName,
+            dataset_name: activeDatasetName,
+            set_name: activeDatasetName,
             results: finalResults,
             total_results: finalResults.size(),
             total_candidates: fusedResults.size(),
@@ -210,5 +212,18 @@ class FederatedEngine {
             fusion_duration_ms: fusionDurationMs,
             total_duration_ms: totalDurationMs
         ]
+    }
+
+    /** Backward compatibility alias for searchDataset. */
+    static Map searchSet(
+        String setName,
+        String query,
+        int limit = 20,
+        List<String> extList = null,
+        boolean noExt = false,
+        String archiveName = null,
+        int snippetTokenSize = 64
+    ) {
+        return searchDataset(setName, query, limit, extList, noExt, archiveName, snippetTokenSize)
     }
 }

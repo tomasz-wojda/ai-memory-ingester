@@ -55,10 +55,12 @@ while (argIdx < args.length) {
         continue
     } else if (a.startsWith('--as=')) {
         asName = a.substring('--as='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
-    } else if ((a == '--set' || a == '-S') && argIdx + 1 < args.length) {
+    } else if ((a == '--dataset' || a == '--set' || a == '-S') && argIdx + 1 < args.length) {
         targetSetName = args[argIdx + 1].trim().replaceAll("^['\"]+|['\"]+\$", '')
         argIdx += 2
         continue
+    } else if (a.startsWith('--dataset=')) {
+        targetSetName = a.substring('--dataset='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
     } else if (a.startsWith('--set=')) {
         targetSetName = a.substring('--set='.length()).trim().replaceAll("^['\"]+|['\"]+\$", '')
     } else if ((a == '--on-conflict' || a == '--conflict') && argIdx + 1 < args.length) {
@@ -414,10 +416,10 @@ if (finalStats.manifest) {
 
 if (targetSetName != null) {
     try {
-        SetRegistry.addDatabaseToSet(targetSetName, Config.DB_PATH.name)
-        println "Registered database '${Config.DB_PATH.name}' to database set '${targetSetName}'."
+        DatasetRegistry.addDatabaseToDataset(targetSetName, Config.DB_PATH.name)
+        println "Registered database '${Config.DB_PATH.name}' to dataset '${targetSetName}'."
     } catch (Exception e) {
-        println "WARNING: Failed to register database to set '${targetSetName}': ${e.message}"
+        println "WARNING: Failed to register database to dataset '${targetSetName}': ${e.message}"
     }
 }
 

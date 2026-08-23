@@ -65,9 +65,12 @@ while (i < args.length) {
     } else if (arg.startsWith('--db=')) {
         explicitDb = arg.substring('--db='.length()).trim()
         i++
-    } else if ((arg == '--set' || arg == '-S') && i + 1 < args.length) {
+    } else if ((arg == '--dataset' || arg == '--set' || arg == '-S') && i + 1 < args.length) {
         explicitSet = args[i + 1].trim()
         i += 2
+    } else if (arg.startsWith('--dataset=')) {
+        explicitSet = arg.substring('--dataset='.length()).trim()
+        i++
     } else if (arg.startsWith('--set=')) {
         explicitSet = arg.substring('--set='.length()).trim()
         i++
@@ -83,28 +86,28 @@ while (i < args.length) {
     } else if (arg == '--raw' || arg == '-r') {
         raw = true
         i++
-    } else if (arg == '--sets' || arg == 'sets' || arg == 'datasets' || arg == '--datasets') {
-        printSets()
+    } else if (arg == '--datasets' || arg == 'datasets' || arg == '--sets' || arg == 'sets') {
+        printDatasets()
         System.exit(0)
-    } else if (arg == '--create-set' && i + 1 < args.length) {
+    } else if ((arg == '--create-dataset' || arg == '--create-set') && i + 1 < args.length) {
         String setName = args[i + 1]
         List<String> dbs = (i + 2 < args.length) ? args[(i + 2)..-1].toList() : []
-        executeSetCreate(setName, dbs)
+        executeDatasetCreate(setName, dbs)
         System.exit(0)
-    } else if (arg == '--delete-set' && i + 1 < args.length) {
-        executeSetDelete(args[i + 1])
+    } else if ((arg == '--delete-dataset' || arg == '--delete-set') && i + 1 < args.length) {
+        executeDatasetDelete(args[i + 1])
         System.exit(0)
-    } else if (arg == '--rename-set' && i + 2 < args.length) {
-        executeSetRename(args[i + 1], args[i + 2])
+    } else if ((arg == '--rename-dataset' || arg == '--rename-set') && i + 2 < args.length) {
+        executeDatasetRename(args[i + 1], args[i + 2])
         System.exit(0)
-    } else if (arg == '--add-db-to-set' && i + 2 < args.length) {
-        executeSetAddDb(args[i + 1], args[i + 2])
+    } else if ((arg == '--add-db-to-dataset' || arg == '--add-db-to-set') && i + 2 < args.length) {
+        executeDatasetAddDb(args[i + 1], args[i + 2])
         System.exit(0)
-    } else if (arg == '--remove-db-from-set' && i + 2 < args.length) {
-        executeSetRemoveDb(args[i + 1], args[i + 2])
+    } else if ((arg == '--remove-db-from-dataset' || arg == '--remove-db-from-set') && i + 2 < args.length) {
+        executeDatasetRemoveDb(args[i + 1], args[i + 2])
         System.exit(0)
-    } else if (arg == '--use-set' && i + 1 < args.length) {
-        executeSetUse(args[i + 1])
+    } else if ((arg == '--use-dataset' || arg == '--use-set') && i + 1 < args.length) {
+        executeDatasetUse(args[i + 1])
         System.exit(0)
     } else {
         queryTokens << arg
@@ -119,23 +122,23 @@ while (i < args.length) {
 String input = queryTokens.join(' ').trim()
 
 if (!input.isEmpty()) {
-    if (input == 'sets' || input == ':sets' || input == 'datasets' || input == ':datasets') {
-        printSets()
+    if (input == 'datasets' || input == ':datasets' || input == 'sets' || input == ':sets') {
+        printDatasets()
         System.exit(0)
     } else if (input == 'dbs' || input == ':dbs' || input == 'databases') {
         printDatabases()
         System.exit(0)
-    } else if (input.startsWith('set ') || input.startsWith(':set ') || input.startsWith('dataset ') || input.startsWith(':dataset ')) {
+    } else if (input.startsWith('dataset ') || input.startsWith(':dataset ') || input.startsWith('set ') || input.startsWith(':set ')) {
         String cmdStr = input
         if (cmdStr.startsWith(':dataset ')) cmdStr = cmdStr.substring(':dataset '.length()).trim()
         else if (cmdStr.startsWith('dataset ')) cmdStr = cmdStr.substring('dataset '.length()).trim()
         else if (cmdStr.startsWith(':set ')) cmdStr = cmdStr.substring(':set '.length()).trim()
         else cmdStr = cmdStr.substring('set '.length()).trim()
-        handleSetSubcommand(cmdStr)
+        handleDatasetSubcommand(cmdStr)
         System.exit(0)
     } else if (input.startsWith('use ') || input.startsWith(':use ')) {
         String targetName = input.startsWith(':use ') ? input.substring(':use '.length()).trim() : input.substring('use '.length()).trim()
-        executeSetUse(targetName)
+        executeDatasetUse(targetName)
         System.exit(0)
     } else if (input == ':stats' || input == 'stats') {
         if (explicitDb != null) {
@@ -218,9 +221,9 @@ if (!input.isEmpty()) {
             executeSearch(eng, input, limit, raw, snippetSize, extFilter, archiveFilter)
             eng.close()
         } else {
-            // Tier 2 & 3: Database Set Federated Search with RRF Fusion
-            String targetSet = explicitSet ?: SetRegistry.getActiveSet()
-            executeFederatedSearch(targetSet, input, limit, raw, snippetSize, extFilter, archiveFilter)
+            // Tier 2 & 3: Dataset Federated Search with RRF Fusion
+            String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
+            executeFederatedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter)
         }
         System.exit(0)
     }
@@ -230,12 +233,12 @@ if (!input.isEmpty()) {
 // Interactive REPL Mode
 // -----------------------------------------------------------------------
 
-String activeSet = SetRegistry.getActiveSet()
+String activeDataset = DatasetRegistry.getActiveDataset()
 println "=" * 70
 println "Memory Query Engine — Interactive REPL"
 println "=" * 70
-println "Active Database Set: ${activeSet}"
-printSets()
+println "Active Dataset: ${activeDataset}"
+printDatasets()
 println "Type a search query, or :help for commands. :quit to exit."
 println ""
 
@@ -245,7 +248,7 @@ int replDefaultLimit = 20
 int replDefaultSnippetSize = 64
 
 while (true) {
-    print "memory{${activeSet}}> "
+    print "memory[${activeDataset}]> "
     line = reader.readLine()
 
     if (line == null) {
@@ -283,22 +286,22 @@ while (true) {
     } else if (line == ':help' || line == ':h') {
         printHelp()
     } else if (line == ':sets' || line == 'sets' || line == ':datasets' || line == 'datasets') {
-        printSets()
+        printDatasets()
     } else if (line == ':dbs' || line == ':databases' || line == 'dbs') {
         printDatabases()
-    } else if (line.startsWith(':use ') || line.startsWith(':set ') || line.startsWith(':dataset ')) {
+    } else if (line.startsWith(':use ') || line.startsWith(':dataset ') || line.startsWith(':set ')) {
         String newSet = (line.startsWith(':use ') ? line.substring(':use '.length()) : (line.startsWith(':dataset ') ? line.substring(':dataset '.length()) : line.substring(':set '.length()))).trim()
         try {
-            SetRegistry.setActiveSet(newSet)
-            activeSet = SetRegistry.getActiveSet()
-            println "Active set switched to: ${activeSet}"
+            DatasetRegistry.setActiveDataset(newSet)
+            activeDataset = DatasetRegistry.getActiveDataset()
+            println "Active dataset switched to: ${activeDataset}"
         } catch (Exception e) {
             println "ERROR: ${e.message}"
         }
     } else if (line == ':stats') {
-        printDatasetStats(activeSet)
+        printDatasetStats(activeDataset)
     } else if (line == ':archives' || line == ':archs') {
-        printDatasetArchives(activeSet)
+        printDatasetArchives(activeDataset)
     } else if (line.startsWith(':doc ') || line.startsWith(':doc')) {
         String sub = line.startsWith(':doc ') ? line.substring(':doc '.length()).trim() : line.substring(4).trim()
         boolean isRaw = false
@@ -346,130 +349,159 @@ println "Session ended."
 // -----------------------------------------------------------------------
 
 /**
- * Handles set subcommands from CLI arguments.
+ * Handles dataset subcommands from CLI arguments.
  */
-static void handleSetSubcommand(String commandString) {
+static void handleDatasetSubcommand(String commandString) {
     def parts = commandString.split('\\s+')
     if (parts.length == 0) return
     String sub = parts[0].toLowerCase()
 
     if (sub == 'list') {
-        printSets()
+        printDatasets()
     } else if (sub == 'use' || sub == 'default') {
-        if (parts.length >= 2) executeSetUse(parts[1])
-        else println "Usage: set use <set_name>"
+        if (parts.length >= 2) executeDatasetUse(parts[1])
+        else println "Usage: dataset use <dataset_name>"
     } else if (sub == 'create') {
         if (parts.length >= 2) {
             String sName = parts[1]
             List<String> dbs = (parts.length > 2) ? parts[2..-1].toList() : []
-            executeSetCreate(sName, dbs)
+            executeDatasetCreate(sName, dbs)
         } else {
-            println "Usage: set create <set_name> [db1,db2,...]"
+            println "Usage: dataset create <dataset_name> [db1,db2,...]"
         }
     } else if (sub == 'delete' || sub == 'remove') {
-        if (parts.length >= 2) executeSetDelete(parts[1])
-        else println "Usage: set delete <set_name>"
+        if (parts.length >= 2) executeDatasetDelete(parts[1])
+        else println "Usage: dataset delete <dataset_name>"
     } else if (sub == 'rename') {
-        if (parts.length >= 3) executeSetRename(parts[1], parts[2])
-        else println "Usage: set rename <old_name> <new_name>"
+        if (parts.length >= 3) executeDatasetRename(parts[1], parts[2])
+        else println "Usage: dataset rename <old_name> <new_name>"
     } else if (sub == 'add-db' || sub == 'add') {
-        if (parts.length >= 3) executeSetAddDb(parts[1], parts[2])
-        else println "Usage: set add-db <set_name> <db_name>"
+        if (parts.length >= 3) executeDatasetAddDb(parts[1], parts[2])
+        else println "Usage: dataset add-db <dataset_name> <db_name>"
     } else if (sub == 'remove-db' || sub == 'rm-db') {
-        if (parts.length >= 3) executeSetRemoveDb(parts[1], parts[2])
-        else println "Usage: set remove-db <set_name> <db_name>"
+        if (parts.length >= 3) executeDatasetRemoveDb(parts[1], parts[2])
+        else println "Usage: dataset remove-db <dataset_name> <db_name>"
     } else {
-        println "Unknown set command: ${sub}. Available: list, use, create, delete, rename, add-db, remove-db"
+        println "Unknown dataset command: ${sub}. Available: list, use, create, delete, rename, add-db, remove-db"
     }
 }
 
+/** Backward compatibility alias. */
+static void handleSetSubcommand(String commandString) {
+    handleDatasetSubcommand(commandString)
+}
+
 /**
- * Creates a database set.
+ * Creates a dataset.
  */
+static void executeDatasetCreate(String datasetName, List<String> databases) {
+    try {
+        DatasetRegistry.createDataset(datasetName, databases)
+        println "Successfully created dataset '${datasetName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to create dataset '${datasetName}': ${e.message}"
+    }
+}
+
 static void executeSetCreate(String setName, List<String> databases) {
-    try {
-        SetRegistry.createSet(setName, databases)
-        println "Successfully created database set '${setName}'."
-    } catch (Exception e) {
-        println "ERROR: Failed to create set '${setName}': ${e.message}"
-    }
+    executeDatasetCreate(setName, databases)
 }
 
 /**
- * Deletes a database set.
+ * Deletes a dataset.
  */
+static void executeDatasetDelete(String datasetName) {
+    try {
+        DatasetRegistry.deleteDataset(datasetName)
+        println "Successfully deleted dataset '${datasetName}'. Physical database files were preserved."
+    } catch (Exception e) {
+        println "ERROR: Failed to delete dataset '${datasetName}': ${e.message}"
+    }
+}
+
 static void executeSetDelete(String setName) {
-    try {
-        SetRegistry.deleteSet(setName)
-        println "Successfully deleted database set '${setName}'. Physical database files were preserved."
-    } catch (Exception e) {
-        println "ERROR: Failed to delete set '${setName}': ${e.message}"
-    }
+    executeDatasetDelete(setName)
 }
 
 /**
- * Renames a database set.
+ * Renames a dataset.
  */
+static void executeDatasetRename(String oldName, String newName) {
+    try {
+        DatasetRegistry.renameDataset(oldName, newName)
+        println "Successfully renamed dataset '${oldName}' -> '${newName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to rename dataset: ${e.message}"
+    }
+}
+
 static void executeSetRename(String oldName, String newName) {
-    try {
-        SetRegistry.renameSet(oldName, newName)
-        println "Successfully renamed database set '${oldName}' -> '${newName}'."
-    } catch (Exception e) {
-        println "ERROR: Failed to rename set: ${e.message}"
-    }
+    executeDatasetRename(oldName, newName)
 }
 
 /**
- * Adds a database to a set.
+ * Adds a database to a dataset.
  */
+static void executeDatasetAddDb(String datasetName, String dbName) {
+    try {
+        DatasetRegistry.addDatabaseToDataset(datasetName, dbName)
+        println "Successfully added database '${dbName}' to dataset '${datasetName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to add database to dataset: ${e.message}"
+    }
+}
+
 static void executeSetAddDb(String setName, String dbName) {
-    try {
-        SetRegistry.addDatabaseToSet(setName, dbName)
-        println "Successfully added database '${dbName}' to set '${setName}'."
-    } catch (Exception e) {
-        println "ERROR: Failed to add database to set: ${e.message}"
-    }
+    executeDatasetAddDb(setName, dbName)
 }
 
 /**
- * Removes a database from a set.
+ * Removes a database from a dataset.
  */
+static void executeDatasetRemoveDb(String datasetName, String dbName) {
+    try {
+        DatasetRegistry.removeDatabaseFromDataset(datasetName, dbName)
+        println "Successfully removed database '${dbName}' from dataset '${datasetName}'."
+    } catch (Exception e) {
+        println "ERROR: Failed to remove database from dataset: ${e.message}"
+    }
+}
+
 static void executeSetRemoveDb(String setName, String dbName) {
-    try {
-        SetRegistry.removeDatabaseFromSet(setName, dbName)
-        println "Successfully removed database '${dbName}' from set '${setName}'."
-    } catch (Exception e) {
-        println "ERROR: Failed to remove database from set: ${e.message}"
-    }
+    executeDatasetRemoveDb(setName, dbName)
 }
 
 /**
- * Switches the active default set.
+ * Switches the active default dataset.
  */
+static void executeDatasetUse(String datasetName) {
+    try {
+        DatasetRegistry.setActiveDataset(datasetName)
+        println "Active dataset switched to: ${DatasetRegistry.getActiveDataset()}"
+    } catch (Exception e) {
+        println "ERROR: Failed to switch active dataset: ${e.message}"
+    }
+}
+
 static void executeSetUse(String setName) {
-    try {
-        SetRegistry.setActiveSet(setName)
-        println "Active database set switched to: ${SetRegistry.getActiveSet()}"
-    } catch (Exception e) {
-        println "ERROR: Failed to switch active set: ${e.message}"
-    }
+    executeDatasetUse(setName)
 }
 
 /**
- * Displays the Database Sets table.
+ * Displays the Datasets table.
  */
-static void printSets() {
-    List<Map> sets = SetRegistry.listSets()
+static void printDatasets() {
+    List<Map> datasets = DatasetRegistry.listDatasets()
     println "=" * 104
-    println "Discovered Database Sets (${sets.size()} found):"
+    println "Discovered Datasets (${datasets.size()} found):"
     println "=" * 104
-    if (sets.isEmpty()) {
-        println "  No database sets defined in ${Config.SETS_FILE.absolutePath}"
+    if (datasets.isEmpty()) {
+        println "  No datasets defined in ${Config.DATASETS_FILE.absolutePath}"
         return
     }
-    printf "  %-16s %-10s %15s %16s %s%n", "Set Name", "Status", "Databases Count", "Total Text Size", "Member Databases"
+    printf "  %-16s %-10s %15s %16s %s%n", "Dataset Name", "Status", "Databases Count", "Total Text Size", "Member Databases"
     printf "  %-16s %-10s %15s %16s %s%n", "-" * 16, "-" * 10, "-" * 15, "-" * 16, "-" * 35
-    sets.each { Map s ->
+    datasets.each { Map s ->
         String status = s.is_active ? "[ACTIVE]" : ""
         printf "  %-16s %-10s %15d %16s  %s%n",
             s.name, status, s.database_count, formatSize(s.total_bytes as long), s.members_formatted
@@ -478,11 +510,15 @@ static void printSets() {
     println ""
 }
 
+static void printSets() {
+    printDatasets()
+}
+
 /**
- * Executes a federated search across all databases in a set with RRF fusion.
+ * Executes a federated search across all databases in a dataset with RRF fusion.
  */
 static void executeFederatedSearch(
-    String setName,
+    String datasetName,
     String query,
     int limit = 20,
     boolean raw = false,
@@ -492,7 +528,7 @@ static void executeFederatedSearch(
 ) {
     if (!raw) {
         println "-" * 50
-        StringBuilder header = new StringBuilder("Searching Set [${setName}]: \"${query}\"")
+        StringBuilder header = new StringBuilder("Searching Dataset [${datasetName}]: \"${query}\"")
         if (extensions != null && !extensions.isEmpty()) {
             List<String> displayExts = extensions.collect { ext ->
                 String clean = ext ? ext.trim().replaceAll("^['\"]+|['\"]+\$", '') : ''
@@ -515,8 +551,8 @@ static void executeFederatedSearch(
     boolean noExt = (extensions != null && extensions.contains(''))
     List<String> cleanExts = extensions ? extensions.findAll { it != '' } : null
 
-    Map res = FederatedEngine.searchSet(
-        setName,
+    Map res = FederatedEngine.searchDataset(
+        datasetName,
         query,
         limit,
         cleanExts,
@@ -989,30 +1025,29 @@ static void executeRename(MemoryEngine engine, String oldName, String newName) {
 static void printHelp() {
     println """
 Search Commands:
-  <query>               Federated FTS5 search across active database set
-  <query> --db <name>   Direct single-database search (bypasses federation)
-  <query> --set <name>  Federated search across specific database set
+  <query>                  Federated FTS5 search across active dataset
+  <query> --db <name>      Direct single-database search (bypasses federation)
+  <query> --dataset <name> Federated search across specific dataset
 
-Set Management:
-  sets / datasets       List all database sets and member databases
-  set / dataset use <n> Switch the active default database set
-  set create <n> [dbs]  Create a new database set
-  set delete <name>     Delete a database set definition
-  set rename <old> <n>  Rename a database set
-  set add-db <set> <db> Add a database identifier to a set
-  set remove-db <s> <d> Remove a database identifier from a set
+Dataset Management:
+  datasets                 List all datasets and member databases in scope
+  dataset use <name>       Switch the active default dataset
+  dataset create <n> [dbs] Create a new dataset
+  dataset delete <name>    Delete a dataset definition (preserves databases)
+  dataset rename <old> <n> Rename a dataset
+  dataset add-db <set> <d> Add a database identifier to a dataset
+  dataset remove-db <s> <d>Remove a database identifier from a dataset
 
 Inspection Commands:
-  :stats                Aggregated statistics for active dataset (or --db)
-  :doc <id>             View document content (supports --all, --lines N, --raw)
-  :ext <.ext>           List files by extension (e.g. :ext .sql, :ext "")
-  :files <pattern>      List files matching SQL LIKE pattern
-  :dbs / :databases     List all physical database files in data/
-  :sets / :datasets     List all database sets
-  :set / :dataset <n>   Switch active set in REPL
-  :use <name>           Switch active set in REPL
-  :help                 Display this command reference
-  :quit                 Exit REPL
+  :stats                   Aggregated statistics for active dataset (or --db)
+  :doc <id>                View document content (supports --all, --lines N, --raw)
+  :ext <.ext>              List files by extension (e.g. :ext .sql, :ext "")
+  :files <pattern>         List files matching SQL LIKE pattern
+  :dbs / :databases        List all physical database files in data/
+  :datasets / :sets        List all datasets
+  :dataset / :use <name>   Switch active dataset in REPL
+  :help                    Display this command reference
+  :quit                    Exit REPL
 """
 }
 

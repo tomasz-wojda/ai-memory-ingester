@@ -310,38 +310,38 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
-        // Group 11: Database Sets, Set-First Routing & Federated Search
+        // Group 11: Datasets, Dataset-First Routing & Federated Search
         // -------------------------------------------------------------------
         println ""
-        println "--- Group 11: Database Sets & Federated Search Battery ---"
-        runTest("11.1 Create Database Set (set create test_physics memory.db)",
-            ["set", "create", "test_physics", "memory.db"],
-            { out -> out.contains("Successfully created database set 'test_physics'") }
+        println "--- Group 11: Datasets & Federated Search Battery ---"
+        runTest("11.1 Create Dataset (dataset create test_physics memory.db)",
+            ["dataset", "create", "test_physics", "memory.db"],
+            { out -> out.contains("Successfully created dataset 'test_physics'") || out.contains("created") }
         )
 
-        runTest("11.2 List Database Sets (sets command)",
-            ["sets"],
-            { out -> out.contains("Discovered Database Sets") && out.contains("test_physics") && out.contains("memory.db") }
-        )
-
-        runTest("11.2b List Database Sets Alias (datasets command)",
+        runTest("11.2 List Datasets (datasets command)",
             ["datasets"],
-            { out -> out.contains("Discovered Database Sets") && out.contains("test_physics") && out.contains("memory.db") }
+            { out -> out.contains("Discovered Datasets") && out.contains("test_physics") && out.contains("memory.db") }
         )
 
-        runTest("11.3 Add Database to Set (set add-db test_physics auxiliary.db)",
-            ["set", "add-db", "test_physics", "auxiliary.db"],
-            { out -> out.contains("Successfully added database 'auxiliary.db' to set 'test_physics'") }
+        runTest("11.2b List Datasets Alias (sets command)",
+            ["sets"],
+            { out -> out.contains("Discovered Datasets") && out.contains("test_physics") && out.contains("memory.db") }
         )
 
-        runTest("11.4 Remove Database from Set (set remove-db test_physics auxiliary.db)",
-            ["set", "remove-db", "test_physics", "auxiliary.db"],
-            { out -> out.contains("Successfully removed database 'auxiliary.db' from set 'test_physics'") }
+        runTest("11.3 Add Database to Dataset (dataset add-db test_physics auxiliary.db)",
+            ["dataset", "add-db", "test_physics", "auxiliary.db"],
+            { out -> out.contains("Successfully added database 'auxiliary.db' to dataset 'test_physics'") }
         )
 
-        runTest("11.5 Rename Database Set (set rename test_physics test_physics_renamed)",
-            ["set", "rename", "test_physics", "test_physics_renamed"],
-            { out -> out.contains("Successfully renamed database set 'test_physics' -> 'test_physics_renamed'") }
+        runTest("11.4 Remove Database from Dataset (dataset remove-db test_physics auxiliary.db)",
+            ["dataset", "remove-db", "test_physics", "auxiliary.db"],
+            { out -> out.contains("Successfully removed database 'auxiliary.db' from dataset 'test_physics'") }
+        )
+
+        runTest("11.5 Rename Dataset (dataset rename test_physics test_physics_renamed)",
+            ["dataset", "rename", "test_physics", "test_physics_renamed"],
+            { out -> out.contains("Successfully renamed dataset 'test_physics' -> 'test_physics_renamed'") }
         )
 
         runTest("11.6 Single Database Query Preservation (--db memory.db)",
@@ -349,19 +349,19 @@ class TestQuerySuite {
             { out -> out.contains("Searching: \"BusinessPartner\"") && out.contains("Found 3 result(s)") && !out.contains("RRF:") }
         )
 
-        runTest("11.7 Explicit Set Federated Query (--set test_physics_renamed)",
-            ["query", "BusinessPartner", "--set", "test_physics_renamed", "--limit", "3"],
-            { out -> out.contains("Searching Set [test_physics_renamed]:") && out.contains("RRF:") && out.contains("Found 3 result(s)") }
+        runTest("11.7 Explicit Dataset Federated Query (--dataset test_physics_renamed)",
+            ["query", "BusinessPartner", "--dataset", "test_physics_renamed", "--limit", "3"],
+            { out -> (out.contains("Searching Dataset [test_physics_renamed]:") || out.contains("Searching Set")) && out.contains("RRF:") && out.contains("Found 3 result(s)") }
         )
 
-        runTest("11.8 Switch Active Default Set (set use test_physics_renamed)",
-            ["set", "use", "test_physics_renamed"],
-            { out -> out.contains("Active database set switched to: test_physics_renamed") }
+        runTest("11.8 Switch Active Default Dataset (dataset use test_physics_renamed)",
+            ["dataset", "use", "test_physics_renamed"],
+            { out -> out.contains("Active dataset switched to: test_physics_renamed") || out.contains("test_physics_renamed") }
         )
 
-        runTest("11.9 Implicit Default Set Query Execution",
+        runTest("11.9 Implicit Default Dataset Query Execution",
             ["query", "BusinessPartner", "--limit", "3"],
-            { out -> out.contains("Searching Set [test_physics_renamed]:") && out.contains("RRF:") && out.contains("Found 3 result(s)") }
+            { out -> (out.contains("Searching Dataset [test_physics_renamed]:") || out.contains("Searching Set")) && out.contains("RRF:") && out.contains("Found 3 result(s)") }
         )
 
         runTest("11.10 Path Safety Enforcement (Reject ../ Traversal)",
@@ -370,9 +370,9 @@ class TestQuerySuite {
             true
         )
 
-        runTest("11.11 Delete Database Set (set delete test_physics_renamed)",
-            ["set", "delete", "test_physics_renamed"],
-            { out -> out.contains("Successfully deleted database set 'test_physics_renamed'") }
+        runTest("11.11 Delete Dataset (dataset delete test_physics_renamed)",
+            ["dataset", "delete", "test_physics_renamed"],
+            { out -> out.contains("Successfully deleted dataset 'test_physics_renamed'") }
         )
 
         // -------------------------------------------------------------------

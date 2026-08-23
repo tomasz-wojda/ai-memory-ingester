@@ -26,13 +26,16 @@ class Config {
     /** Output directory for generated data (SQLite DB, reports). */
     static final File DATA_DIR = new File('data').canonicalFile
 
-    /** Set registry JSON configuration file path. */
-    static final File SETS_FILE = new File(DATA_DIR, 'sets.json').canonicalFile
+    /** Dataset registry JSON configuration file path. */
+    static final File DATASETS_FILE = new File(DATA_DIR, 'datasets.json').canonicalFile
 
-    /** Default SQLite database file path. */
+    /** Backward compatibility pointer for datasets configuration file. */
+    static final File SETS_FILE = DATASETS_FILE
+
+    /** Fallback default SQLite database file path. */
     static File defaultDbPath = new File(DATA_DIR, 'memory.db')
 
-    /** Active SQLite database file path (can be overridden via --db flag). */
+    /** Base SQLite database file path (can be overridden via explicit --db flag). */
     static File DB_PATH = defaultDbPath
 
     /**
@@ -106,6 +109,17 @@ class Config {
         if (!filePath.startsWith(dataDirPath)) {
             throw new SecurityException("Security violation: Database path '${filePath}' escapes data directory '${dataDirPath}'")
         }
+    }
+
+    /**
+     * Verifies that a database name does not escape the data/ directory.
+     *
+     * @param name Database name or identifier
+     */
+    static void verifyPathSafety(String name) {
+        String clean = validateDatabaseIdentifier(name)
+        File f = new File(DATA_DIR, clean).canonicalFile
+        verifyPathSafety(f)
     }
 
     /**

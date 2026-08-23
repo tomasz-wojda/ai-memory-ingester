@@ -35,7 +35,9 @@ Map<String, String> commands = [
     'uncompress':         '04_compress_memory.groovy',
     '04':                 '04_compress_memory.groovy',
     'sets':               '03_query_memory.groovy',
+    'datasets':           '03_query_memory.groovy',
     'set':                '03_query_memory.groovy',
+    'dataset':            '03_query_memory.groovy',
     'use-set':            '03_query_memory.groovy',
     'create-set':         '03_query_memory.groovy',
     'delete-set':         '03_query_memory.groovy',
@@ -87,17 +89,17 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println "  decompress [--archive <name>]  Decompress documents in-place to UTF-8 plaintext"
     println ""
     println "Database Set & Federation Commands:"
-    println "  sets                           List all database sets and member databases"
-    println "  set use <name>                 Switch active default database set"
-    println "  set create <name> [dbs...]     Create a new database set"
-    println "  set delete <name>              Delete a database set definition (preserves databases)"
-    println "  set rename <old> <new>         Rename a database set"
-    println "  set add-db <set> <db>          Add database to a set"
-    println "  set remove-db <set> <db>       Remove database from a set"
+    println "  sets / datasets                List all database sets and member databases"
+    println "  set / dataset use <name>       Switch active default database set"
+    println "  set / dataset create <n> [dbs] Create a new database set"
+    println "  set / dataset delete <name>    Delete a database set definition (preserves databases)"
+    println "  set / dataset rename <old> <n> Rename a database set"
+    println "  set / dataset add-db <set> <d> Add database to a set"
+    println "  set / dataset remove-db <s> <d>Remove database from a set"
     println ""
     println "Management & Streaming Commands:"
     println "  dbs / databases                List all discovered databases in data/ directory"
-    println "  archs / archives               List all archives in active database"
+    println "  archs / archives               List all archives across active dataset (or --db)"
     println "  egest <archive_name>           Purge archive and clear FTS5 index"
     println "  rename-archive <old> <new>     Rename archive metadata across documents and manifest"
     println "  stream --archive <name>        Ingest/stream text from stdin pipe"
@@ -111,7 +113,7 @@ String[] scriptArgs = filteredArgs.size() > 1 ? filteredArgs[1..-1] as String[] 
 String scriptFile = commands[command]
 
 // Inject commandName into sub-script if needed
-if (['sets', 'set', 'use-set', 'create-set', 'delete-set', 'rename-set', 'add-db-to-set', 'remove-db-from-set',
+if (['sets', 'datasets', 'set', 'dataset', 'use-set', 'create-set', 'delete-set', 'rename-set', 'add-db-to-set', 'remove-db-from-set',
      'dbs', 'databases', 'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command

@@ -83,7 +83,7 @@ while (i < args.length) {
     } else if (arg == '--raw' || arg == '-r') {
         raw = true
         i++
-    } else if (arg == '--sets' || arg == 'sets') {
+    } else if (arg == '--sets' || arg == 'sets' || arg == 'datasets' || arg == '--datasets') {
         printSets()
         System.exit(0)
     } else if (arg == '--create-set' && i + 1 < args.length) {
@@ -119,30 +119,45 @@ while (i < args.length) {
 String input = queryTokens.join(' ').trim()
 
 if (!input.isEmpty()) {
-    if (input == 'sets' || input == ':sets') {
+    if (input == 'sets' || input == ':sets' || input == 'datasets' || input == ':datasets') {
         printSets()
         System.exit(0)
     } else if (input == 'dbs' || input == ':dbs' || input == 'databases') {
         printDatabases()
         System.exit(0)
-    } else if (input.startsWith('set ') || input.startsWith(':set ')) {
-        handleSetSubcommand(input.startsWith(':set ') ? input.substring(':set '.length()).trim() : input.substring('set '.length()).trim())
+    } else if (input.startsWith('set ') || input.startsWith(':set ') || input.startsWith('dataset ') || input.startsWith(':dataset ')) {
+        String cmdStr = input
+        if (cmdStr.startsWith(':dataset ')) cmdStr = cmdStr.substring(':dataset '.length()).trim()
+        else if (cmdStr.startsWith('dataset ')) cmdStr = cmdStr.substring('dataset '.length()).trim()
+        else if (cmdStr.startsWith(':set ')) cmdStr = cmdStr.substring(':set '.length()).trim()
+        else cmdStr = cmdStr.substring('set '.length()).trim()
+        handleSetSubcommand(cmdStr)
         System.exit(0)
     } else if (input.startsWith('use ') || input.startsWith(':use ')) {
         String targetName = input.startsWith(':use ') ? input.substring(':use '.length()).trim() : input.substring('use '.length()).trim()
         executeSetUse(targetName)
         System.exit(0)
     } else if (input == ':stats' || input == 'stats') {
-        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
-        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        printStats(eng)
-        eng.close()
+        if (explicitDb != null) {
+            File targetDb = Config.resolveDatabase(explicitDb)
+            MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+            printStats(eng)
+            eng.close()
+        } else {
+            String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
+            printDatasetStats(targetDataset)
+        }
         System.exit(0)
     } else if (input == ':archives' || input == 'archives' || input == ':archs' || input == 'archs') {
-        File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
-        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        printArchives(eng)
-        eng.close()
+        if (explicitDb != null) {
+            File targetDb = Config.resolveDatabase(explicitDb)
+            MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
+            printArchives(eng)
+            eng.close()
+        } else {
+            String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
+            printDatasetArchives(targetDataset)
+        }
         System.exit(0)
     } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
         String arch = input.startsWith(':egest ') ? input.substring(':egest '.length()).trim() : input.substring('egest '.length()).trim()
@@ -267,12 +282,12 @@ while (true) {
         break
     } else if (line == ':help' || line == ':h') {
         printHelp()
-    } else if (line == ':sets' || line == 'sets') {
+    } else if (line == ':sets' || line == 'sets' || line == ':datasets' || line == 'datasets') {
         printSets()
     } else if (line == ':dbs' || line == ':databases' || line == 'dbs') {
         printDatabases()
-    } else if (line.startsWith(':use ') || line.startsWith(':set ')) {
-        String newSet = (line.startsWith(':use ') ? line.substring(':use '.length()) : line.substring(':set '.length())).trim()
+    } else if (line.startsWith(':use ') || line.startsWith(':set ') || line.startsWith(':dataset ')) {
+        String newSet = (line.startsWith(':use ') ? line.substring(':use '.length()) : (line.startsWith(':dataset ') ? line.substring(':dataset '.length()) : line.substring(':set '.length()))).trim()
         try {
             SetRegistry.setActiveSet(newSet)
             activeSet = SetRegistry.getActiveSet()
@@ -281,15 +296,9 @@ while (true) {
             println "ERROR: ${e.message}"
         }
     } else if (line == ':stats') {
-        File targetDb = Config.resolveDatabase(Config.DB_PATH.name)
-        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        printStats(eng)
-        eng.close()
+        printDatasetStats(activeSet)
     } else if (line == ':archives' || line == ':archs') {
-        File targetDb = Config.resolveDatabase(Config.DB_PATH.name)
-        MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        printArchives(eng)
-        eng.close()
+        printDatasetArchives(activeSet)
     } else if (line.startsWith(':doc ') || line.startsWith(':doc')) {
         String sub = line.startsWith(':doc ') ? line.substring(':doc '.length()).trim() : line.substring(4).trim()
         boolean isRaw = false
@@ -699,7 +708,146 @@ static void executeFileList(MemoryEngine engine, String pattern, int limit = 50)
 }
 
 /**
- * Prints database statistics.
+ * Prints aggregated statistics across all database members in a dataset.
+ */
+static void printDatasetStats(String datasetName) {
+    String setName = datasetName ?: SetRegistry.getActiveSet()
+    List<File> dbFiles = SetRegistry.getDatabasesForSet(setName)
+
+    println "=" * 85
+    println "Statistics — Dataset: ${setName} (${dbFiles.size()} database members in scope)"
+    println "=" * 85
+
+    if (dbFiles.isEmpty()) {
+        println "  No database members found for dataset '${setName}'."
+        println "=" * 85
+        return
+    }
+
+    long totalDocs = 0
+    long totalContentBytes = 0
+    long totalDiskBytes = 0
+    int totalArchives = 0
+
+    dbFiles.each { File dbFile ->
+        MemoryEngine eng = null
+        try {
+            eng = new MemoryEngine(dbFile.absolutePath)
+            Map stats = eng.getStats()
+            long dbDiskBytes = dbFile.exists() ? dbFile.length() : 0
+            long docCount = (stats.total_documents ?: 0) as long
+            long contentBytes = (stats.total_size_bytes ?: 0) as long
+
+            totalDocs += docCount
+            totalContentBytes += contentBytes
+            totalDiskBytes += dbDiskBytes
+
+            println "Database Member: ${dbFile.name} (${formatSize(dbDiskBytes)} on disk)"
+            println "  Total documents: ${docCount}"
+            println "  Total content:   ${formatSize(contentBytes)}"
+
+            if (stats.manifest) {
+                stats.manifest.each { m ->
+                    totalArchives++
+                    String compState = m.compression_state ?: 'uncompressed'
+                    printf "    - %-25s %6d docs | %9s text | %-12s | %s%n",
+                        m.source_archive, m.ingested_documents, formatSize(m.total_text_bytes as long),
+                        compState, m.ingested_at
+                }
+            }
+            println ""
+        } catch (Exception e) {
+            println "  ${dbFile.name}: Error reading stats - ${e.message}"
+        } finally {
+            if (eng != null) {
+                try { eng.close() } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    println "=" * 85
+    printf "Summary for Dataset [%s]: %d DB member(s) | %d archive(s) | %d docs | %s total text%n",
+        setName, dbFiles.size(), totalArchives, totalDocs, formatSize(totalContentBytes)
+    println "=" * 85
+    println ""
+}
+
+/**
+ * Prints aggregated archives across all database members in a dataset.
+ */
+static void printDatasetArchives(String datasetName) {
+    String setName = datasetName ?: SetRegistry.getActiveSet()
+    List<File> dbFiles = SetRegistry.getDatabasesForSet(setName)
+
+    println "=" * 104
+    println "Archives — Dataset: ${setName} (${dbFiles.size()} database members in scope)"
+    println "=" * 104
+
+    if (dbFiles.isEmpty()) {
+        println "  No database members found for dataset '${setName}'."
+        println "=" * 104
+        return
+    }
+
+    printf "  %-16s %-25s %8s %12s %13s %16s %s%n",
+        "Database", "Archive Name", "Docs", "Text Size", "Density", "Compressed Size", "Ingested At"
+    printf "  %-16s %-25s %8s %12s %13s %16s %s%n",
+        "-" * 16, "-" * 25, "-" * 8, "-" * 12, "-" * 13, "-" * 16, "-" * 19
+
+    long totalDocs = 0
+    long totalTextBytes = 0
+    long totalStoredBytes = 0
+    int totalArchives = 0
+
+    dbFiles.each { File dbFile ->
+        MemoryEngine eng = null
+        try {
+            eng = new MemoryEngine(dbFile.absolutePath)
+            List<Map> archives = eng.listArchives()
+            archives.each { Map a ->
+                totalArchives++
+                long textBytes = a.live_text_bytes as long
+                long storedBytes = a.stored_bytes != null ? (a.stored_bytes as long) : textBytes
+                long compDocs = a.compressed_documents as long
+                long liveDocs = a.live_documents as long
+
+                totalDocs += liveDocs
+                totalTextBytes += textBytes
+                totalStoredBytes += storedBytes
+
+                double densityBytes = liveDocs > 0 ? (textBytes / (double) liveDocs) : 0.0
+                String densityStr = formatDensity(densityBytes)
+
+                String compDisplay
+                if (compDocs == 0 || textBytes == 0) {
+                    compDisplay = "0.0% (raw)"
+                } else {
+                    double ratio = ((textBytes - storedBytes) * 100.0) / (double) textBytes
+                    compDisplay = "${formatSize(storedBytes)} (${String.format('%.1f%%', Math.max(0.0, ratio))})"
+                }
+
+                printf "  %-16s %-25s %8d %12s %13s %16s %s%n",
+                    dbFile.name, a.source_archive, liveDocs, formatSize(textBytes),
+                    densityStr, compDisplay, a.ingested_at ?: '-'
+            }
+        } catch (Exception e) {
+            println "  ${dbFile.name}: Error reading archives - ${e.message}"
+        } finally {
+            if (eng != null) {
+                try { eng.close() } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    println "=" * 104
+    printf "Total Databases in Scope: %d  |  Total Archives: %d  |  Total Documents: %d  |  Total Content: %s%n",
+        dbFiles.size(), totalArchives, totalDocs, formatSize(totalTextBytes)
+    println "=" * 104
+    println ""
+}
+
+/**
+ * Prints single-database statistics (when targeted via explicit --db).
  */
 static void printStats(MemoryEngine engine) {
     Map stats = engine.getStats()
@@ -753,19 +901,18 @@ static void printDatabases() {
     printf "  %-30s %12s  %s%n", "Database Name", "Disk Size", "Status"
     printf "  %-30s %12s  %s%n", "-" * 30, "-" * 12, "-" * 15
     dbs.each { File db ->
-        String activeMarker = (db.canonicalPath == Config.DB_PATH.canonicalPath) ? " [ACTIVE]" : ""
-        printf "  %-30s %12s %s%n", db.name, formatSize(db.length()), activeMarker
+        printf "  %-30s %12s%n", db.name, formatSize(db.length())
     }
     println ""
 }
 
 /**
- * Lists all distinct archives in the active database.
+ * Lists all distinct archives in a single database (when targeted via explicit --db).
  */
 static void printArchives(MemoryEngine engine) {
     List<Map> archives = engine.listArchives()
     println "=" * 85
-    println "Active Database Archives (${archives.size()} recorded):"
+    println "Database Archives (${archives.size()} recorded):"
     println "=" * 85
     if (archives.isEmpty()) {
         println "  No archives recorded in database."
@@ -847,8 +994,8 @@ Search Commands:
   <query> --set <name>  Federated search across specific database set
 
 Set Management:
-  sets                  List all database sets and member databases
-  set use <name>        Switch the active default database set
+  sets / datasets       List all database sets and member databases
+  set / dataset use <n> Switch the active default database set
   set create <n> [dbs]  Create a new database set
   set delete <name>     Delete a database set definition
   set rename <old> <n>  Rename a database set
@@ -856,13 +1003,14 @@ Set Management:
   set remove-db <s> <d> Remove a database identifier from a set
 
 Inspection Commands:
-  :stats                Database statistics and compression states
+  :stats                Aggregated statistics for active dataset (or --db)
   :doc <id>             View document content (supports --all, --lines N, --raw)
   :ext <.ext>           List files by extension (e.g. :ext .sql, :ext "")
   :files <pattern>      List files matching SQL LIKE pattern
-  :dbs                  List all physical database files in data/
-  :sets                 List all database sets
-  :set <name>           Switch active set in REPL
+  :dbs / :databases     List all physical database files in data/
+  :sets / :datasets     List all database sets
+  :set / :dataset <n>   Switch active set in REPL
+  :use <name>           Switch active set in REPL
   :help                 Display this command reference
   :quit                 Exit REPL
 """

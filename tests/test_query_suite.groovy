@@ -131,7 +131,7 @@ class TestQuerySuite {
         println "--- Group 5: Inspection Commands ---"
         runTest("5.1 :stats command",
             ["query", ":stats"],
-            { out -> out.contains("Database:") && out.contains("Total documents:") && out.contains("Ingested Archives") }
+            { out -> (out.contains("Statistics") || out.contains("Database")) && out.contains("Total documents:") }
         )
 
         runTest("5.2 :files list all with default wildcard",
@@ -241,12 +241,12 @@ class TestQuerySuite {
 
         runTest("9.2 Archive Listing (archives command)",
             ["archives"],
-            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") && out.contains("Density") && out.contains("Compressed Size") }
+            { out -> out.contains("Archives") && out.contains("Archive Name") && out.contains("Density") && out.contains("Compressed Size") }
         )
 
         runTest("9.2b Archive Listing Alias (archs command)",
             ["archs"],
-            { out -> out.contains("Active Database Archives") && out.contains("Archive Name") && out.contains("Density") && out.contains("Compressed Size") }
+            { out -> out.contains("Archives") && out.contains("Archive Name") && out.contains("Density") && out.contains("Compressed Size") }
         )
 
         runTest("9.3 Directory Ingestion (--dir lib --as lib_test)",
@@ -321,6 +321,11 @@ class TestQuerySuite {
 
         runTest("11.2 List Database Sets (sets command)",
             ["sets"],
+            { out -> out.contains("Discovered Database Sets") && out.contains("test_physics") && out.contains("memory.db") }
+        )
+
+        runTest("11.2b List Database Sets Alias (datasets command)",
+            ["datasets"],
             { out -> out.contains("Discovered Database Sets") && out.contains("test_physics") && out.contains("memory.db") }
         )
 

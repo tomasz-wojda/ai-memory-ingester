@@ -1,0 +1,27 @@
+Ingestion is one thing but we need also retrieval 
+on every query from IDE (Antigravity, Cursor, Claude Code). 
+Make sure to reference that in the SKILL.md
+
+We might need to use (think about it) streaming into Ingestion
+
+We definitely need to call it worklog-chat dataset with convo.db database.
+
+I would like the messages to be structured in this way that:
+---
+[2026-08-23T21:48:29] USER REQUEST:
+update @[implementation.md]
+
+[2026-08-23T21:48:29] AGENT RESPONSE (MODE: EXECUTE):
+Updated implementation.md with Milestone 10: Database Sets, Bounded Parallel Federated Search, Reciprocal Rank Fusion (RRF), and Large PDF Ingestion (Phase 3).
+
+[2026-08-23T22:05:21] USER REQUEST:
+how to set active database?
+---
+Also make sure it's structured exactly the way it is in Antigravity, so probably mostly we will need 
+to go with Markdown
+
+Maybe as an intermediate step create SKILL.md (and name it properly) 
+that would create in some folder sessions queries, responses, and 
+(here you need to propose, deeply think about it) context, files created,
+scripts created and commands used, that would allow us to replicate
+the same session. Make sure to use relative paths only.

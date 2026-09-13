@@ -1,0 +1,6 @@
+TIMESTAMP: 2026-08-24 08:00
+USER: Preserve date-leading content
+ASSISTANT: Review these lines:
+2026-08-20-report.md
+2026-08-21 deployment completed
+2026-08-22T09:00:00Z service restarted

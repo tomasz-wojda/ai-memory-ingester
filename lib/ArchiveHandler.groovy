@@ -341,7 +341,9 @@ class ArchiveHandler {
             String relPath = fullPath.startsWith(baseCanonical) ? fullPath.substring(baseCanonical.length()) : f.name
             entries << ArchiveEntry.fromPath(relPath, f.length())
         }
-        return entries
+        return entries.sort { ArchiveEntry left, ArchiveEntry right ->
+            left.path <=> right.path
+        }
     }
 
     /**

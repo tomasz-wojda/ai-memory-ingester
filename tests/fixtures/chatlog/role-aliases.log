@@ -1,0 +1,9 @@
+TIMESTAMP: 2026-08-23 08:00
+USER QUERY: Query alias
+ASSISTANT RESPONSE: Assistant response alias
+USER CAUGHT ERROR: Error alias
+RESPONSE SUMMARY: Response summary alias
+USER PROMPT (MODE: PLAN): Qualified prompt alias
+ASSISTANT (MODE: PLAN) - ACTIONS: Qualified assistant alias
+PROMPT (EXECUTE): Qualified prompt
+OUTPUT: Output response

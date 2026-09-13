@@ -9,6 +9,47 @@
  */
 class Config {
 
+    static final String CONVERSATION_DB_NAME = 'convo.db'
+    static final String ARTIFACTS_DB_NAME = 'artifacts.db'
+    static final String DROSS_DB_NAME = 'dross.db'
+    static final String WORKLOGS_DB_NAME = 'worklogs.db'
+    static final String WORKLOG_CHAT_DATASET = 'worklog-chat'
+    static final String WORKLOG_CHAT_TURNS_DATASET = 'worklog-chat-turns'
+    static final String WORKLOG_CHAT_ALL_DATASET = 'worklog-chat-all'
+    static final String WORKLOG_CHAT_AUTHORITATIVE_DATASET = 'worklog-chat-authoritative'
+    static final String WORKLOG_STATE_ARCHIVE = 'worklog:state'
+    static final String WORKLOG_CHUNKS_ARCHIVE = 'worklog:chunks'
+    static final String WORKLOG_EVIDENCE_ARCHIVE = 'worklog:evidence'
+    static final long CHAT_SPILL_BYTES = 8192L
+    static final long WORKLOG_CHUNK_TARGET_BYTES = 12288L
+    static final int RESUME_BUDGET_BYTES = 22000
+    static final int TICKET_CONTEXT_BUDGET_BYTES = 22000
+    static final int RESUME_RECENT_TURNS = 12
+    static final String WORKLOG_CHAT_ROOT_NAME = 'worklog-chat'
+    static final String CHAT_HASH_INDEX_NAME = 'turn-hashes.tsv'
+    static final String CHAT_SWEEP_STATE_NAME = 'ingest-state.json'
+    static final String WORKLOG_SWEEP_STATE_NAME = 'worklog-state.json'
+    static final String CHAT_RESUME_DIGEST_NAME = 'RESUME.md'
+    static final List<String> WORKLOG_CATEGORIES = [
+        'summary', 'comments', 'repositories', 'findings', 'solutions',
+        'decisions', 'risks', 'actions', 'plan', 'checklist', 'action-log',
+        'manual-actions', 'status', 'delivery', 'next-action', 'time', 'other'
+    ].asImmutable()
+    static final List<String> WORKLOG_AUTHORITY_VALUES = [
+        'state', 'authoritative', 'historical', 'evidence'
+    ].asImmutable()
+    static final Set<String> DROSS_ALLOWLIST = ([
+        '', 'pushed', 'what now?', 'check now', 'go next', 'yes', 'ok',
+        'mode: research', 'mode: innovate', 'mode: plan', 'mode: execute'
+    ] as Set<String>).asImmutable()
+    static final Set<String> HIGH_IMPACT_LABELS = ([
+        'FILES CHANGED', 'REMOTE CHANGES', 'SEMANTIC COMMIT TITLE', 'WRITE GATE'
+    ] as Set<String>).asImmutable()
+    static final Set<String> LOW_IMPACT_LABELS = ([
+        'FINDINGS', 'FINDING', 'VERIFICATION', 'VALIDATION', 'ROOT CAUSE',
+        'RESULT', 'CONCLUSION', 'RECOMMENDATION', 'EXECUTION', 'DECISION'
+    ] as Set<String>).asImmutable()
+
     // -----------------------------------------------------------------------
     // Paths
     // -----------------------------------------------------------------------
@@ -58,6 +99,23 @@ class Config {
             defaultDbPath = new File(DATA_DIR, 'memory.db').canonicalFile
             DB_PATH = defaultDbPath
         }
+    }
+
+    /**
+     * Resolves the workspace root from an explicit value, environment, or repository location.
+     *
+     * @param explicitRoot Optional explicit workspace root
+     * @param repositoryRoot Repository root used for fallback resolution
+     * @return Canonical workspace root
+     */
+    static File workspaceRoot(String explicitRoot = null, File repositoryRoot = new File('.')) {
+        String requested = explicitRoot ?: System.getenv('MEMORY_WORKSPACE_ROOT')
+        if (requested && !requested.trim().isEmpty()) {
+            return new File(requested.trim().replaceAll("^['\"]+|['\"]+\$", '')).canonicalFile
+        }
+        File repository = repositoryRoot.canonicalFile
+        File reposDirectory = repository.parentFile
+        return (reposDirectory?.parentFile ?: repository).canonicalFile
     }
 
     /**

@@ -1,7 +1,3 @@
-@Grab(group='org.apache.pdfbox', module='pdfbox', version='2.0.30')
-import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.text.PDFTextStripper
-
 /**
  * ContentExtractor.groovy
  *
@@ -110,12 +106,16 @@ class ContentExtractor {
         if (stream == null) return null
         try {
             // External call: PDDocument.load parses complete PDF stream (including EOF trailer/xref)
-            PDDocument pdDoc = PDDocument.load(stream)
+            Class documentClass = Thread.currentThread().contextClassLoader.loadClass('org.apache.pdfbox.pdmodel.PDDocument')
+            def pdDoc = documentClass.getMethod('load', InputStream).invoke(null, stream)
             try {
                 int numPages = pdDoc.numberOfPages
                 if (numPages <= 0) return null
 
-                PDFTextStripper stripper = new PDFTextStripper()
+                def stripper = Thread.currentThread().contextClassLoader
+                    .loadClass('org.apache.pdfbox.text.PDFTextStripper')
+                    .getDeclaredConstructor()
+                    .newInstance()
                 StringBuilder sb = new StringBuilder()
 
                 for (int page = 1; page <= numPages; page++) {

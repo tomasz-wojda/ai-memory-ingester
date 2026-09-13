@@ -30,6 +30,9 @@ Map<String, String> commands = [
     '02':                 '02_ingest_archive.groovy',
     'query':              '03_query_memory.groovy',
     '03':                 '03_query_memory.groovy',
+    'recent':             '03_query_memory.groovy',
+    'resume':             '03_query_memory.groovy',
+    'context':            '03_query_memory.groovy',
     'compress':           '04_compress_memory.groovy',
     'decompress':         '04_compress_memory.groovy',
     'uncompress':         '04_compress_memory.groovy',
@@ -60,7 +63,13 @@ Map<String, String> commands = [
     'stream':             '02_ingest_archive.groovy',
     'ingest-stream':      '02_ingest_archive.groovy',
     'append':             '02_ingest_archive.groovy',
-    'ingest-text':        '02_ingest_archive.groovy'
+    'ingest-text':        '02_ingest_archive.groovy',
+    'chatlog':            '05_ingest_chatlog.groovy',
+    'ingest-chatlog':     '05_ingest_chatlog.groovy',
+    'worklogs':           '06_ingest_worklogs.groovy',
+    'ingest-worklogs':    '06_ingest_worklogs.groovy',
+    'sweep-memory':       '07_sweep_memory.groovy',
+    'ticket':             '03_query_memory.groovy'
 ]
 
 // Extract global --db and --data-dir flags if present
@@ -118,6 +127,16 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println "  stream --archive <name>        Ingest/stream text from stdin pipe"
     println "  append --text <txt> --file <f> Append text chunk to living document"
     println ""
+    println "Conversation Memory Commands:"
+    println "  chatlog --all [--dry-run]      Materialize workspace prompt journals"
+    println "  chatlog --since-last           Materialize content appended since last sweep"
+    println "  recent [--limit N]             Show recent conversation turns"
+    println "  resume [--budget N]            Assemble curated resume context"
+    println "  context [--budget N]           Alias for resume"
+    println "  ticket <key> [terms]           Retrieve hybrid ticket memory"
+    println "  worklogs --changed             Materialize changed worklogs"
+    println "  sweep-memory                   Synchronize every memory layer"
+    println ""
     System.exit(1)
 }
 
@@ -129,7 +148,9 @@ String scriptFile = commands[command]
 if (['sets', 'datasets', 'set', 'dataset', 'use-set', 'use-dataset', 'create-set', 'create-dataset',
      'delete-set', 'delete-dataset', 'rename-set', 'rename-dataset', 'add-db-to-set', 'add-db-to-dataset',
      'remove-db-from-set', 'remove-db-from-dataset', 'dbs', 'databases', 'archives', 'archs', 'egest',
-     'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text'].contains(command)) {
+     'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text',
+     'recent', 'resume', 'context', 'chatlog', 'ingest-chatlog', 'worklogs', 'ingest-worklogs',
+     'sweep-memory', 'ticket'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command
     System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)
@@ -158,7 +179,11 @@ groovy.grape.Grape.grab(
 )
 
 // Load library modules in dependency order
-['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
+['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
+ 'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
+ 'TurnDocument', 'TurnEmitter', 'SweepState', 'ResumeDigest',
+ 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter', 'TicketRetrieval',
+ 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }
 

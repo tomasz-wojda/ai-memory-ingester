@@ -7,6 +7,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/*.db-journal
+data/*.lock
 memory.db
 data/memory.db
 
@@ -22,6 +23,7 @@ prompt.log
 
 # Markdown documents
 *.md
+!docs/**/*.md
 
 # Analysis data cache
 data/archive_analysis.json

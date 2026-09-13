@@ -1,3 +1,9 @@
+import groovy.json.JsonOutput
+import groovy.sql.Sql
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+
 /**
  * 03_query_memory.groovy
  *
@@ -28,6 +34,13 @@ int limit = 20
 int snippetSize = 64
 int maxLines = 200
 boolean raw = false
+boolean jsonOutput = false
+int budgetBytes = Config.RESUME_BUDGET_BYTES
+String ticketFacet = null
+String modeFacet = null
+String impactFacet = null
+String sinceDate = null
+String untilDate = null
 List<String> extFilter = []
 String archiveFilter = null
 String explicitDb = null
@@ -102,6 +115,46 @@ while (i < args.length) {
     } else if (arg == '--raw' || arg == '-r') {
         raw = true
         i++
+    } else if (arg == '--json') {
+        jsonOutput = true
+        raw = true
+        i++
+    } else if (arg == '--budget' && i + 1 < args.length) {
+        budgetBytes = args[i + 1].toInteger()
+        i += 2
+    } else if (arg.startsWith('--budget=')) {
+        budgetBytes = arg.substring('--budget='.length()).toInteger()
+        i++
+    } else if (arg == '--ticket' && i + 1 < args.length) {
+        ticketFacet = args[i + 1]
+        i += 2
+    } else if (arg.startsWith('--ticket=')) {
+        ticketFacet = arg.substring('--ticket='.length())
+        i++
+    } else if (arg == '--mode' && i + 1 < args.length) {
+        modeFacet = args[i + 1]
+        i += 2
+    } else if (arg.startsWith('--mode=')) {
+        modeFacet = arg.substring('--mode='.length())
+        i++
+    } else if (arg == '--impact' && i + 1 < args.length) {
+        impactFacet = args[i + 1]
+        i += 2
+    } else if (arg.startsWith('--impact=')) {
+        impactFacet = arg.substring('--impact='.length())
+        i++
+    } else if (arg == '--since' && i + 1 < args.length) {
+        sinceDate = args[i + 1]
+        i += 2
+    } else if (arg.startsWith('--since=')) {
+        sinceDate = arg.substring('--since='.length())
+        i++
+    } else if (arg == '--until' && i + 1 < args.length) {
+        untilDate = args[i + 1]
+        i += 2
+    } else if (arg.startsWith('--until=')) {
+        untilDate = arg.substring('--until='.length())
+        i++
     } else if (arg == '--datasets' || arg == 'datasets' || arg == '--sets' || arg == 'sets') {
         printDatasets()
         exitApp(0); return
@@ -136,6 +189,29 @@ while (i < args.length) {
 // -----------------------------------------------------------------------
 
 String input = queryTokens.join(' ').trim()
+String invokedCommand = binding?.hasVariable('commandName')
+    ? binding.getVariable('commandName').toString().toLowerCase()
+    : 'query'
+
+if (invokedCommand == 'ticket') {
+    List<String> ticketArguments = new ArrayList<>(queryTokens)
+    if (ticketArguments && ticketArguments[0].equalsIgnoreCase('ticket')) ticketArguments.remove(0)
+    String requestedTicket = ticketFacet ?: (ticketArguments ? ticketArguments.remove(0) : null)
+    executeTicket(requestedTicket, ticketArguments.join(' '), limit, budgetBytes, jsonOutput, false)
+    exitApp(0); return
+}
+
+if (invokedCommand in ['recent', 'resume', 'context']) {
+    String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
+    if (invokedCommand == 'recent') {
+        executeRecent(explicitDb, targetDataset, limit, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+    } else if (invokedCommand == 'context' && ticketFacet) {
+        executeTicket(ticketFacet, input == 'context' ? '' : input.replaceFirst(/^context\s*/, ''), limit, budgetBytes, jsonOutput, true)
+    } else {
+        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+    }
+    exitApp(0); return
+}
 
 if (!input.isEmpty()) {
     if (input == 'datasets' || input == ':datasets' || input == 'sets' || input == ':sets') {
@@ -160,22 +236,22 @@ if (!input.isEmpty()) {
         if (explicitDb != null) {
             File targetDb = Config.resolveDatabase(explicitDb)
             MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-            printStats(eng)
+            printStats(eng, jsonOutput)
             eng.close()
         } else {
             String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
-            printDatasetStats(targetDataset)
+            printDatasetStats(targetDataset, jsonOutput)
         }
         exitApp(0); return
     } else if (input == ':archives' || input == 'archives' || input == ':archs' || input == 'archs') {
         if (explicitDb != null) {
             File targetDb = Config.resolveDatabase(explicitDb)
             MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-            printArchives(eng)
+            printArchives(eng, jsonOutput)
             eng.close()
         } else {
             String targetDataset = explicitSet ?: SetRegistry.getActiveSet()
-            printDatasetArchives(targetDataset)
+            printDatasetArchives(targetDataset, jsonOutput)
         }
         exitApp(0); return
     } else if (input.startsWith(':egest ') || input.startsWith('egest ')) {
@@ -201,14 +277,14 @@ if (!input.isEmpty()) {
         String pattern = input.startsWith(':files ') ? input.substring(':files '.length()).trim() : (input.length() > 6 ? input.substring(6).trim() : '%')
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        executeFileList(eng, pattern.isEmpty() ? '%' : pattern, limit)
+        executeFileList(eng, pattern.isEmpty() ? '%' : pattern, limit, jsonOutput)
         eng.close()
         exitApp(0); return
     } else if (input.startsWith(':doc ') || input.startsWith(':doc')) {
         String idStr = input.startsWith(':doc ') ? input.substring(':doc '.length()).trim() : input.substring(4).trim()
         File targetDb = explicitDb ? Config.resolveDatabase(explicitDb) : Config.DB_PATH
         MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-        executeDocView(eng, idStr, raw, maxLines)
+        executeDocView(eng, idStr, raw, maxLines, jsonOutput)
         eng.close()
         exitApp(0); return
     } else if (input == ':ext' || input.startsWith(':ext ') || input.startsWith(':ext')) {
@@ -221,10 +297,28 @@ if (!input.isEmpty()) {
     } else if (input == ':help' || input == ':h') {
         printHelp()
         exitApp(0); return
+    } else if (input == ':recent' || input.startsWith(':recent ')) {
+        String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
+        executeRecent(explicitDb, targetDataset, limit, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+        exitApp(0); return
+    } else if (input == ':resume' || input.startsWith(':resume ')) {
+        String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
+        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+        exitApp(0); return
+    } else if (input.startsWith(':ticket ')) {
+        List<String> parts = input.substring(':ticket '.length()).trim().tokenize(' ')
+        String requestedTicket = parts ? parts.remove(0) : null
+        executeTicket(requestedTicket, parts.join(' '), limit, budgetBytes, jsonOutput, false)
+        exitApp(0); return
     } else if (input.startsWith(':')) {
         println "Unknown command: ${input}. Type :help for available commands."
         exitApp(0); return
     } else {
+        def bareTicket = input =~ /(?i)^(?:[A-Z]{2,10}-?\d+|SCTASK\d+)$/
+        if (bareTicket.matches()) {
+            executeTicket(input, '', limit, budgetBytes, jsonOutput, false)
+            exitApp(0); return
+        }
         // Search Query Routing: 3-Tier Precedence
         if (explicitDb != null) {
             // Tier 1: Single Database Search (raw BM25, no federation)
@@ -234,12 +328,14 @@ if (!input.isEmpty()) {
                 exitApp(1); return
             }
             MemoryEngine eng = new MemoryEngine(targetDb.absolutePath)
-            executeSearch(eng, input, limit, raw, snippetSize, extFilter, archiveFilter)
+            String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
+            executeSearch(eng, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             eng.close()
         } else {
             // Tier 2 & 3: Dataset Federated Search with RRF Fusion
             String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
-            executeFederatedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter)
+            String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
+            executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
         }
         exitApp(0); return
     }
@@ -318,6 +414,10 @@ while (true) {
         printDatasetStats(activeDataset)
     } else if (line == ':archives' || line == ':archs') {
         printDatasetArchives(activeDataset)
+    } else if (line == ':recent' || line.startsWith(':recent ')) {
+        executeRecent(null, activeDataset, curLimit, null, null, null, null, null, false)
+    } else if (line == ':resume' || line.startsWith(':resume ')) {
+        executeResume(null, activeDataset, Config.RESUME_BUDGET_BYTES, null, null, null, null, null, false)
     } else if (line.startsWith(':doc ') || line.startsWith(':doc')) {
         String sub = line.startsWith(':doc ') ? line.substring(':doc '.length()).trim() : line.substring(4).trim()
         boolean isRaw = false
@@ -352,7 +452,7 @@ while (true) {
     } else if (line.startsWith(':')) {
         println "Unknown command: ${line}. Type :help for commands."
     } else {
-        executeFederatedSearch(activeSet, line, curLimit, false, curSnippet)
+        executeFederatedSearch(activeDataset, line, curLimit, false, curSnippet)
     }
 
     println ""
@@ -540,9 +640,10 @@ static void executeFederatedSearch(
     boolean raw = false,
     int snippetSize = 64,
     List<String> extensions = null,
-    String archiveFilter = null
+    String archiveFilter = null,
+    boolean jsonOutput = false
 ) {
-    if (!raw) {
+    if (!raw && !jsonOutput) {
         println "-" * 50
         StringBuilder header = new StringBuilder("Searching Dataset [${datasetName}]: \"${query}\"")
         if (extensions != null && !extensions.isEmpty()) {
@@ -579,6 +680,13 @@ static void executeFederatedSearch(
 
     List<Map> matches = (res.results as List<Map>) ?: []
 
+    if (jsonOutput) {
+        emitJsonArray(matches.collect { Map row ->
+            toJsonRow(row, row.rrf_score as Double, cleanSnippet(row.snippet?.toString()))
+        })
+        return
+    }
+
     if (matches.isEmpty()) {
         printf "No results found across %d database(s) in %.2f ms.%n", res.database_count, res.total_duration_ms
         return
@@ -609,8 +717,8 @@ static void executeFederatedSearch(
 /**
  * Executes a single-database FTS5 search query.
  */
-static void executeSearch(MemoryEngine engine, String query, int limit = 20, boolean raw = false, int snippetSize = 64, List<String> extensions = null, String archiveFilter = null) {
-    if (!raw) {
+static void executeSearch(MemoryEngine engine, String query, int limit = 20, boolean raw = false, int snippetSize = 64, List<String> extensions = null, String archiveFilter = null, boolean jsonOutput = false) {
+    if (!raw && !jsonOutput) {
         println "-" * 50
         StringBuilder header = new StringBuilder("Searching: \"${query}\"")
         if (extensions != null && !extensions.isEmpty()) {
@@ -635,6 +743,13 @@ static void executeSearch(MemoryEngine engine, String query, int limit = 20, boo
     try {
         long startNanos = System.nanoTime()
         List<Map> results = engine.search(query, limit, snippetSize, extensions, archiveFilter)
+        if (jsonOutput) {
+            emitJsonArray(results.collect { Map row ->
+                toJsonRow(row, row.rank as Double, cleanSnippet(row.snippet?.toString()))
+            })
+            return
+        }
+
         long elapsedNanos = System.nanoTime() - startNanos
         double elapsedMs = elapsedNanos / 1_000_000.0
 
@@ -669,7 +784,7 @@ static void executeSearch(MemoryEngine engine, String query, int limit = 20, boo
 /**
  * Displays full content of a document by ID.
  */
-static void executeDocView(MemoryEngine engine, String idStr, boolean raw = false, int maxLines = 200) {
+static void executeDocView(MemoryEngine engine, String idStr, boolean raw = false, int maxLines = 200, boolean jsonOutput = false) {
     try {
         int id = idStr.toInteger()
         long startNanos = System.nanoTime()
@@ -677,7 +792,16 @@ static void executeDocView(MemoryEngine engine, String idStr, boolean raw = fals
         double elapsedMs = (System.nanoTime() - startNanos) / 1_000_000.0
 
         if (doc == null) {
+            if (jsonOutput) {
+                emitJsonArray([])
+                return
+            }
             printf "Document ID %d not found (%.2f ms).%n", id, elapsedMs
+            return
+        }
+
+        if (jsonOutput) {
+            emitJsonArray([toJsonRow(doc, null, doc.content?.toString())])
             return
         }
 
@@ -741,12 +865,16 @@ static void executeExtList(MemoryEngine engine, String extension, int limit = 50
 /**
  * Lists files matching path pattern.
  */
-static void executeFileList(MemoryEngine engine, String pattern, int limit = 50) {
+static void executeFileList(MemoryEngine engine, String pattern, int limit = 50, boolean jsonOutput = false) {
     if (!pattern.contains('%') && !pattern.contains('_')) {
         pattern = "%${pattern}%"
     }
 
     List<Map> results = engine.listFiles(pattern, limit)
+    if (jsonOutput) {
+        emitJsonArray(results.collect { Map row -> toJsonRow(row, null, '') })
+        return
+    }
     if (results.isEmpty()) {
         println "No files matching pattern: ${pattern}"
         return
@@ -762,9 +890,27 @@ static void executeFileList(MemoryEngine engine, String pattern, int limit = 50)
 /**
  * Prints aggregated statistics across all database members in a dataset.
  */
-static void printDatasetStats(String datasetName) {
+static void printDatasetStats(String datasetName, boolean jsonOutput = false) {
     String setName = datasetName ?: SetRegistry.getActiveSet()
     List<File> dbFiles = SetRegistry.getDatabasesForSet(setName)
+
+    if (jsonOutput) {
+        List<Map> rows = []
+        dbFiles.each { File dbFile ->
+            MemoryEngine eng = new MemoryEngine(dbFile.absolutePath)
+            Map stats = eng.getStats()
+            eng.close()
+            rows << toJsonRow([
+                id: null,
+                source_archive: setName,
+                file_path: dbFile.name,
+                file_name: dbFile.name,
+                extension: '.db'
+            ], null, JsonOutput.toJson(stats))
+        }
+        emitJsonArray(rows)
+        return
+    }
 
     println "=" * 85
     println "Statistics — Dataset: ${setName} (${dbFiles.size()} database members in scope)"
@@ -827,9 +973,28 @@ static void printDatasetStats(String datasetName) {
 /**
  * Prints aggregated archives across all database members in a dataset.
  */
-static void printDatasetArchives(String datasetName) {
+static void printDatasetArchives(String datasetName, boolean jsonOutput = false) {
     String setName = datasetName ?: SetRegistry.getActiveSet()
     List<File> dbFiles = SetRegistry.getDatabasesForSet(setName)
+
+    if (jsonOutput) {
+        List<Map> rows = []
+        dbFiles.each { File dbFile ->
+            MemoryEngine eng = new MemoryEngine(dbFile.absolutePath)
+            eng.listArchives().each { Map archive ->
+                rows << toJsonRow([
+                    id: null,
+                    source_archive: archive.source_archive,
+                    file_path: dbFile.name,
+                    file_name: archive.source_archive,
+                    extension: '.db'
+                ], null, JsonOutput.toJson(archive))
+            }
+            eng.close()
+        }
+        emitJsonArray(rows)
+        return
+    }
 
     println "=" * 104
     println "Archives — Dataset: ${setName} (${dbFiles.size()} database members in scope)"
@@ -901,8 +1066,18 @@ static void printDatasetArchives(String datasetName) {
 /**
  * Prints single-database statistics (when targeted via explicit --db).
  */
-static void printStats(MemoryEngine engine) {
+static void printStats(MemoryEngine engine, boolean jsonOutput = false) {
     Map stats = engine.getStats()
+    if (jsonOutput) {
+        emitJsonArray([toJsonRow([
+            id: null,
+            source_archive: 'stats',
+            file_path: Config.DB_PATH.name,
+            file_name: Config.DB_PATH.name,
+            extension: '.db'
+        ], null, JsonOutput.toJson(stats))])
+        return
+    }
     long dbFileSizeBytes = Config.DB_PATH.exists() ? Config.DB_PATH.length() : 0
     int totalDocs = (stats.total_documents ?: 0) as int
     int compressedDocs = (stats.compressed_documents ?: 0) as int
@@ -961,8 +1136,20 @@ static void printDatabases() {
 /**
  * Lists all distinct archives in a single database (when targeted via explicit --db).
  */
-static void printArchives(MemoryEngine engine) {
+static void printArchives(MemoryEngine engine, boolean jsonOutput = false) {
     List<Map> archives = engine.listArchives()
+    if (jsonOutput) {
+        emitJsonArray(archives.collect { Map archive ->
+            toJsonRow([
+                id: null,
+                source_archive: archive.source_archive,
+                file_path: archive.source_archive,
+                file_name: archive.source_archive,
+                extension: ''
+            ], null, JsonOutput.toJson(archive))
+        })
+        return
+    }
     println "=" * 85
     println "Database Archives (${archives.size()} recorded):"
     println "=" * 85
@@ -1036,6 +1223,397 @@ static void executeRename(MemoryEngine engine, String oldName, String newName) {
 }
 
 /**
+ * Builds an FTS5 expression from a base query and path facets.
+ *
+ * @param baseQuery User query
+ * @param ticket Ticket key
+ * @param mode Mode value
+ * @param impact Impact value
+ * @param since Inclusive start date
+ * @param until Inclusive end date
+ * @return Combined FTS5 expression
+ */
+static String buildFacetMatchExpression(
+    String baseQuery,
+    String ticket,
+    String mode,
+    String impact,
+    String since,
+    String until
+) {
+    List<String> facetTerms = []
+    if (ticket) facetTerms << "file_path:${queryTicketFacet(ticket)}"
+    if (mode) facetTerms << "file_path:${queryModeFacet(mode)}"
+    if (impact) facetTerms << "file_path:\"${queryImpactFacet(impact)}\""
+    List<String> monthTerms = monthFacets(since, until)
+    if (monthTerms) facetTerms << '(' + monthTerms.collect { "file_path:${it}*" }.join(' OR ') + ')'
+    if (!facetTerms) return baseQuery
+    List<String> terms = []
+    if (baseQuery?.trim()) terms << "(${baseQuery.trim()})"
+    terms.addAll(facetTerms)
+    return terms.join(' AND ')
+}
+
+/**
+ * Retrieves and prints recent chat documents across a database or dataset.
+ *
+ * @param explicitDb Optional database identifier
+ * @param datasetName Dataset name
+ * @param limit Result limit
+ * @param ticket Ticket facet
+ * @param mode Mode facet
+ * @param impact Impact facet
+ * @param since Inclusive start date
+ * @param until Inclusive end date
+ * @param jsonOutput Whether to emit JSON
+ */
+static void executeRecent(
+    String explicitDb,
+    String datasetName,
+    int limit,
+    String ticket,
+    String mode,
+    String impact,
+    String since,
+    String until,
+    boolean jsonOutput
+) {
+    List<File> databases = scopedDatabases(explicitDb, datasetName)
+    List<Map> rows = recentRows(databases, Math.max(limit, 1), ticket, mode, impact, since, until)
+    if (jsonOutput) {
+        emitJsonArray(rows.collect { Map row -> toJsonRow(row, null, cleanSnippet(row.content?.toString())) })
+        return
+    }
+    rows.eachWithIndex { Map row, int index ->
+        printf "[%d] [%s] ID:%s  %s%n", index + 1, row.origin_db, row.id, row.file_path
+        printHangingSnippet(cleanSnippet(row.content?.toString()).take(500), 95)
+        println ""
+    }
+    println "Found ${rows.size()} recent document(s)."
+}
+
+/**
+ * Assembles and prints curated resume context.
+ *
+ * @param explicitDb Optional database identifier
+ * @param datasetName Dataset name
+ * @param budgetBytes Output byte budget
+ * @param ticket Ticket facet
+ * @param mode Mode facet
+ * @param impact Impact facet
+ * @param since Inclusive start date
+ * @param until Inclusive end date
+ * @param jsonOutput Whether to emit JSON
+ */
+static void executeResume(
+    String explicitDb,
+    String datasetName,
+    int budgetBytes,
+    String ticket,
+    String mode,
+    String impact,
+    String since,
+    String until,
+    boolean jsonOutput
+) {
+    List<File> databases = scopedDatabases(explicitDb, datasetName)
+    List<Map> recent = recentRows(
+        databases,
+        Config.RESUME_RECENT_TURNS,
+        ticket,
+        mode,
+        impact,
+        since,
+        until
+    )
+    String effectiveTicket = ticket ? queryTicketFacet(ticket) : dominantTicket(recent)
+    List<Map> relevant = effectiveTicket ? searchRows(databases, "file_path:${effectiveTicket}", 30) : []
+    List<Map> highImpact = effectiveTicket
+        ? searchRows(databases, "file_path:${effectiveTicket} AND file_path:\"impact-high\"", 30)
+        : searchRows(databases, 'file_path:"impact-high"', 30)
+    Class digestClass = Thread.currentThread().contextClassLoader.loadClass('ResumeDigest')
+    Map assembly = digestClass.assemble(recent, relevant, highImpact, budgetBytes)
+    if (jsonOutput) {
+        emitJsonArray((assembly.items as List).collect { Map row ->
+            toJsonRow(row, row.rank as Double, cleanSnippet(row.content?.toString()))
+        })
+        return
+    }
+    print digestClass.render(assembly)
+    println "Resume bytes: ${assembly.content_bytes}/${assembly.budget_bytes}"
+}
+
+/**
+ * Queries recent rows from scoped databases and merges by global sequence.
+ *
+ * @param databases Database files
+ * @param limit Result limit
+ * @param ticket Ticket facet
+ * @param mode Mode facet
+ * @param impact Impact facet
+ * @param since Inclusive start date
+ * @param until Inclusive end date
+ * @return Merged recent rows
+ */
+static List<Map> recentRows(
+    List<File> databases,
+    int limit,
+    String ticket = null,
+    String mode = null,
+    String impact = null,
+    String since = null,
+    String until = null
+) {
+    List<Map> rows = []
+    databases.each { File database ->
+        def driver = Thread.currentThread().contextClassLoader
+            .loadClass('org.sqlite.JDBC').getDeclaredConstructor().newInstance()
+        def connection = driver.connect("jdbc:sqlite:${database.absolutePath}", new Properties())
+        Sql sql = new Sql(connection)
+        try {
+            StringBuilder query = new StringBuilder('''
+                SELECT id, source_archive, file_path, file_name, extension,
+                       size_bytes, content, is_compressed
+                FROM documents
+                WHERE source_archive = 'chat:turns'
+                  AND file_name GLOB 'turn-[0-9]*.md'
+            ''')
+            List<Object> params = []
+            if (ticket) {
+                query.append(' AND file_path LIKE ?')
+                params << "%${queryTicketFacet(ticket)}/%"
+            }
+            if (mode) {
+                query.append(' AND file_path LIKE ?')
+                params << "%/${queryModeFacet(mode)}/%"
+            }
+            if (impact) {
+                query.append(' AND file_path LIKE ?')
+                params << "%/${queryImpactFacet(impact)}/%"
+            }
+            if (since) {
+                query.append(' AND substr(file_path, instr(file_path, \'/d\') + 2, 8) >= ?')
+                params << since.replaceAll(/[^0-9]/, '').take(8)
+            }
+            if (until) {
+                query.append(' AND substr(file_path, instr(file_path, \'/d\') + 2, 8) <= ?')
+                params << until.replaceAll(/[^0-9]/, '').take(8)
+            }
+            query.append('''
+                ORDER BY CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) DESC,
+                         file_path ASC,
+                         id DESC
+                LIMIT ?
+            ''')
+            params << Math.max(limit * Math.max(databases.size(), 1), limit)
+            sql.eachRow(query.toString(), params) { row ->
+                String content = row.is_compressed == 1
+                    ? MemoryEngine.decompressText(row.content)
+                    : row.content?.toString() ?: ''
+                rows << [
+                    id: row.id,
+                    source_archive: row.source_archive,
+                    file_path: row.file_path,
+                    file_name: row.file_name,
+                    extension: row.extension,
+                    rank: null,
+                    snippet: '',
+                    content: content,
+                    origin_db: database.name,
+                    sequence: sequenceOf(row.file_name?.toString())
+                ]
+            }
+        } finally {
+            sql.close()
+        }
+    }
+    rows.sort { Map left, Map right ->
+        int bySequence = (right.sequence as long) <=> (left.sequence as long)
+        if (bySequence != 0) return bySequence
+        int byDatabase = left.origin_db.toString() <=> right.origin_db.toString()
+        if (byDatabase != 0) return byDatabase
+        int byPath = left.file_path.toString() <=> right.file_path.toString()
+        return byPath != 0 ? byPath : (right.id as long) <=> (left.id as long)
+    }
+    return rows.take(limit)
+}
+
+/**
+ * Searches multiple databases and enriches results with full document content.
+ *
+ * @param databases Database files
+ * @param expression FTS5 expression
+ * @param limit Per-database limit
+ * @return Ranked rows
+ */
+static List<Map> searchRows(List<File> databases, String expression, int limit) {
+    List<Map> rows = []
+    databases.each { File database ->
+        MemoryEngine engine = new MemoryEngine(database.absolutePath)
+        engine.search(expression, limit).each { Map result ->
+            Map document = engine.getDocument(result.id as int)
+            rows << new LinkedHashMap(result) + [
+                content: document?.content ?: result.snippet ?: '',
+                origin_db: database.name,
+                sequence: sequenceOf(result.file_name?.toString())
+            ]
+        }
+        engine.close()
+    }
+    rows.sort { Map left, Map right ->
+        (left.rank as double) <=> (right.rank as double)
+    }
+    return rows.take(limit)
+}
+
+/**
+ * Emits rows as a compact JSON array.
+ *
+ * @param rows JSON-ready row maps
+ */
+static void emitJsonArray(List<Map> rows) {
+    println JsonOutput.toJson(rows ?: [])
+}
+
+/**
+ * Normalizes command rows to the stable seven-field JSON contract.
+ *
+ * @param row Source row
+ * @param rank Rank value
+ * @param snippet Snippet text
+ * @return Ordered JSON row
+ */
+static Map toJsonRow(Map row, Double rank = null, String snippet = '') {
+    return [
+        id: row.id,
+        source_archive: row.source_archive,
+        file_path: row.file_path,
+        file_name: row.file_name,
+        extension: row.extension,
+        rank: rank,
+        snippet: snippet ?: ''
+    ]
+}
+
+static void executeTicket(String ticket, String terms, int limit, int budget, boolean jsonOutput, boolean contextOutput) {
+    if (!ticket) {
+        println 'ERROR: ticket key is required'
+        return
+    }
+    Class retrievalClass = Thread.currentThread().contextClassLoader.loadClass('TicketRetrieval')
+    List<Map> candidates = retrievalClass.retrieve(Config.DATA_DIR, ticket, terms ?: '', Math.max(limit, 1)) as List<Map>
+    if (contextOutput) {
+        Map assembly = retrievalClass.assembleContext(candidates, budget) as Map
+        if (jsonOutput) {
+            emitJsonArray((assembly.items as List<Map>).collect { Map row -> ticketJsonRow(row, row.snippet?.toString() ?: '') })
+            return
+        }
+        println "Ticket Context: ${ticket} | ${assembly.content_bytes}/${assembly.budget_bytes} bytes"
+        (assembly.items as List<Map>).each { Map row ->
+            println ''
+            println "--- [${row.pool}] [${row.authority}/${row.state}] ${row.origin_db}:${row.file_path} ---"
+            println row.content
+        }
+        return
+    }
+    if (jsonOutput) {
+        emitJsonArray(candidates.collect { Map row -> ticketJsonRow(row, row.snippet?.toString() ?: '') })
+        return
+    }
+    println "Ticket Memory: ${ticket} (${candidates.size()} candidates)"
+    candidates.eachWithIndex { Map row, int index ->
+        printf "[%d] [%s] [%s/%s] %s:%s%n", index + 1, row.pool, row.authority, row.state, row.origin_db, row.file_path
+        printHangingSnippet(row.snippet?.toString() ?: '', 95)
+        println ''
+    }
+}
+
+static Map ticketJsonRow(Map row, String snippet) {
+    return toJsonRow(row, row.rank as Double, snippet) + [
+        origin_db: row.origin_db,
+        pool: row.pool,
+        authority: row.authority,
+        state: row.state
+    ]
+}
+
+private static List<File> scopedDatabases(String explicitDb, String datasetName) {
+    if (explicitDb) {
+        File database = Config.resolveDatabase(explicitDb)
+        return database.exists() ? [database] : []
+    }
+    return DatasetRegistry.getDatabasesForDataset(datasetName)
+}
+
+private static List<String> monthFacets(String since, String until) {
+    if (!since && !until) return []
+    LocalDate start = parseDate(since ?: until)
+    LocalDate end = parseDate(until ?: since)
+    if (start == null || end == null) return []
+    if (end.isBefore(start)) {
+        LocalDate swap = start
+        start = end
+        end = swap
+    }
+    List<String> facets = []
+    YearMonth current = YearMonth.from(start)
+    YearMonth finish = YearMonth.from(end)
+    while (!current.isAfter(finish)) {
+        facets << 'd' + current.format(DateTimeFormatter.ofPattern('yyyyMM'))
+        current = current.plusMonths(1)
+    }
+    return facets
+}
+
+private static LocalDate parseDate(String value) {
+    if (!value) return null
+    String digits = value.replaceAll(/[^0-9]/, '')
+    if (digits.length() < 8) return null
+    try {
+        return LocalDate.parse(digits.take(8), DateTimeFormatter.ofPattern('yyyyMMdd'))
+    } catch (Exception ignored) {
+        return null
+    }
+}
+
+private static long sequenceOf(String fileName) {
+    def matcher = (fileName ?: '') =~ /(?:turn|artifact)-(\d+)\.md$/
+    return matcher.find() ? matcher.group(1).toLong() : 0L
+}
+
+private static String dominantTicket(List<Map> rows) {
+    Map<String, Integer> counts = [:].withDefault { 0 }
+    rows.each { Map row ->
+        String ticket = row.file_path?.toString()?.tokenize('/')?.find { it ==~ /[a-z]+[0-9]+|noticket/ }
+        if (ticket && ticket != 'noticket') counts[ticket] = counts[ticket] + 1
+    }
+    if (!counts) return null
+    def winner = counts.max { a, b -> a.value <=> b.value }
+    return winner.value > (rows.size() / 2) ? winner.key : null
+}
+
+private static String cleanSnippet(String value) {
+    String cleaned = (value ?: '').replace('>>>', '').replace('<<<', '').trim()
+    if (cleaned.startsWith('---')) cleaned = cleaned.replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+    return cleaned.replaceAll(/\s+/, ' ').trim()
+}
+
+private static String queryTicketFacet(String value) {
+    String token = (value ?: '').toLowerCase(Locale.ROOT).replaceAll(/[^a-z0-9]/, '')
+    return token ?: 'noticket'
+}
+
+private static String queryModeFacet(String value) {
+    String token = (value ?: '').toLowerCase(Locale.ROOT).replaceAll(/[^a-z0-9]/, '')
+    return token in ['research', 'innovate', 'plan', 'execute'] ? token : 'nomode'
+}
+
+private static String queryImpactFacet(String value) {
+    String token = (value ?: '').toLowerCase(Locale.ROOT).replaceAll(/[^a-z0-9]/, '')
+    return "impact-${token in ['high', 'low', 'none'] ? token : 'none'}"
+}
+
+/**
  * Prints REPL help reference.
  */
 static void printHelp() {
@@ -1056,6 +1634,8 @@ Dataset Management:
 
 Inspection Commands:
   :stats                   Aggregated statistics for active dataset (or --db)
+  :recent                  Show recent chat documents without FTS ranking
+  :resume                  Assemble curated resume context within the byte budget
   :doc <id>                View document content (supports --all, --lines N, --raw)
   :ext <.ext>              List files by extension (e.g. :ext .sql, :ext "")
   :files <pattern>         List files matching SQL LIKE pattern

@@ -1,0 +1,66 @@
+=== 2026-08-22 08:00 ===
+USER: Three-equals banner
+ASSISTANT: Three-equals response
+================================================================================
+===== 2026-08-22 08:01 =====
+USER: Five-equals banner
+ASSISTANT: Five-equals response
+================================================================================
+--- 2026-08-22 08:02 ---
+USER: Dash banner
+ASSISTANT: Dash response
+================================================================================
+--- START PROMPT LOG ENTRY ---
+TIMESTAMP: 2026-08-22 08:03
+USER: Start fence
+ASSISTANT: Start fence response
+--- END PROMPT LOG ENTRY ---
+--- PROMPT LOG ENTRY PARTIAL ---
+DATE: 2026-08-22 08:04
+USER: Partial fence
+ASSISTANT: Partial fence response
+--- END PROMPT LOG ENTRY ---
+--- PROMPT LOG ENTRY 2026-08-22 08:05 ---
+USER: Timestamp fence
+ASSISTANT: Timestamp fence response
+--- END PROMPT LOG ENTRY ---
+[2026-08-22T08:06:00Z] PROMPT: Inline bracket prompt
+[2026-08-22T08:06:00Z] ASSISTANT: Inline bracket response
+[2026-08-22T08:07:00Z]
+================================================================================
+USER: Bare bracket header
+ASSISTANT (RESEARCH): Qualified response
+[2026-08-22T08:08:00Z] [MODE: PLAN]
+================================================================================
+USER (PLAN): Bracket mode header
+RESPONSE (PLAN): Bracket mode response
+[2026-08-22T08:09:00Z] KD-6607 ticket heading
+--------------------------------------------------------------------------------
+PROMPT: Bracket ticket header
+RESPONSE: Bracket ticket response
+[2026-08-22T08:10:00Z] Descriptive deployment heading
+================================================================================
+USER: Bracket descriptive header
+ASSISTANT: Bracket descriptive response
+2026-08-22 08:11 (continuation)
+================================================================================
+USER: Bare continuation header
+ASSISTANT: Bare continuation response
+2026-08-22 08:12 - MODE: EXECUTE
+================================================================================
+USER: Bare mode header
+ASSISTANT: Bare mode response
+2026-08-22 08:13 [MODE: RESEARCH] CWP-11649 ticket
+================================================================================
+USER: Bare bracket-mode ticket
+ASSISTANT: Bare bracket-mode response
+2026-08-22 08:14 - PROMPT INPUT
+================================================================================
+USER: Date prompt input
+================================================================================
+2026-08-22 08:14 - PROMPT OUTPUT
+================================================================================
+ASSISTANT: Date prompt output
+TIMESTAMP: 2026-08-22 08:15
+INPUT: Input alias
+OUTPUT: Output alias response

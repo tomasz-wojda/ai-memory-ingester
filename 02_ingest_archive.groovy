@@ -194,6 +194,17 @@ if (targetDir != null) {
         String sName = strategy.name()
         return sName == 'TEXT_PLAIN' || sName == 'DOCUMENT' || sName == 'UNKNOWN'
     }
+    boolean canonicalMemoryDirectory = indexable && indexable.every { ArchiveEntry entry ->
+        entry.name ==~ /(?:turn|artifact)-\d+\.md/
+    }
+    if (canonicalMemoryDirectory) {
+        indexable.sort { ArchiveEntry left, ArchiveEntry right ->
+            long leftSequence = (left.name =~ /(?:turn|artifact)-(\d+)\.md/)[0][1].toLong()
+            long rightSequence = (right.name =~ /(?:turn|artifact)-(\d+)\.md/)[0][1].toLong()
+            int bySequence = leftSequence <=> rightSequence
+            return bySequence != 0 ? bySequence : left.path <=> right.path
+        }
+    }
 
     println "Total files: ${entries.size()} | Indexable: ${indexable.size()}"
     long startMs = System.currentTimeMillis()

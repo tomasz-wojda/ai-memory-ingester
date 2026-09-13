@@ -50,6 +50,7 @@ class WorklogEmitter {
                 source_hash: sourceHash,
                 source_size: source.length(),
                 source_modified: source.lastModified(),
+                parser_version: Config.WORKLOG_PARSER_VERSION,
                 ticket: staged.ticket,
                 evidence: staged.evidence,
                 outputs: nextPaths

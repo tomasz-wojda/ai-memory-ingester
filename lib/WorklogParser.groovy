@@ -1,5 +1,10 @@
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class WorklogParser {
     private static final String SECTION_RULE = '=' * 80
@@ -24,6 +29,7 @@ class WorklogParser {
             source: sourcePath,
             ticket: ticket,
             source_date: extractSourceDate(source.name),
+            latest_source_time: extractLatestRecordedTime(lines, source).toString(),
             structured: ticket != null && sections.size() > 1,
             chunks: chunks,
             line_count: lines.size()
@@ -62,8 +68,10 @@ class WorklogParser {
 
     static String classifySection(String heading) {
         String value = (heading ?: '').toUpperCase()
+        if (value =~ /RELATED TICKET/) return 'related-ticket'
         if (value =~ /DELIVERY|COMPLETED DELIVERY|VERDICT/) return 'delivery'
         if (value =~ /NEXT ACTION/) return 'next-action'
+        if (value =~ /BLOCKER/) return 'blockers'
         if (value =~ /MANUAL ACTION/) return 'manual-actions'
         if (value =~ /ACTION LOG/) return 'action-log'
         if (value =~ /STATUS|CURRENT STATE/) return 'status'
@@ -113,5 +121,37 @@ class WorklogParser {
     static String extractSourceDate(String name) {
         def matcher = name =~ /^(\d{4}-\d{2}-\d{2})/
         return matcher.find() ? matcher.group(1) : LocalDate.ofEpochDay(0).toString()
+    }
+
+    static Instant extractLatestRecordedTime(List<String> lines, File source) {
+        List<Instant> timestamps = []
+        (lines ?: []).each { String line ->
+            boolean trustworthy = line ==~ /^\s*\d{4}-\d{2}-\d{2}.*/ ||
+                line ==~ /(?i).*\b(?:UPDATED|CURRENT|STATUS|ACTION|DELIVERY|VERIFIED|COMPLETED|RESOLVED|BLOCKER|EXECUTED|MERGED|DEPLOYED)\b.*/
+            if (!trustworthy) return
+            def matcher = line =~ /\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/
+            while (matcher.find()) {
+                Instant parsed = parseSourceTime(matcher.group())
+                if (parsed) timestamps << parsed
+            }
+        }
+        return timestamps ? timestamps.max() : Instant.ofEpochMilli(source.lastModified())
+    }
+
+    private static Instant parseSourceTime(String value) {
+        try {
+            if (value.length() == 10) {
+                return LocalDate.parse(value).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusNanos(1)
+            }
+            String normalized = value.replace(' ', 'T').replaceFirst(/([+-]\d{2})(\d{2})$/, '$1:$2')
+            if (normalized.endsWith('Z') || normalized ==~ /.*[+-]\d{2}:\d{2}$/) {
+                return OffsetDateTime.parse(normalized, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+            }
+            return LocalDateTime.parse(normalized, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+        } catch (Exception ignored) {
+            return null
+        }
     }
 }

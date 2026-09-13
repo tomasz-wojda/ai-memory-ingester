@@ -185,6 +185,32 @@ class ResumeDigest {
             }
         }
         List<Map> items = []
+        if (capsule.exists()) {
+            String capsuleContent = capsule.getText('UTF-8')
+            Map metadata = TicketFreshness.frontMatter(capsuleContent)
+            if (metadata.freshness == 'stale') {
+                List<String> paths = []
+                def pathMatcher = (metadata.newer_evidence ?: '') =~ /"([^"]+)"/
+                while (pathMatcher.find()) paths << pathMatcher.group(1)
+                String warning = [
+                    '# AUTHORITATIVE WORKLOG STALE',
+                    '',
+                    "Authoritative through: `${metadata.authoritative_through ?: 'unknown'}`",
+                    "Newer evidence through: `${metadata.newer_evidence_through ?: 'unknown'}`",
+                    '',
+                    paths.collect { "- `${it}`" }.join('\n')
+                ].join('\n').trim() + '\n'
+                items << [
+                    id: -1000L,
+                    source_archive: Config.WORKLOG_STATE_ARCHIVE,
+                    file_path: "ticket-state/${ticket}-freshness-warning.md",
+                    file_name: "${ticket}-freshness-warning.md",
+                    extension: '.md',
+                    rank: null,
+                    content: warning
+                ]
+            }
+        }
         files.eachWithIndex { File file, int index ->
             items << [
                 id: -1L - index,

@@ -9,6 +9,7 @@ import java.security.MessageDigest
 boolean allSources = false
 boolean sinceLast = false
 boolean dryRun = false
+boolean deferDigest = false
 String explicitWorkspace = null
 long spillBytes = Config.CHAT_SPILL_BYTES
 List<String> sourceArguments = []
@@ -23,6 +24,8 @@ while (argumentIndex < args.length) {
         allSources = true
     } else if (argument == '--dry-run') {
         dryRun = true
+    } else if (argument == '--defer-digest') {
+        deferDigest = true
     } else if (argument == '--source' && argumentIndex + 1 < args.length) {
         sourceArguments << args[++argumentIndex]
     } else if (argument.startsWith('--source=')) {
@@ -83,6 +86,7 @@ Map totals = [
     skippedDuplicate: 0
 ]
 long started = System.nanoTime()
+boolean sourceStateChanged = false
 
 sources.each { File source ->
     String sourcePath = relativePath(workspaceRoot, source)
@@ -98,6 +102,7 @@ sources.each { File source ->
         if (!dryRun && duplicateFile) {
             SweepState.record(sweepState, sourcePath, source)
             (sweepState.sources[sourcePath] as Map).full_hash = fullHash
+            sourceStateChanged = true
         }
         return
     }
@@ -172,22 +177,27 @@ sources.each { File source ->
     if (!dryRun) {
         SweepState.record(sweepState, sourcePath, source)
         (sweepState.sources[sourcePath] as Map).full_hash = fullHash
+        sourceStateChanged = true
     }
     knownFileHashes << fullHash
 }
 
-if (!dryRun) {
+if (!dryRun && sourceStateChanged) {
     TurnEmitter.saveHashIndex(indexFile, hashIndex)
     SweepState.save(stateFile, sweepState)
+}
+boolean digestUpdated = false
+if (!dryRun && !deferDigest && (sourceStateChanged || !new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists())) {
     ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES)
+    digestUpdated = true
 }
 
 boolean reconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
     totals.raw[tier] == totals.unique[tier] + totals.duplicate[tier]
 }
 double elapsedMs = (System.nanoTime() - started) / 1_000_000.0
-printf "TOTAL\t%s\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s%n",
-    reportFields(totals), totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun
+printf "TOTAL\t%s\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s%n",
+    reportFields(totals), totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun, digestUpdated
 
 /**
  * Returns a normalized path relative to the workspace.

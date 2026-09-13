@@ -246,8 +246,19 @@ ASSISTANT: Source discovered.
             'RECOMMENDATION -> LOCKED: OPTION A',
             '',
             rule,
+            '  RELATED TICKET',
+            rule,
+            'TEST-9999 is reference material only.',
+            '',
+            rule,
+            '  BLOCKERS',
+            rule,
+            'ACTIVE: production approval is pending.',
+            '',
+            rule,
             '  STATUS',
             rule,
+            '2026-09-10 12:00 - authoritative checkpoint.',
             'CURRENT: image 24-9 is verified.',
             'BLOCKER: promotion to master is required.',
             '',
@@ -263,9 +274,73 @@ ASSISTANT: Source discovered.
         File stale = new File(root, '2026-09-12_TEST-5678.log')
         stale.setText([
             rule, '  TICKET: TEST-5678', '  Summary: Revision fixture', rule, '',
-            rule, '  STATUS', rule, 'CURRENT: old state.', ''
+            rule, '  STATUS', rule, '2026-09-12 10:00 - CURRENT: old state.', ''
         ].join('\n'), 'UTF-8')
-        return [root: root, primary: primary, evidence: evidence, stale: stale]
+        File turns = new File(targetDir, 'worklog-chat/turns/test1234')
+        File newestHigh = writeTurn(
+            new File(turns, 'd20260912/execute/impact-high/turn-000010.md'),
+            '2026-09-12T12:00:00Z',
+            'exact',
+            'high',
+            10,
+            'TEST-1234 delivery advanced after the worklog.'
+        )
+        File newerLow = writeTurn(
+            new File(turns, 'd20260913/research/impact-low/turn-000011.md'),
+            '2026-09-13T12:00:00Z',
+            'exact',
+            'low',
+            11,
+            'TEST-1234 incidental low-impact observation.'
+        )
+        File olderHighSequence = writeTurn(
+            new File(turns, 'd20260911/execute/impact-high/turn-009999.md'),
+            '2026-09-11T12:00:00Z',
+            'exact',
+            'high',
+            9999,
+            'TEST-1234 older event with a larger sequence.'
+        )
+        File retrievalMeta = writeTurn(
+            new File(turns, 'd20260915/research/impact-high/turn-010000.md'),
+            '2026-09-15T12:00:00Z',
+            'exact',
+            'high',
+            10000,
+            'Compare top-20 snippets and stale deployment memory for TEST-1234.'
+        )
+        return [
+            root: root,
+            primary: primary,
+            evidence: evidence,
+            stale: stale,
+            turns: turns,
+            newestHigh: newestHigh,
+            newerLow: newerLow,
+            olderHighSequence: olderHighSequence,
+            retrievalMeta: retrievalMeta
+        ]
+    }
+
+    private static File writeTurn(File file, String timestamp, String confidence, String impact, long sequence, String body) {
+        file.parentFile.mkdirs()
+        file.setText([
+            '---',
+            "timestamp: \"${timestamp}\"",
+            "timestamp_confidence: \"${confidence}\"",
+            'mode: "execute"',
+            'tickets: ["TEST-1234"]',
+            'source: "prompt.log"',
+            "seq: ${sequence}",
+            "impact: \"${impact}\"",
+            '---',
+            '',
+            '## User',
+            '',
+            body,
+            ''
+        ].join('\n'), 'UTF-8')
+        return file
     }
 
     static void generateTestCorpus(File targetDir, boolean forceRecreate = false) {

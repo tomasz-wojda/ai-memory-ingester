@@ -1,5 +1,7 @@
 List<String> arguments = args as List<String>
 String workspaceValue = valueAfter(arguments, '--workspace-root')
+boolean forceStateRefresh = arguments.contains('--refresh-state')
+boolean forceDigestRefresh = arguments.contains('--refresh-digest')
 File repositoryRoot = new File('.').canonicalFile
 File workspaceRoot = Config.workspaceRoot(workspaceValue, repositoryRoot)
 File outputRoot = new File(workspaceRoot, Config.WORKLOG_CHAT_ROOT_NAME)
@@ -8,8 +10,9 @@ List<String> runner = new File(repositoryRoot, 'ai-memory-ingester').exists()
     : ['groovy', new File(repositoryRoot, 'run.groovy').absolutePath]
 
 long started = System.currentTimeMillis()
-Map chat = execute(runner + ['chatlog', '--since-last', '--workspace-root', workspaceRoot.absolutePath], repositoryRoot)
+Map chat = execute(runner + ['chatlog', '--since-last', '--defer-digest', '--workspace-root', workspaceRoot.absolutePath], repositoryRoot)
 boolean chatChanged = chat.output =~ /unique_(?:turns|artifacts|dross)=[1-9]/
+boolean chatTurnsChanged = chat.output =~ /unique_turns=[1-9]/
 List<Map> syncResults = []
 boolean chatSyncNeeded = chatChanged ||
     archiveCount(new File(Config.DATA_DIR, Config.CONVERSATION_DB_NAME), 'chat:turns') != matchingCount(new File(outputRoot, 'turns')) { it.name ==~ /turn-\d+\.md/ } ||
@@ -21,16 +24,20 @@ if (chatSyncNeeded) {
     syncDirectory(new File(outputRoot, 'dross'), new File(Config.DATA_DIR, Config.DROSS_DB_NAME), 'chat:dross') { File file -> file.name.endsWith('.md') }
 }
 
-Map worklogs = execute(runner + [
+List<String> worklogCommand = runner + [
     'worklogs', '--changed', '--sync-db', '--workspace-root', workspaceRoot.absolutePath
-], repositoryRoot)
-reconcileDatasets()
-ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES)
+]
+if (chatTurnsChanged || forceStateRefresh) worklogCommand << '--refresh-state'
+Map worklogs = execute(worklogCommand, repositoryRoot)
+boolean worklogsChanged = worklogs.output =~ /(?:^|\t)(?:changed|capsules)=[1-9]/
+if (chatSyncNeeded || worklogsChanged) reconcileDatasets()
+boolean digestUpdated = forceDigestRefresh || chatTurnsChanged || worklogsChanged || !new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists()
+if (digestUpdated) ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES)
 
 int failures = [chat, worklogs].count { (it.code as int) != 0 }
 println chat.output.trim()
 println worklogs.output.trim()
-println "SWEEP_MEMORY\tchat_changed=${chatChanged}\tdatabase_syncs=${chatSyncNeeded ? 3 : 0}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length()}\telapsed_ms=${System.currentTimeMillis() - started}"
+println "SWEEP_MEMORY\tchat_changed=${chatChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded ? 3 : 0}\tdigest_updated=${digestUpdated}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length()}\telapsed_ms=${System.currentTimeMillis() - started}"
 if (failures > 0) exitApp(1)
 
 static Map execute(List<String> command, File directory) {

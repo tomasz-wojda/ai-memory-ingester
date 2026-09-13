@@ -66,7 +66,7 @@ class TestChatLogSuite {
         [
             'Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
             'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
-            'TurnDocument', 'TurnEmitter', 'SweepState', 'ResumeDigest',
+            'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
             'DatasetRegistry', 'SetRegistry', 'FederatedEngine'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')

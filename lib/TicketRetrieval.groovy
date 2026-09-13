@@ -1,18 +1,32 @@
 import groovy.sql.Sql
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 class TicketRetrieval {
     static List<Map> retrieve(File dataDir, String ticket, String terms = '', int limit = 20) {
         String facet = normalizeTicket(ticket)
         List<Map> state = stateCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 1)
         List<Map> authoritative = authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 4)
-        List<Map> recent = recentTurnCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 5)
-        List<Map> impact = impactCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 5)
-        List<Map> semantic = terms?.trim()
+        List<Map> recent = recentTurnCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 10)
+        List<Map> impact = impactCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 200)
+        impact.each { Map candidate ->
+            candidate.explicit_user_ticket = TicketFreshness.hasExplicitUserTicket(candidate.content?.toString(), ticket)
+            candidate.material_ticket_evidence = TicketFreshness.hasMaterialTicketEvidence(candidate.content?.toString())
+        }
+        boolean stale = state && state[0].freshness == 'stale'
+        List<Map> newerEvidence = stale
+            ? newerEvidenceCandidates(impact, state[0], 5)
+            : []
+        Set<String> newerPaths = newerEvidence.collect { it.file_path?.toString() } as Set<String>
+        List<Map> remainingRecent = recent.findAll { !newerPaths.contains(it.file_path?.toString()) }.take(5)
+        List<Map> semanticOrFill = terms?.trim()
             ? semanticCandidates(dataDir, facet, terms.trim(), 5)
-            : authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 9).drop(authoritative.size()) +
-                recentTurnCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 10).drop(recent.size())
-        return mergeCandidates([state, authoritative, recent, impact, semantic], limit)
+            : authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 12).drop(authoritative.size()) +
+                recent.drop(remainingRecent.size())
+        List<List<Map>> pools = stale
+            ? [state, newerEvidence, authoritative, remainingRecent, semanticOrFill]
+            : [state, authoritative, recent.take(5), impact.take(5), semanticOrFill]
+        return mergeCandidates(pools, limit)
     }
 
     static List<Map> stateCandidates(File database, String facet, int limit) {
@@ -32,12 +46,13 @@ class TicketRetrieval {
             ORDER BY
               CASE
                 WHEN file_path LIKE '%/status/%' THEN 1
-                WHEN file_path LIKE '%/next-action/%' THEN 2
-                WHEN file_path LIKE '%/delivery/%' THEN 3
-                WHEN file_path LIKE '%/decisions/%' THEN 4
-                WHEN file_path LIKE '%/summary/%' THEN 5
-                WHEN file_path LIKE '%/findings/%' THEN 6
-                ELSE 7
+                WHEN file_path LIKE '%/blockers/%' THEN 2
+                WHEN file_path LIKE '%/next-action/%' THEN 3
+                WHEN file_path LIKE '%/delivery/%' THEN 4
+                WHEN file_path LIKE '%/decisions/%' THEN 5
+                WHEN file_path LIKE '%/summary/%' THEN 6
+                WHEN file_path LIKE '%/findings/%' THEN 7
+                ELSE 8
               END,
               CASE WHEN content LIKE '%state: "current"%' THEN 0 ELSE 1 END,
               id DESC
@@ -46,23 +61,44 @@ class TicketRetrieval {
     }
 
     static List<Map> recentTurnCandidates(File database, String facet, int limit) {
-        return rows(database, '''
+        List<Map> candidates = rows(database, '''
             SELECT id, source_archive, file_path, file_name, extension, content
             FROM documents
             WHERE source_archive = 'chat:turns' AND file_path LIKE ?
-            ORDER BY CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) DESC
+            ORDER BY id DESC
             LIMIT ?
-        ''', ["${facet}/%", limit], 'recent')
+        ''', ["${facet}/%", Math.max(limit * 20, 2000)], 'recent')
+        candidates.each { enrichTurn(it) }
+        candidates.sort(TicketFreshness.&compareTurnEvidence)
+        return candidates.take(limit)
     }
 
     static List<Map> impactCandidates(File database, String facet, int limit) {
-        return rows(database, '''
+        List<Map> candidates = rows(database, '''
             SELECT id, source_archive, file_path, file_name, extension, content
             FROM documents
             WHERE source_archive = 'chat:turns' AND file_path LIKE ? AND file_path LIKE '%/impact-high/%'
-            ORDER BY CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) DESC
+            ORDER BY id DESC
             LIMIT ?
-        ''', ["${facet}/%", limit], 'impact')
+        ''', ["${facet}/%", Math.max(limit * 20, 2000)], 'impact')
+        candidates.each { enrichTurn(it) }
+        candidates.sort(TicketFreshness.&compareTurnEvidence)
+        return candidates.take(limit)
+    }
+
+    static List<Map> newerEvidenceCandidates(List<Map> impact, Map state, int limit) {
+        Instant authoritativeThrough = TicketFreshness.parseInstant(state.authoritative_through?.toString())
+        if (!authoritativeThrough) return []
+        return impact.findAll { Map candidate ->
+            candidate.event_instant &&
+                !candidate.retrieval_meta &&
+                candidate.explicit_user_ticket &&
+                candidate.material_ticket_evidence &&
+                candidate.timestamp_confidence in ['exact', 'local'] &&
+                (candidate.event_instant as Instant).isAfter(authoritativeThrough)
+        }.collect { Map candidate ->
+            new LinkedHashMap(candidate) + [pool: 'newer-evidence']
+        }.take(limit)
     }
 
     static List<Map> semanticCandidates(File dataDir, String facet, String terms, int limit) {
@@ -80,7 +116,9 @@ class TicketRetrieval {
                             rank: result.rank,
                             pool: 'semantic',
                             authority: authority(document.content?.toString()),
-                            state: state(document.content?.toString())
+                            state: state(document.content?.toString()),
+                            freshness: freshness(document.content?.toString()),
+                            preview_terms: terms
                         ]
                     }
                 }
@@ -99,7 +137,7 @@ class TicketRetrieval {
                 String identity = "${item.origin_db}:${item.source_archive}:${item.file_path}"
                 if (!identities.contains(identity) && merged.size() < limit) {
                     Map candidate = new LinkedHashMap(item)
-                    candidate.snippet = bodyPreview(candidate.content?.toString() ?: '', '')
+                    candidate.snippet = bodyPreview(candidate.content?.toString() ?: '', candidate.preview_terms?.toString() ?: '')
                     merged << candidate
                     identities << identity
                 }
@@ -160,7 +198,10 @@ class TicketRetrieval {
                     rank: null,
                     pool: pool,
                     authority: authority(content),
-                    state: state(content)
+                    state: state(content),
+                    freshness: freshness(content),
+                    authoritative_through: metadata(content, 'authoritative_through'),
+                    newer_evidence_through: metadata(content, 'newer_evidence_through')
                 ]
             }
             return found
@@ -177,5 +218,30 @@ class TicketRetrieval {
     private static String state(String content) {
         def matcher = content =~ /(?m)^state:\s*"([^"]+)"/
         return matcher.find() ? matcher.group(1) : 'historical'
+    }
+
+    private static String freshness(String content) {
+        return metadata(content, 'freshness') ?: 'undetermined'
+    }
+
+    private static String metadata(String content, String field) {
+        def matcher = (content ?: '') =~ /(?m)^${java.util.regex.Pattern.quote(field)}:\s*"([^"]*)"/
+        return matcher.find() ? matcher.group(1) : null
+    }
+
+    private static void enrichTurn(Map candidate) {
+        Map metadata = TicketFreshness.frontMatter(candidate.content?.toString())
+        Instant eventInstant = TicketFreshness.parseInstant(metadata.timestamp?.toString())
+        candidate.event_time = eventInstant?.toString()
+        candidate.event_instant = eventInstant
+        candidate.timestamp_confidence = metadata.timestamp_confidence ?: 'unknown'
+        candidate.impact = metadata.impact ?: 'none'
+        candidate.retrieval_meta = TicketFreshness.isRetrievalMeta(candidate.content?.toString())
+        candidate.sequence = sequenceOf(candidate.file_name?.toString())
+    }
+
+    private static long sequenceOf(String fileName) {
+        def matcher = (fileName ?: '') =~ /turn-(\d+)\.md$/
+        return matcher.find() ? matcher.group(1).toLong() : 0L
     }
 }

@@ -1502,6 +1502,8 @@ static void executeTicket(String ticket, String terms, int limit, int budget, bo
     }
     Class retrievalClass = Thread.currentThread().contextClassLoader.loadClass('TicketRetrieval')
     List<Map> candidates = retrievalClass.retrieve(Config.DATA_DIR, ticket, terms ?: '', Math.max(limit, 1)) as List<Map>
+    Map stateCandidate = candidates.find { it.pool == 'state' }
+    boolean stale = stateCandidate?.freshness == 'stale'
     if (contextOutput) {
         Map assembly = retrievalClass.assembleContext(candidates, budget) as Map
         if (jsonOutput) {
@@ -1509,9 +1511,12 @@ static void executeTicket(String ticket, String terms, int limit, int budget, bo
             return
         }
         println "Ticket Context: ${ticket} | ${assembly.content_bytes}/${assembly.budget_bytes} bytes"
+        if (stale) {
+            println "AUTHORITATIVE WORKLOG STALE: ${stateCandidate.authoritative_through} < ${stateCandidate.newer_evidence_through}"
+        }
         (assembly.items as List<Map>).each { Map row ->
             println ''
-            println "--- [${row.pool}] [${row.authority}/${row.state}] ${row.origin_db}:${row.file_path} ---"
+            println "--- [${row.pool}] [${row.authority}/${row.state}/${row.freshness}] ${row.origin_db}:${row.file_path} ---"
             println row.content
         }
         return
@@ -1521,8 +1526,11 @@ static void executeTicket(String ticket, String terms, int limit, int budget, bo
         return
     }
     println "Ticket Memory: ${ticket} (${candidates.size()} candidates)"
+    if (stale) {
+        println "AUTHORITATIVE WORKLOG STALE: ${stateCandidate.authoritative_through} < ${stateCandidate.newer_evidence_through}"
+    }
     candidates.eachWithIndex { Map row, int index ->
-        printf "[%d] [%s] [%s/%s] %s:%s%n", index + 1, row.pool, row.authority, row.state, row.origin_db, row.file_path
+        printf "[%d] [%s] [%s/%s/%s] %s:%s%n", index + 1, row.pool, row.authority, row.state, row.freshness, row.origin_db, row.file_path
         printHangingSnippet(row.snippet?.toString() ?: '', 95)
         println ''
     }
@@ -1533,7 +1541,12 @@ static Map ticketJsonRow(Map row, String snippet) {
         origin_db: row.origin_db,
         pool: row.pool,
         authority: row.authority,
-        state: row.state
+        state: row.state,
+        freshness: row.freshness,
+        event_time: row.event_time,
+        timestamp_confidence: row.timestamp_confidence,
+        authoritative_through: row.authoritative_through,
+        newer_evidence_through: row.newer_evidence_through
     ]
 }
 

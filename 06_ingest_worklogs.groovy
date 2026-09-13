@@ -4,6 +4,7 @@ import java.security.MessageDigest
 List<String> arguments = args as List<String>
 boolean dryRun = arguments.contains('--dry-run')
 boolean syncDb = arguments.contains('--sync-db')
+boolean refreshState = arguments.contains('--refresh-state')
 String explicitWorkspace = valueAfter(arguments, '--workspace-root')
 List<String> explicitSources = valuesAfter(arguments, '--source')
 File repositoryRoot = new File('.').canonicalFile
@@ -26,7 +27,12 @@ if (!sources) {
 }
 sources = sources.unique { it.canonicalPath }.sort { a, b -> a.canonicalPath <=> b.canonicalPath }
 
-Map totals = [discovered: sources.size(), unchanged: 0, changed: 0, structured: 0, evidence: 0, emitted: 0, replaced: 0, deleted: 0, failed: 0, capsules: 0]
+Map totals = [
+    discovered: sources.size(), unchanged: 0, changed: 0, structured: 0,
+    evidence: 0, emitted: 0, replaced: 0, deleted: 0, failed: 0,
+    capsules: 0, refreshed_capsules: 0, fresh_capsules: 0,
+    stale_capsules: 0, undetermined_capsules: 0
+]
 Map<String, List<Map>> ticketChunks = [:].withDefault { [] }
 Set<String> changedTickets = [] as Set<String>
 
@@ -39,11 +45,12 @@ sources.each { File source ->
         if (parsed.ticket && !evidence) {
             (parsed.chunks as List<Map>).each { Map chunk ->
                 chunk.source_mtime = source.lastModified()
+                chunk.latest_source_time = parsed.latest_source_time
                 ticketChunks[parsed.ticket.toString()] << chunk
             }
         }
         Map previous = (state.sources[relative] ?: [:]) as Map
-        if (previous.source_hash == sourceHash) {
+        if (previous.source_hash == sourceHash && previous.parser_version == Config.WORKLOG_PARSER_VERSION) {
             totals.unchanged++
             return
         }
@@ -61,26 +68,48 @@ sources.each { File source ->
     }
 }
 
-changedTickets.each { String ticket ->
+Set<String> capsuleTickets = new LinkedHashSet<>(changedTickets)
+if (refreshState) capsuleTickets.addAll(ticketChunks.keySet())
+boolean capsuleChanged = false
+capsuleTickets.each { String ticket ->
     List<Map> chunks = ticketChunks[ticket]
     if (chunks) {
-        String content = TicketStateCapsule.render(TicketStateCapsule.assemble(ticket, chunks))
-        File capsule = WorklogEmitter.writeCapsule(outputRoot, ticket, content, dryRun)
-        if (!dryRun) state.capsules[ticket] = relativePath(outputRoot, capsule)
-        totals.capsules++
+        Map freshness = TicketFreshness.classify(ticket, chunks, outputRoot)
+        totals["${freshness.freshness}_capsules"]++
+        String content = TicketStateCapsule.render(TicketStateCapsule.assemble(ticket, chunks, freshness))
+        String facet = TicketFreshness.normalizeTicket(ticket)
+        File existing = new File(outputRoot, "ticket-state/${facet}.md")
+        boolean needsWrite = !existing.exists() || existing.getText('UTF-8') != content
+        if (needsWrite) {
+            File capsule = WorklogEmitter.writeCapsule(outputRoot, ticket, content, dryRun)
+            if (!dryRun) state.capsules[ticket] = relativePath(outputRoot, capsule)
+            totals.capsules++
+            if (refreshState) totals.refreshed_capsules++
+            capsuleChanged = true
+        }
     }
 }
 
-if (!dryRun) WorklogEmitter.saveState(stateFile, state)
-if (syncDb && !dryRun && (totals.changed > 0 || !new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME).exists())) {
+if (!dryRun && (totals.changed > 0 || capsuleChanged)) WorklogEmitter.saveState(stateFile, state)
+boolean worklogsDatabaseMissing = !new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME).exists()
+boolean chunkSyncNeeded = totals.changed > 0 || worklogsDatabaseMissing
+boolean stateSyncNeeded = capsuleChanged || worklogsDatabaseMissing
+boolean evidenceSyncNeeded = totals.evidence > 0
+if (syncDb && !dryRun && (chunkSyncNeeded || stateSyncNeeded || evidenceSyncNeeded)) {
     Config.ensureDataDir()
-    syncDirectory(new File(outputRoot, 'ticket-state'), new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME), Config.WORKLOG_STATE_ARCHIVE)
-    syncDirectory(new File(outputRoot, 'worklogs'), new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME), Config.WORKLOG_CHUNKS_ARCHIVE)
-    syncEvidence(new File(outputRoot, 'artifacts'), new File(Config.DATA_DIR, Config.ARTIFACTS_DB_NAME))
+    if (stateSyncNeeded) {
+        syncDirectory(new File(outputRoot, 'ticket-state'), new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME), Config.WORKLOG_STATE_ARCHIVE)
+    }
+    if (chunkSyncNeeded) {
+        syncDirectory(new File(outputRoot, 'worklogs'), new File(Config.DATA_DIR, Config.WORKLOGS_DB_NAME), Config.WORKLOG_CHUNKS_ARCHIVE)
+    }
+    if (evidenceSyncNeeded) {
+        syncEvidence(new File(outputRoot, 'artifacts'), new File(Config.DATA_DIR, Config.ARTIFACTS_DB_NAME))
+    }
     reconcileDatasets()
 }
 
-println "WORKLOG_TOTAL\t" + totals.collect { key, value -> "${key}=${value}" }.join('\t') + "\tdry_run=${dryRun}\tsync_db=${syncDb}"
+println "WORKLOG_TOTAL\t" + totals.collect { key, value -> "${key}=${value}" }.join('\t') + "\tdry_run=${dryRun}\tsync_db=${syncDb}\trefresh_state=${refreshState}\tstate_sync=${stateSyncNeeded && syncDb && !dryRun}\tchunk_sync=${chunkSyncNeeded && syncDb && !dryRun}"
 if (totals.failed > 0) exitApp(1)
 
 static void syncDirectory(File root, File database, String archive) {

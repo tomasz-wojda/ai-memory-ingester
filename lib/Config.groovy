@@ -29,14 +29,18 @@ class Config {
     static final String CHAT_HASH_INDEX_NAME = 'turn-hashes.tsv'
     static final String CHAT_SWEEP_STATE_NAME = 'ingest-state.json'
     static final String WORKLOG_SWEEP_STATE_NAME = 'worklog-state.json'
+    static final int WORKLOG_PARSER_VERSION = 2
     static final String CHAT_RESUME_DIGEST_NAME = 'RESUME.md'
     static final List<String> WORKLOG_CATEGORIES = [
-        'summary', 'comments', 'repositories', 'findings', 'solutions',
-        'decisions', 'risks', 'actions', 'plan', 'checklist', 'action-log',
+        'summary', 'related-ticket', 'comments', 'repositories', 'findings', 'solutions',
+        'decisions', 'risks', 'blockers', 'actions', 'plan', 'checklist', 'action-log',
         'manual-actions', 'status', 'delivery', 'next-action', 'time', 'other'
     ].asImmutable()
     static final List<String> WORKLOG_AUTHORITY_VALUES = [
         'state', 'authoritative', 'historical', 'evidence'
+    ].asImmutable()
+    static final List<String> TICKET_FRESHNESS_VALUES = [
+        'fresh', 'stale', 'undetermined'
     ].asImmutable()
     static final Set<String> DROSS_ALLOWLIST = ([
         '', 'pushed', 'what now?', 'check now', 'go next', 'yes', 'ok',

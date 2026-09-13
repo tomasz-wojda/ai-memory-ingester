@@ -445,3 +445,27 @@ Verify:
 - Direct SQLite recipes return authoritative rows.
 - Precompiled ticket retrieval remains below one second minimum-of-three.
 - No commit or push occurs.
+
+## 25. Cross-source freshness amendment
+
+Authority and freshness are independent. Worklog chunks remain authoritative, and the latest section within an authoritative source retains `state: current`. Ticket capsules additionally carry `freshness: fresh|stale|undetermined`, `authoritative_through`, `newer_evidence_through`, and the exact newer-evidence paths.
+
+`lib/TicketFreshness.groovy` derives the authoritative timestamp from the latest trustworthy explicit status, action, delivery, verification, resolution, merge, deployment, blocker, or line-leading timeline timestamp in every current source worklog. It resolves date-only values to the end of the workspace day and uses source modification time only when the source contains no trustworthy parseable date. It considers a turn freshness evidence only when all of these conditions hold:
+
+1. The timestamp confidence is exact or local.
+2. The turn is high impact.
+3. The user text explicitly contains the normalized or hyphenated ticket key.
+4. The turn contains material operational evidence.
+5. The user request is not a memory retrieval, snippet, comparison, or stale-memory investigation.
+
+Turns never become authoritative and are never copied into authoritative capsule prose. A stale capsule renders a derived warning with timestamps and source paths before its extractive worklog sections.
+
+Capsule selection requires `TICKET SUMMARY` before fallback summaries, preserves `RELATED TICKET` as a separate historical category, selects explicit `BLOCKERS`, and prefers decision sections over incidental decision words elsewhere.
+
+Ticket turn ordering is event-time-first across journals. Exact and local timestamps precede date-only and unknown timestamps; event time is descending within confidence; numeric sequence, path, and database identifier remain deterministic fallbacks.
+
+For stale tickets, candidate order is the state capsule, up to five newer-evidence turns, four authoritative chunks, up to five remaining recent turns, and semantic or additional authoritative candidates. Fresh tickets retain the original fixed-pool order.
+
+`06_ingest_worklogs.groovy --refresh-state` recomputes capsules without treating unchanged worklogs as changed. Parser-version changes invalidate prior worklog output state once so category migrations remove obsolete paths. `07_sweep_memory.groovy` requests state refresh only when chat turns changed. A no-change sweep does not rewrite journal state, capsule state, databases, datasets, or the digest.
+
+KD-7289 is the stale-worklog production acceptance case. KD-6999 remains the primary content-completeness case and is also stale when later operational evidence exists; freshness is determined from measured timestamps rather than a ticket-specific expectation.

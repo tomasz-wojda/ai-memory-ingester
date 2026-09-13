@@ -62,11 +62,11 @@ class WorklogDocument {
     }
 
     static String authorityOf(String category) {
-        return category in ['summary', 'decisions', 'status', 'delivery', 'next-action'] ? 'authoritative' : 'historical'
+        return category in ['summary', 'decisions', 'blockers', 'status', 'delivery', 'next-action'] ? 'authoritative' : 'historical'
     }
 
     static String currentStateOf(String category, boolean current) {
-        return current && category in ['summary', 'decisions', 'status', 'delivery', 'next-action'] ? 'current' : 'historical'
+        return current && category in ['summary', 'decisions', 'blockers', 'status', 'delivery', 'next-action'] ? 'current' : 'historical'
     }
 
     private static String escape(Object value) {

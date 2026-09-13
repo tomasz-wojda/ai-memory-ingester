@@ -111,3 +111,25 @@ KD-6999 is the primary production acceptance case because it contains long resea
 A successful twenty-result retrieval must expose the ticket purpose, selected architecture, physical collection names, reader-only requirement, UAT result, current image, current PR, deployment status, current blocker, and next action.
 
 Current worklog facts must outrank stale turns without deleting or hiding those historical turns.
+
+## 10. Cross-source freshness correction
+
+The KD-7289 acceptance comparison exposed a second failure mode after worklog indexing was enabled. Its authoritative worklog ended on 2026-08-21 and still reported uncommitted code, no PR, no build, placeholder image 24-1, and no live UAT deployment. Later conversation turns recorded merged PRs 123, 124, 219, and 220, build 7, live UAT image 24-7, successful total-count metrics, and subsequent credential and image-parity work.
+
+The original capsule nevertheless labelled the August worklog current because state resolution compared sections only within the worklog. It did not compare the worklog’s latest recorded timestamp with later ticket evidence.
+
+The first KD-7289 hybrid result also selected `RELATED TICKET` as its summary, omitted the explicit `BLOCKERS` section, and treated sequence 2747 from another journal as newer than genuine September turns despite that entry’s August 29 event timestamp.
+
+The corrected model separates authority from freshness. Worklogs remain authoritative and turns remain historical evidence. A capsule becomes stale only when a newer exact/local, high-impact, materially operational turn explicitly names the ticket in the user request. Retrieval metadata and memory-system comparison turns do not establish freshness.
+
+After migration:
+
+- KD-7289 is authoritative through 2026-08-21 and has newer operational evidence through 2026-09-02.
+- The state capsule begins with `TICKET SUMMARY`, retains `RELATED TICKET` separately, and includes `BLOCKERS`.
+- Five newer-evidence turns precede stale authoritative sections.
+- Cross-journal ticket turns use parsed event time before numeric sequence, so turn 2747 is absent from the first twenty.
+- KD-6999 is also correctly stale: its worklog is authoritative through 2026-09-02, while two explicit operational turns on 2026-09-03 describe later live and dashboard work.
+- The final production refresh classifies 38 capsules fresh and 2 stale.
+- A no-change unified sweep reports zero source changes, zero database synchronizations, no digest update, and preserves the mtimes of journal indexes, worklog state, digest, dataset registry, and databases.
+
+The precompiled KD-7289 ticket query completed in 0.90, 0.79, and 0.82 seconds, retaining the below-one-second minimum gate. Direct SQLite state lookups completed in 0.15, 0.01, and 0.01 seconds.

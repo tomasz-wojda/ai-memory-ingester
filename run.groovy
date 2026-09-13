@@ -181,7 +181,7 @@ groovy.grape.Grape.grab(
 // Load library modules in dependency order
 ['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
  'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
- 'TurnDocument', 'TurnEmitter', 'SweepState', 'ResumeDigest',
+ 'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
  'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter', 'TicketRetrieval',
  'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))

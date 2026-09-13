@@ -1,6 +1,6 @@
 # Implementation Checklist: Worklog-Aware Memory Upgrade
 
-Status: awaiting `MODE: EXECUTE`.
+Status: worklog-aware upgrade and cross-source freshness correction implemented; fresh-main-conversation rule expansion remains a manual acceptance check.
 
 Governing specification: [worklog-aware-memory-upgrade-specification.md](worklog-aware-memory-upgrade-specification.md).
 
@@ -101,3 +101,23 @@ No commit and no push may be performed.
 ## Exit criteria
 
 The upgrade is complete only when structured worklogs and state capsules are materialized and rebuildable; stale worklog outputs are removed safely; worklogs.db and all datasets reconcile; ticket normalization prevents hyphen-related FTS failures; ticket retrieval follows fixed candidate quotas and source precedence; previews expose useful body content; context remains byte-bounded; KD-6999 returns all required current facts before stale history; session sweep synchronizes every changed layer; existing and new tests pass; the skill validator passes; a fresh main Agent conversation receives authoritative digest context; and no commit or push has occurred.
+
+## Cross-source freshness completion
+
+1. Baseline captured the incorrect KD-7289 order with turn 2747 before September turns and an August worklog labelled current.
+2. Freshness values and explicit `blockers` and `related-ticket` categories were added.
+3. `TicketFreshness` now derives authoritative and evidence timestamps without promoting turns to authority.
+4. Capsule selection begins with the true ticket summary, preserves related tickets separately, and includes explicit blockers.
+5. Stale warnings record exact authoritative-through, newer-evidence-through, and evidence paths.
+6. Parser version 2 migrated all 49 sources, replaced 428 paths, removed 14 obsolete paths, retained 433 chunks, and regenerated 40 capsules.
+7. Worklog ingestion can refresh capsule state independently and avoids chunk rebuilds when only freshness changes.
+8. Unified sweep defers digest creation until all tiers are synchronized and performs no writes on a true no-change run.
+9. Ticket turns are ordered by timestamp confidence and event time before sequence.
+10. Stale ticket retrieval places newer operational evidence before stale authoritative sections.
+11. CLI, JSON, context, and resume artifacts expose freshness.
+12. The worklog suite passes 39 tests, including stale/fresh transitions, section selection, ordering, pool precedence, digest warning order, context budget, and refresh idempotency.
+13. Existing chatlog tests pass 75/75, query tests pass 63/63, and AI Vault validation passes 7/7.
+14. KD-7289 reports authoritative-through 2026-08-21 and newer evidence through 2026-09-02; turn 2747 is absent from the first twenty.
+15. KD-6999 was re-evaluated and is legitimately stale because two September 3 operational turns postdate its September 2 worklog.
+16. Three precompiled KD-7289 retrieval runs measured 0.90, 0.79, and 0.82 seconds.
+17. No commit or push was performed by this implementation.

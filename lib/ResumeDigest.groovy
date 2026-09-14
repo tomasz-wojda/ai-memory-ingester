@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 
@@ -54,7 +55,11 @@ class ResumeDigest {
      * @param budgetBytes Total output byte budget
      * @return Assembly map
      */
-    static Map assemble(File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES) {
+    static Map assemble(File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES, JournalStore journalStore = null) {
+        if (journalStore) {
+            Map journalAssembly = assembleFromJournal(journalStore, outputRoot, budgetBytes)
+            if (journalAssembly.items) return journalAssembly
+        }
         File turnsRoot = new File(outputRoot, 'turns')
         if (!turnsRoot.exists()) return assemble([], [], [], budgetBytes)
         List<Map> items = []
@@ -113,7 +118,8 @@ class ResumeDigest {
         String rendered = lines.join('\n').trim() + '\n'
         byte[] bytes = rendered.getBytes(StandardCharsets.UTF_8)
         if (bytes.length <= budget) return rendered
-        return new String(bytes, 0, budget, StandardCharsets.UTF_8).replaceAll(/\uFFFD$/, '') + '\n'
+        int contentLimit = Math.max(0, budget - 1)
+        return new String(bytes, 0, contentLimit, StandardCharsets.UTF_8).replaceAll(/\uFFFD$/, '') + '\n'
     }
 
     /**
@@ -137,8 +143,64 @@ class ResumeDigest {
      * @param budgetBytes Total byte budget
      * @return Written digest file
      */
-    static File write(File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES) {
-        return write(outputRoot, assemble(outputRoot, budgetBytes))
+    static File write(File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES, JournalStore journalStore = null) {
+        return write(outputRoot, assemble(outputRoot, budgetBytes, journalStore))
+    }
+
+    static Map assembleFromJournal(JournalStore store, File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES) {
+        List<Map> canonical = store.canonicalObservations()
+        if (!canonical) return assemble([], [], [], budgetBytes)
+        List<Map> items = canonical.collect { Map observation ->
+            [
+                id: observation.sequence as long,
+                source_archive: 'chat:turns',
+                file_path: "journal/${observation.observation_id}.md",
+                file_name: "turn-${observation.sequence}.md",
+                extension: '.md',
+                rank: null,
+                snippet: '',
+                content: journalTurnMarkdown(observation),
+                sequence: observation.sequence as long
+            ]
+        }
+        items.sort { a, b -> (b.sequence as long) <=> (a.sequence as long) }
+        List<Map> recent = items.take(Config.RESUME_RECENT_TURNS)
+        String dominant = dominantTicket(recent)
+        List<Map> authoritative = dominant ? authoritativeItems(outputRoot, dominant) : []
+        List<Map> relevant = dominant ? items.findAll { ticketOf(it) == dominant } : []
+        List<Map> impact = dominant
+            ? items.findAll { ticketOf(it) == dominant && (observationImpact(it) == 'high') }
+            : items.findAll { observationImpact(it) == 'high' }
+        return assemble(authoritative + recent, relevant, impact, budgetBytes)
+    }
+
+    private static String journalTurnMarkdown(Map observation) {
+        Map entry = [
+            user: observation.user_text ?: '',
+            assistant: observation.assistant_text ?: '',
+            rawMode: observation.mode,
+            ticketKeys: observation.tickets ?: [],
+            impact: observation.impact ?: 'none',
+            sourcePath: observation.source_identity ?: 'journal',
+            startLine: observation.source_start_line ?: 0,
+            endLine: observation.source_end_line ?: 0,
+            timestampRepair: [
+                timestamp: observation.event_time ?: observation.recorded_at,
+                confidence: observation.event_time_confidence ?: 'lost'
+            ],
+            journalObservationId: observation.observation_id,
+            journalLogicalTurnKey: observation.logical_turn_key,
+            journalSequence: observation.sequence,
+            journalSourceIde: observation.source_ide,
+            journalSourceFidelity: observation.source_fidelity,
+            turnHash: observation.turn_hash
+        ]
+        return TurnDocument.render(entry, observation.sequence as long)
+    }
+
+    private static String observationImpact(Map item) {
+        def matcher = contentOf(item) =~ /(?m)^impact:\s*"?([^"\s]+)"?\s*$/
+        return matcher.find() ? matcher.group(1) : 'none'
     }
 
     private static String identityOf(Map item) {
@@ -158,7 +220,14 @@ class ResumeDigest {
 
     private static String ticketOf(Map item) {
         String path = item.file_path?.toString() ?: ''
-        return path.tokenize('/').find { it ==~ /[a-z]+[0-9]+|noticket/ }
+        String fromPath = path.tokenize('/').find { it ==~ /[a-z]+[0-9]+|noticket/ && it != 'journal' }
+        if (fromPath) return fromPath
+        def matcher = contentOf(item) =~ /(?m)^tickets:\s*(\[[^\]]*\])/
+        if (matcher.find()) {
+            List tickets = (new JsonSlurper().parseText(matcher.group(1)) ?: []) as List
+            if (tickets) return TicketKey.facet(tickets[0]?.toString())
+        }
+        return null
     }
 
     private static String dominantTicket(List<Map> items) {

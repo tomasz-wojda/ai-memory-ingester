@@ -11,19 +11,18 @@ class TicketFreshness {
             parseInstant(chunk.latest_source_time?.toString()) ?: Instant.ofEpochMilli((chunk.source_mtime ?: 0L) as long)
         }.findAll { it }
         Instant authoritativeThrough = sourceTimes ? sourceTimes.max() : null
-        List<Map> highImpact = turnEvidence(ticket, outputRoot).findAll {
-            it.impact == 'high' &&
-                !it.retrieval_meta &&
+        List<Map> relevantEvidence = turnEvidence(ticket, outputRoot).findAll {
+            !it.retrieval_meta &&
                 it.explicit_user_ticket &&
                 it.material_ticket_evidence &&
                 it.timestamp_confidence in ['exact', 'local'] &&
                 it.event_instant
         }
         List<Map> newer = authoritativeThrough
-            ? highImpact.findAll { (it.event_instant as Instant).isAfter(authoritativeThrough) }
+            ? relevantEvidence.findAll { (it.event_instant as Instant).isAfter(authoritativeThrough) }
             : []
         newer.sort(TicketFreshness.&compareTurnEvidence)
-        Instant evidenceThrough = highImpact.collect { it.event_instant as Instant }.findAll { it }.max()
+        Instant evidenceThrough = relevantEvidence.collect { it.event_instant as Instant }.findAll { it }.max()
         String freshness = authoritativeThrough == null
             ? 'undetermined'
             : (newer ? 'stale' : 'fresh')

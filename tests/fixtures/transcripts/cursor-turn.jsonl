@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>2026-09-14T10:00:00Z</timestamp>\n<user_query>\nFix KD-6999 redis window handling\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"**[MODE: EXECUTE]**\n\nConfirmed the maintenance window is Sunday 22:00 UTC.\n\n### FILES CHANGED\n\nlib/Config.groovy"}]}}

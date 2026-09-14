@@ -135,11 +135,23 @@ class MemoryEngine {
             )
         ''')
 
-        // Synchronisation trigger: auto-populate FTS5 on INSERT
         sql.execute('''
-            CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
+            CREATE TABLE IF NOT EXISTS engine_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+
+        sql.execute('''
+            CREATE INDEX IF NOT EXISTS idx_documents_file_path
+            ON documents(file_path)
+        ''')
+
+        sql.execute('DROP TRIGGER IF EXISTS documents_ai')
+        sql.execute('''
+            CREATE TRIGGER documents_ai AFTER INSERT ON documents BEGIN
                 INSERT INTO documents_fts(rowid, file_path, file_name, content)
-                VALUES (new.id, new.file_path, new.file_name, new.content);
+                VALUES (new.id, new.file_path, new.file_name, '');
             END
         ''')
 
@@ -150,14 +162,9 @@ class MemoryEngine {
             END
         ''')
 
-        // Synchronisation trigger: update FTS5 on UPDATE
-        sql.execute('''
-            CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.id;
-                INSERT INTO documents_fts(rowid, file_path, file_name, content)
-                VALUES (new.id, new.file_path, new.file_name, new.content);
-            END
-        ''')
+        sql.execute('DROP TRIGGER IF EXISTS documents_au')
+
+        ensureBodyFtsIndex()
 
         // Index on source_archive for efficient filtering
         sql.execute('''
@@ -335,10 +342,13 @@ class MemoryEngine {
      */
     void insertDocument(String sourceArchive, String filePath, String fileName,
                         String extension, long sizeBytes, String content) {
-        sql.executeInsert('''
+        def keys = sql.executeInsert('''
             INSERT INTO documents (source_archive, file_path, file_name, extension, size_bytes, content)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', [sourceArchive, filePath, fileName, extension, sizeBytes, content])
+        if (keys) {
+            updateFtsBody(keys[0][0] as long, content)
+        }
 
         if (inBatch) {
             batchCount++
@@ -346,6 +356,16 @@ class MemoryEngine {
                 rotateBatch()
             }
         }
+    }
+
+    private void updateFtsBody(long documentId, String content) {
+        Map row = sql.firstRow('SELECT file_path, file_name FROM documents WHERE id = ?', [documentId]) as Map
+        if (!row) return
+        sql.execute('DELETE FROM documents_fts WHERE rowid = ?', [documentId])
+        sql.execute('''
+            INSERT INTO documents_fts(rowid, file_path, file_name, content)
+            VALUES (?, ?, ?, ?)
+        ''', [documentId, row.file_path, row.file_name, extractSearchBody(content ?: '')])
     }
 
     // -----------------------------------------------------------------------
@@ -359,6 +379,41 @@ class MemoryEngine {
      * @param rawQuery User search input
      * @return Formatted FTS5 match expression
      */
+    static String extractSearchBody(String content) {
+        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '').trim()
+        if (!body) return ''
+        StringBuilder parts = new StringBuilder()
+        def userMatcher = body =~ /(?s)## User\s*(.*?)(?:\n## Assistant|\z)/
+        if (userMatcher.find()) parts.append(userMatcher.group(1).trim()).append('\n')
+        def assistantMatcher = body =~ /(?s)## Assistant\s*(.*?)(?:\n## Details|\n## Assistant|\z)/
+        if (assistantMatcher.find()) parts.append(assistantMatcher.group(1).trim()).append('\n')
+        def detailsMatcher = body =~ /(?s)## Details\s*(.*)/
+        if (detailsMatcher.find()) parts.append(detailsMatcher.group(1).trim())
+        String extracted = parts.toString().trim()
+        return extracted ?: body
+    }
+
+    private void ensureBodyFtsIndex() {
+        Map row = sql.firstRow("SELECT value FROM engine_meta WHERE key = 'fts_body_v1'") as Map
+        if (row?.value == '1') return
+        reindexBodyFts()
+        sql.execute("INSERT OR REPLACE INTO engine_meta (key, value) VALUES ('fts_body_v1', '1')")
+    }
+
+    void reindexBodyFts() {
+        sql.execute('DELETE FROM documents_fts')
+        sql.eachRow('SELECT id, file_path, file_name, content, is_compressed FROM documents ORDER BY id ASC') { row ->
+            String text = (row.is_compressed == 1)
+                ? decompressText(row.content)
+                : (row.content?.toString() ?: '')
+            sql.execute('''
+                INSERT INTO documents_fts(rowid, file_path, file_name, content)
+                VALUES (?, ?, ?, ?)
+            ''', [row.id as long, row.file_path, row.file_name, extractSearchBody(text)])
+        }
+        optimizeIndex()
+    }
+
     static String normalizeQuery(String rawQuery) {
         if (!rawQuery) return rawQuery
         String q = rawQuery.trim()
@@ -386,16 +441,25 @@ class MemoryEngine {
      *         file_name, extension, snippet, rank
      */
     List<Map> search(String query, int limit = 20, int snippetSize = 64, List<String> extensions = null, String archive = null) {
+        return searchInternal(query, limit, snippetSize, extensions, archive, false)
+    }
+
+    List<Map> searchBody(String query, int limit = 20, int snippetSize = 64, List<String> extensions = null, String archive = null) {
+        return searchInternal(query, limit, snippetSize, extensions, archive, true)
+    }
+
+    private List<Map> searchInternal(String query, int limit, int snippetSize, List<String> extensions, String archive, boolean bodyOnly) {
         String matchExpr = normalizeQuery(query)
         List<Map> results = []
 
+        String matchColumn = bodyOnly ? 'f.content' : 'documents_fts'
         StringBuilder sqlBuilder = new StringBuilder("""
             SELECT d.id, d.source_archive, d.file_path, d.file_name, d.extension,
                    d.content, d.is_compressed,
                    rank
             FROM documents_fts f
             JOIN documents d ON d.id = f.rowid
-            WHERE documents_fts MATCH ?
+            WHERE ${matchColumn} MATCH ?
         """)
 
         List<Object> params = [matchExpr]
@@ -432,7 +496,8 @@ class MemoryEngine {
                 ? decompressText(row.content)
                 : (row.content != null ? row.content.toString() : '')
 
-            String snip = generateSnippet(text, query, snippetSize)
+            String body = extractSearchBody(text)
+            String snip = generateSnippet(body ?: text, query, snippetSize)
 
             results << [
                 id:             row.id,
@@ -445,6 +510,137 @@ class MemoryEngine {
             ]
         }
         return results
+    }
+
+    List<Map> filterByPathFacets(Map facets, int limit = 50, String sourceArchive = null) {
+        StringBuilder query = new StringBuilder('''
+            SELECT id, source_archive, file_path, file_name, extension, content, is_compressed
+            FROM documents
+            WHERE 1 = 1
+        ''')
+        List<Object> params = []
+        if (sourceArchive) {
+            query.append(' AND source_archive = ?')
+            params << sourceArchive
+        }
+        if (facets.ticket) {
+            query.append(' AND file_path LIKE ?')
+            params << "%${facets.ticket}/%"
+        }
+        if (facets.mode) {
+            query.append(' AND file_path LIKE ?')
+            params << "%/${facets.mode}/%"
+        }
+        if (facets.impact) {
+            query.append(' AND file_path LIKE ?')
+            params << "%/${facets.impact}/%"
+        }
+        if (facets.since) {
+            query.append(" AND substr(file_path, instr(file_path, '/d') + 2, 8) >= ?")
+            params << facets.since.toString().replaceAll(/[^0-9]/, '').take(8)
+        }
+        if (facets.until) {
+            query.append(" AND substr(file_path, instr(file_path, '/d') + 2, 8) <= ?")
+            params << facets.until.toString().replaceAll(/[^0-9]/, '').take(8)
+        }
+        query.append('''
+            ORDER BY
+              CASE
+                WHEN source_archive = ? THEN 0
+                WHEN source_archive = ? THEN 1
+                WHEN source_archive = 'chat:turns' THEN 2
+                ELSE 3
+              END,
+              CASE
+                WHEN file_path LIKE '%/status/%' THEN 1
+                WHEN file_path LIKE '%/next-action/%' THEN 2
+                WHEN file_path LIKE '%/delivery/%' THEN 3
+                WHEN file_path LIKE '%/decisions/%' THEN 4
+                WHEN file_path LIKE '%/impact-high/%' THEN 5
+                ELSE 6
+              END,
+              CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) DESC,
+              file_path ASC,
+              id DESC
+            LIMIT ?
+        ''')
+        params << Config.WORKLOG_STATE_ARCHIVE
+        params << Config.WORKLOG_CHUNKS_ARCHIVE
+        params << Math.max(limit, 1)
+        return fetchDocuments(query.toString(), params)
+    }
+
+    List<Map> recentTurnDocuments(String ticketFacet = null, int limit = 50, Map facets = [:]) {
+        StringBuilder query = new StringBuilder('''
+            SELECT id, source_archive, file_path, file_name, extension, content, is_compressed
+            FROM documents
+            WHERE source_archive = 'chat:turns'
+              AND file_name GLOB 'turn-[0-9]*.md'
+        ''')
+        List<Object> params = []
+        if (ticketFacet) {
+            query.append(' AND file_path LIKE ?')
+            params << "${ticketFacet}/%"
+        }
+        if (facets.mode) {
+            query.append(' AND file_path LIKE ?')
+            params << "%/${facets.mode}/%"
+        }
+        if (facets.impact) {
+            query.append(' AND file_path LIKE ?')
+            params << "%/${facets.impact}/%"
+        }
+        query.append('''
+            ORDER BY CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) DESC,
+                     file_path ASC,
+                     id DESC
+            LIMIT ?
+        ''')
+        params << Math.max(limit, 1)
+        return fetchDocuments(query.toString(), params)
+    }
+
+    List<Map> neighborTurnDocuments(String filePath, String fileName, int radius = 1) {
+        long sequence = sequenceOf(fileName)
+        if (sequence <= 0L) return []
+        String ticketPrefix = filePath.contains('/') ? filePath.substring(0, filePath.indexOf('/')) : filePath
+        long fromSequence = Math.max(1L, sequence - radius)
+        long toSequence = sequence + radius
+        StringBuilder query = new StringBuilder('''
+            SELECT id, source_archive, file_path, file_name, extension, content, is_compressed
+            FROM documents
+            WHERE source_archive = 'chat:turns'
+              AND file_path LIKE ?
+              AND CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) BETWEEN ? AND ?
+            ORDER BY CAST(substr(file_name, 6, length(file_name) - 8) AS INTEGER) ASC,
+                     file_path ASC,
+                     id ASC
+        ''')
+        return fetchDocuments(query.toString(), ["${ticketPrefix}/%", fromSequence, toSequence])
+    }
+
+    private List<Map> fetchDocuments(String query, List params) {
+        List<Map> results = []
+        sql.eachRow(query, params) { row ->
+            String text = (row.is_compressed == 1)
+                ? decompressText(row.content)
+                : (row.content?.toString() ?: '')
+            results << [
+                id: row.id as long,
+                source_archive: row.source_archive.toString(),
+                file_path: row.file_path.toString(),
+                file_name: row.file_name.toString(),
+                extension: row.extension?.toString() ?: '',
+                content: text,
+                sequence: sequenceOf(row.file_name?.toString())
+            ]
+        }
+        return results
+    }
+
+    private static long sequenceOf(String fileName) {
+        def matcher = (fileName ?: '') =~ /(?:turn|artifact)-(\d+)\.md$/
+        return matcher.find() ? matcher.group(1).toLong() : 0L
     }
 
     /**
@@ -681,6 +877,7 @@ class MemoryEngine {
                 String newContent = oldContent + (oldContent.isEmpty() || oldContent.endsWith('\n') ? '' : '\n') + textChunk
                 byte[] rawBytes = newContent.getBytes(StandardCharsets.UTF_8)
                 sql.executeUpdate('UPDATE documents SET content = ?, size_bytes = ?, is_compressed = 0 WHERE id = ?', [newContent, rawBytes.length, docId])
+                updateFtsBody(docId, newContent)
             } else {
                 byte[] rawBytes = textChunk.getBytes(StandardCharsets.UTF_8)
                 def res = sql.executeInsert('''
@@ -688,6 +885,7 @@ class MemoryEngine {
                     VALUES (?, ?, ?, ?, ?, ?, 0)
                 ''', [sourceArchive, filePath, fileName, extension, rawBytes.length, textChunk])
                 docId = res[0][0] as long
+                updateFtsBody(docId, textChunk)
             }
 
             // Upsert manifest
@@ -823,15 +1021,6 @@ class MemoryEngine {
             }
         }
 
-        // Restore update trigger
-        sql.execute('''
-            CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.id;
-                INSERT INTO documents_fts(rowid, file_path, file_name, content)
-                VALUES (new.id, new.file_path, new.file_name, new.content);
-            END
-        ''')
-
         // Compact storage on disk
         sql.execute('VACUUM')
 
@@ -890,14 +1079,6 @@ class MemoryEngine {
                 }
             }
         }
-
-        sql.execute('''
-            CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.id;
-                INSERT INTO documents_fts(rowid, file_path, file_name, content)
-                VALUES (new.id, new.file_path, new.file_name, new.content);
-            END
-        ''')
 
         sql.execute('VACUUM')
 

@@ -459,6 +459,7 @@ class DatasetRegistry {
         List<String> dbNames = (setEntry.databases as List<String>) ?: []
         List<File> files = []
         dbNames.each { String name ->
+            if (!Config.isSearchableDatabase(name)) return
             File dbFile = Config.resolveDatabase(name)
             if (dbFile.exists()) {
                 files << dbFile

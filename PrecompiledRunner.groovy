@@ -45,7 +45,14 @@ class PrecompiledRunner {
         'worklogs': '06_ingest_worklogs',
         'ingest-worklogs': '06_ingest_worklogs',
         'sweep-memory': '07_sweep_memory',
-        'ticket': '03_query_memory'
+        'ticket': '03_query_memory',
+        'record-event': '08_record_event',
+        'journal': '08_record_event',
+        '08': '08_record_event',
+        'reconcile-transcripts': '09_reconcile_project',
+        'project-journal': '09_reconcile_project',
+        'reconcile-project': '09_reconcile_project',
+        '09': '09_reconcile_project'
     ].asImmutable()
 
     private static final Set<String> AUGMENTED_COMMANDS = [
@@ -55,7 +62,9 @@ class PrecompiledRunner {
         'remove-db-from-set', 'remove-db-from-dataset', 'dbs', 'databases',
         'archives', 'archs', 'egest', 'rename', 'rename-archive', 'stream',
         'ingest-stream', 'append', 'ingest-text', 'recent', 'resume', 'context',
-        'chatlog', 'ingest-chatlog', 'worklogs', 'ingest-worklogs', 'sweep-memory', 'ticket'
+        'chatlog', 'ingest-chatlog', 'worklogs', 'ingest-worklogs', 'sweep-memory', 'ticket',
+        'record-event', 'journal', '08',
+        'reconcile-transcripts', 'project-journal', 'reconcile-project', '09'
     ] as Set<String>
 
     static void main(String[] arguments) {

@@ -69,8 +69,9 @@ class TestChatLogSuite {
         [
             'Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
             'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
-            'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
-            'DatasetRegistry', 'SetRegistry', 'FederatedEngine'
+            'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
+            'TicketFreshness', 'ResumeDigest', 'TicketRetrieval', 'DatasetRegistry', 'SetRegistry',
+            'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         TicketKey = loader.loadClass('TicketKey')

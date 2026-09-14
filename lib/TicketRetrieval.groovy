@@ -9,13 +9,14 @@ class TicketRetrieval {
         List<Map> authoritative = authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 4)
         List<Map> recent = recentTurnCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 10)
         List<Map> impact = impactCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 200)
-        impact.each { Map candidate ->
+        List<Map> turnEvidence = recentTurnCandidates(new File(dataDir, Config.CONVERSATION_DB_NAME), facet, 200)
+        (impact + turnEvidence).unique { "${it.origin_db}:${it.file_path}" }.each { Map candidate ->
             candidate.explicit_user_ticket = TicketFreshness.hasExplicitUserTicket(candidate.content?.toString(), ticket)
             candidate.material_ticket_evidence = TicketFreshness.hasMaterialTicketEvidence(candidate.content?.toString())
         }
         boolean stale = state && state[0].freshness == 'stale'
         List<Map> newerEvidence = stale
-            ? newerEvidenceCandidates(impact, state[0], 5)
+            ? newerEvidenceCandidates(turnEvidence + impact, state[0], 5)
             : []
         Set<String> newerPaths = newerEvidence.collect { it.file_path?.toString() } as Set<String>
         List<Map> remainingRecent = recent.findAll { !newerPaths.contains(it.file_path?.toString()) }.take(5)
@@ -86,10 +87,10 @@ class TicketRetrieval {
         return candidates.take(limit)
     }
 
-    static List<Map> newerEvidenceCandidates(List<Map> impact, Map state, int limit) {
+    static List<Map> newerEvidenceCandidates(List<Map> candidates, Map state, int limit) {
         Instant authoritativeThrough = TicketFreshness.parseInstant(state.authoritative_through?.toString())
         if (!authoritativeThrough) return []
-        return impact.findAll { Map candidate ->
+        List<Map> newer = candidates.findAll { Map candidate ->
             candidate.event_instant &&
                 !candidate.retrieval_meta &&
                 candidate.explicit_user_ticket &&
@@ -98,7 +99,9 @@ class TicketRetrieval {
                 (candidate.event_instant as Instant).isAfter(authoritativeThrough)
         }.collect { Map candidate ->
             new LinkedHashMap(candidate) + [pool: 'newer-evidence']
-        }.take(limit)
+        }
+        newer.sort(TicketFreshness.&compareTurnEvidence)
+        return newer.take(limit)
     }
 
     static List<Map> semanticCandidates(File dataDir, String facet, String terms, int limit) {

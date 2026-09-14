@@ -107,9 +107,10 @@ class WorklogSuite {
     private static void initialize() {
         loader = new GroovyClassLoader(WorklogSuite.class.classLoader)
         ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
-         'FacetPath', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
-         'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter', 'TicketRetrieval',
-         'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { String name ->
+         'FacetPath', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
+         'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter',
+         'TicketRetrieval', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'].each { String name ->
             loader.parseClass(new File("lib/${name}.groovy"))
         }
         Thread.currentThread().contextClassLoader = loader

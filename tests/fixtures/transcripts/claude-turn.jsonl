@@ -1,0 +1,4 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-14T11:00:00.000Z","sessionId":"session-claude-test","content":"verify journal reconciliation"}
+{"type":"queue-operation","operation":"dequeue","timestamp":"2026-09-14T11:00:00.000Z","sessionId":"session-claude-test"}
+{"parentUuid":null,"isSidechain":false,"promptId":"prompt-claude-001","type":"user","message":{"role":"user","content":"verify journal reconciliation for DEVOPS-796"},"uuid":"uuid-user-001","timestamp":"2026-09-14T11:00:00.100Z","sessionId":"session-claude-test","version":"2.1.269"}
+{"parentUuid":"uuid-user-001","isSidechain":false,"type":"assistant","message":{"model":"claude-sonnet-5","id":"msg-assistant-001","type":"message","role":"assistant","content":[{"type":"text","text":"Implemented reconciliation with idempotent cursor persistence."}]},"uuid":"uuid-assistant-001","timestamp":"2026-09-14T11:00:05.200Z","sessionId":"session-claude-test","version":"2.1.269"}

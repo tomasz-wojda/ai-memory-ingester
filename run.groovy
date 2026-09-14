@@ -69,7 +69,14 @@ Map<String, String> commands = [
     'worklogs':           '06_ingest_worklogs.groovy',
     'ingest-worklogs':    '06_ingest_worklogs.groovy',
     'sweep-memory':       '07_sweep_memory.groovy',
-    'ticket':             '03_query_memory.groovy'
+    'ticket':             '03_query_memory.groovy',
+    'record-event':       '08_record_event.groovy',
+    'journal':            '08_record_event.groovy',
+    '08':                 '08_record_event.groovy',
+    'reconcile-transcripts': '09_reconcile_project.groovy',
+    'project-journal':    '09_reconcile_project.groovy',
+    'reconcile-project':  '09_reconcile_project.groovy',
+    '09':                 '09_reconcile_project.groovy'
 ]
 
 // Extract global --db and --data-dir flags if present
@@ -136,6 +143,11 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println "  ticket <key> [terms]           Retrieve hybrid ticket memory"
     println "  worklogs --changed             Materialize changed worklogs"
     println "  sweep-memory                   Synchronize every memory layer"
+    println "  record-event                   Append one JSON journal event from stdin"
+    println "  journal [--get|--tail|...]      Journal compatibility reads and export"
+    println "  reconcile-transcripts            Reconcile Cursor/Claude transcripts into journal.db"
+    println "  project-journal                Project canonical journal turns to Markdown/FTS inputs"
+    println "  reconcile-project                Reconcile transcripts then project journal"
     println ""
     System.exit(1)
 }
@@ -150,7 +162,8 @@ if (['sets', 'datasets', 'set', 'dataset', 'use-set', 'use-dataset', 'create-set
      'remove-db-from-set', 'remove-db-from-dataset', 'dbs', 'databases', 'archives', 'archs', 'egest',
      'rename', 'rename-archive', 'stream', 'ingest-stream', 'append', 'ingest-text',
      'recent', 'resume', 'context', 'chatlog', 'ingest-chatlog', 'worklogs', 'ingest-worklogs',
-     'sweep-memory', 'ticket'].contains(command)) {
+     'sweep-memory', 'ticket', 'record-event', 'journal', '08',
+     'reconcile-transcripts', 'project-journal', 'reconcile-project', '09'].contains(command)) {
     String[] augmentedArgs = new String[scriptArgs.length + 1]
     augmentedArgs[0] = command
     System.arraycopy(scriptArgs, 0, augmentedArgs, 1, scriptArgs.length)
@@ -181,9 +194,11 @@ groovy.grape.Grape.grab(
 // Load library modules in dependency order
 ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
  'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
- 'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
- 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter', 'TicketRetrieval',
- 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
+ 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
+ 'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',
+ 'WorklogEmitter', 'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
+ 'TranscriptReconciler', 'JournalProjector', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
+ 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }
 

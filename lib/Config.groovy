@@ -13,6 +13,22 @@ class Config {
     static final String ARTIFACTS_DB_NAME = 'artifacts.db'
     static final String DROSS_DB_NAME = 'dross.db'
     static final String WORKLOGS_DB_NAME = 'worklogs.db'
+    static final String JOURNAL_DB_NAME = 'journal.db'
+    static final Set<String> NON_SEARCHABLE_DATABASES = ([JOURNAL_DB_NAME] as Set<String>).asImmutable()
+    static final int JOURNAL_SCHEMA_VERSION = 1
+    static final int JOURNAL_EVENT_SCHEMA_VERSION = 1
+    static final List<String> JOURNAL_SOURCE_FIDELITY_ORDER = [
+        'native_transcript', 'deterministic_hook', 'rule_write', 'rule_summary', 'parser_backfill'
+    ].asImmutable()
+    static final Map<String, Integer> JOURNAL_SOURCE_FIDELITY_RANK = JOURNAL_SOURCE_FIDELITY_ORDER
+        .collectEntries { [it, JOURNAL_SOURCE_FIDELITY_ORDER.indexOf(it) + 1] }
+        .asImmutable() as Map<String, Integer>
+    static final long JOURNAL_RECONCILIATION_TIME_TOLERANCE_MS = 120_000L
+    static final long JOURNAL_TRANSCRIPT_LAG_TOLERANCE_MS = 300_000L
+    static final String JOURNAL_PROJECTION_NAME = 'worklog-chat-turns'
+    static final int JOURNAL_EXPORT_TAIL_DEFAULT = 400
+    static final String CURSOR_TRANSCRIPT_FORMAT_V1 = 'cursor-jsonl-v1'
+    static final String CLAUDE_TRANSCRIPT_FORMAT_V2 = 'claude-jsonl-v2'
     static final String WORKLOG_CHAT_DATASET = 'worklog-chat'
     static final String WORKLOG_CHAT_TURNS_DATASET = 'worklog-chat-turns'
     static final String WORKLOG_CHAT_ALL_DATASET = 'worklog-chat-all'
@@ -250,11 +266,19 @@ class Config {
         List<File> dbs = []
         DATA_DIR.eachFile { f ->
             String name = f.name.toLowerCase()
-            if (f.isFile() && (name.endsWith('.db') || name.endsWith('.sqlite') || name.endsWith('.sqlite3')) && !name.contains('-wal') && !name.contains('-shm') && !name.contains('-journal')) {
+            if (f.isFile() && (name.endsWith('.db') || name.endsWith('.sqlite') || name.endsWith('.sqlite3')) &&
+                !name.contains('-wal') && !name.contains('-shm') && !name.contains('-journal') &&
+                !NON_SEARCHABLE_DATABASES.contains(f.name)) {
                 dbs << f
             }
         }
         return dbs.sort { a, b -> a.name.toLowerCase() <=> b.name.toLowerCase() }
+    }
+
+    static boolean isSearchableDatabase(String nameOrPath) {
+        if (!nameOrPath) return true
+        String clean = new File(nameOrPath).name
+        return !NON_SEARCHABLE_DATABASES.contains(clean)
     }
 
     /** Path to 7-Zip executable for RAR extraction. */
@@ -345,5 +369,10 @@ class Config {
         if (!DATA_DIR.exists()) {
             DATA_DIR.mkdirs()
         }
+    }
+
+    static File journalDbPath() {
+        ensureDataDir()
+        return new File(DATA_DIR, JOURNAL_DB_NAME).canonicalFile
     }
 }

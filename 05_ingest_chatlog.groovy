@@ -10,7 +10,9 @@ boolean allSources = false
 boolean sinceLast = false
 boolean dryRun = false
 boolean deferDigest = false
+boolean journalBackfill = false
 String explicitWorkspace = null
+String journalDbOverride = null
 long spillBytes = Config.CHAT_SPILL_BYTES
 List<String> sourceArguments = []
 
@@ -38,6 +40,12 @@ while (argumentIndex < args.length) {
         spillBytes = args[++argumentIndex].toLong()
     } else if (argument.startsWith('--spill-bytes=')) {
         spillBytes = argument.substring('--spill-bytes='.length()).toLong()
+    } else if (argument == '--journal-backfill') {
+        journalBackfill = true
+    } else if (argument == '--journal-db' && argumentIndex + 1 < args.length) {
+        journalDbOverride = args[++argumentIndex]
+    } else if (argument.startsWith('--journal-db=')) {
+        journalDbOverride = argument.substring('--journal-db='.length())
     }
     argumentIndex++
 }
@@ -86,8 +94,20 @@ Map totals = [
     skippedUnchanged: 0,
     skippedDuplicate: 0
 ]
+Map journalTotals = [
+    sources: 0,
+    snapshots: 0,
+    observations: 0,
+    idempotent: 0,
+    unparsed_ranges: 0
+]
 long started = System.nanoTime()
 boolean sourceStateChanged = false
+JournalStore journalStore = null
+if (journalBackfill && !dryRun) {
+    File journalPath = journalDbOverride ? new File(journalDbOverride).canonicalFile : Config.journalDbPath()
+    journalStore = new JournalStore(journalPath)
+}
 
 sources.each { File source ->
     String sourcePath = relativePath(workspaceRoot, source)
@@ -97,7 +117,7 @@ sources.each { File source ->
     boolean unchanged = record && !parserMismatch && record.full_hash == fullHash && (record.byte_offset as long) == source.length()
     boolean duplicateFile = knownFileHashes.contains(fullHash) && !unchanged && !parserMismatch
 
-    if (unchanged || duplicateFile) {
+    if ((unchanged || duplicateFile) && !journalBackfill) {
         if (unchanged) totals.skippedUnchanged++ else totals.skippedDuplicate++
         String reason = unchanged ? 'unchanged hash' : 'duplicate hash'
         println "${sourcePath}\tSKIPPED\t${reason}"
@@ -120,6 +140,15 @@ sources.each { File source ->
     entries.each { Map entry -> entry.timestampRepair = TimestampRepair.parse(entry.rawTimestamp?.toString()) }
     TimestampRepair.interpolate(entries)
 
+    if (journalStore) {
+        journalTotals.sources++
+        Map snapshot = journalStore.recordSourceSnapshot(sourcePath, sourcePath, source)
+        if (snapshot.inserted) journalTotals.snapshots++
+        List<Map> unparsed = JournalStore.computeUncoveredRanges(source.bytes, entries)
+        journalStore.recordUnparsedRanges(snapshot.snapshot_id as String, unparsed)
+        journalTotals.unparsed_ranges += unparsed.size()
+    }
+
     Map sourceCounts = [
         raw: [turns: 0, artifacts: 0, dross: 0],
         unique: [turns: 0, artifacts: 0, dross: 0],
@@ -130,6 +159,12 @@ sources.each { File source ->
     entries.each { Map parsed ->
         Map entry = TurnClassifier.classify(parsed, spillBytes)
         entry.turnHash = TurnDocument.hash(entry)
+        if (journalStore) {
+            long legacySequence = hashIndex[entry.turnHash]?.sequence ?: sequence
+            Map journalEvent = JournalEvent.fromParsedEntry(entry, sourcePath, legacySequence)
+            Map journalResult = journalStore.backfillObservation(journalEvent)
+            if (journalResult.idempotency == 'existing') journalTotals.idempotent++ else journalTotals.observations++
+        }
         long currentSequence = sequence
         String classifiedTier = entry.tier.toString()
         sourceCounts.raw[classifiedTier]++
@@ -192,6 +227,9 @@ sources.each { File source ->
     knownFileHashes << fullHash
 }
 
+if (journalStore) {
+    journalStore.close()
+}
 if (!dryRun && sourceStateChanged) {
     TurnEmitter.saveHashIndex(indexFile, hashIndex)
     SweepState.save(stateFile, sweepState)
@@ -206,9 +244,14 @@ boolean reconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
     totals.raw[tier] == totals.unique[tier] + totals.duplicate[tier]
 }
 double elapsedMs = (System.nanoTime() - started) / 1_000_000.0
-printf "TOTAL\t%s\trefacet_rescanned_sources=%d\tmetadata_refreshes=%d\tpath_moves=%d\tcanonical_unchanged=%d\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s%n",
+printf "TOTAL\t%s\trefacet_rescanned_sources=%d\tmetadata_refreshes=%d\tpath_moves=%d\tcanonical_unchanged=%d\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s",
     reportFields(totals), totals.refacet.rescannedSources, totals.refacet.metadataRefreshes, totals.refacet.pathMoves,
     totals.refacet.canonicalUnchanged, totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun, digestUpdated
+if (journalBackfill) {
+    printf "\tjournal_backfill=%s\tjournal_sources=%d\tjournal_snapshots=%d\tjournal_observations=%d\tjournal_idempotent=%d\tjournal_unparsed_ranges=%d",
+        !dryRun, journalTotals.sources, journalTotals.snapshots, journalTotals.observations, journalTotals.idempotent, journalTotals.unparsed_ranges
+}
+println()
 
 /**
  * Returns a normalized path relative to the workspace.

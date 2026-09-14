@@ -35,6 +35,9 @@ int snippetSize = 64
 int maxLines = 200
 boolean raw = false
 boolean jsonOutput = false
+boolean showSignals = false
+boolean completeContext = false
+boolean diagnostics = false
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -119,6 +122,16 @@ while (i < args.length) {
         jsonOutput = true
         raw = true
         i++
+    } else if (arg == '--signals') {
+        showSignals = true
+        i++
+    } else if (arg == '--complete-context') {
+        completeContext = true
+        i++
+    } else if (arg == '--diagnostics') {
+        diagnostics = true
+        showSignals = true
+        i++
     } else if (arg == '--budget' && i + 1 < args.length) {
         budgetBytes = args[i + 1].toInteger()
         i += 2
@@ -197,7 +210,7 @@ if (invokedCommand == 'ticket') {
     List<String> ticketArguments = new ArrayList<>(queryTokens)
     if (ticketArguments && ticketArguments[0].equalsIgnoreCase('ticket')) ticketArguments.remove(0)
     String requestedTicket = ticketFacet ?: (ticketArguments ? ticketArguments.remove(0) : null)
-    executeTicket(requestedTicket, ticketArguments.join(' '), limit, budgetBytes, jsonOutput, false)
+    executeTicket(requestedTicket, ticketArguments.join(' '), limit, budgetBytes, jsonOutput, false, completeContext, showSignals, diagnostics)
     exitApp(0); return
 }
 
@@ -206,9 +219,9 @@ if (invokedCommand in ['recent', 'resume', 'context']) {
     if (invokedCommand == 'recent') {
         executeRecent(explicitDb, targetDataset, limit, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
     } else if (invokedCommand == 'context' && ticketFacet) {
-        executeTicket(ticketFacet, input == 'context' ? '' : input.replaceFirst(/^context\s*/, ''), limit, budgetBytes, jsonOutput, true)
+        executeTicket(ticketFacet, input == 'context' ? '' : input.replaceFirst(/^context\s*/, ''), limit, budgetBytes, jsonOutput, true, true, showSignals, diagnostics)
     } else {
-        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput, showSignals, diagnostics)
     }
     exitApp(0); return
 }
@@ -303,12 +316,12 @@ if (!input.isEmpty()) {
         exitApp(0); return
     } else if (input == ':resume' || input.startsWith(':resume ')) {
         String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
-        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput)
+        executeResume(explicitDb, targetDataset, budgetBytes, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, jsonOutput, showSignals, diagnostics)
         exitApp(0); return
     } else if (input.startsWith(':ticket ')) {
         List<String> parts = input.substring(':ticket '.length()).trim().tokenize(' ')
         String requestedTicket = parts ? parts.remove(0) : null
-        executeTicket(requestedTicket, parts.join(' '), limit, budgetBytes, jsonOutput, false)
+        executeTicket(requestedTicket, parts.join(' '), limit, budgetBytes, jsonOutput, false, completeContext, showSignals, diagnostics)
         exitApp(0); return
     } else if (input.startsWith(':')) {
         println "Unknown command: ${input}. Type :help for available commands."
@@ -316,12 +329,15 @@ if (!input.isEmpty()) {
     } else {
         def bareTicket = input =~ /(?i)^(?:[A-Z]{2,10}-\d+|SCTASK\d{6,10})$/
         if (bareTicket.matches()) {
-            executeTicket(input, '', limit, budgetBytes, jsonOutput, false)
+            executeTicket(input, '', limit, budgetBytes, jsonOutput, false, completeContext, showSignals, diagnostics)
             exitApp(0); return
         }
         // Search Query Routing: 3-Tier Precedence
         if (explicitDb != null) {
-            // Tier 1: Single Database Search (raw BM25, no federation)
+            if (!Config.isSearchableDatabase(explicitDb)) {
+                println "ERROR: Database '${explicitDb}' is not searchable."
+                exitApp(1); return
+            }
             File targetDb = Config.resolveDatabase(explicitDb)
             if (!targetDb.exists()) {
                 println "ERROR: Database not found: ${targetDb.absolutePath}"
@@ -332,10 +348,13 @@ if (!input.isEmpty()) {
             executeSearch(eng, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             eng.close()
         } else {
-            // Tier 2 & 3: Dataset Federated Search with RRF Fusion
             String targetDataset = explicitSet ?: DatasetRegistry.getActiveDataset()
-            String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
-            executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
+            if (shouldUseLegacySearch(input, extFilter, archiveFilter)) {
+                String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
+                executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
+            } else {
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics)
+            }
         }
         exitApp(0); return
     }
@@ -417,7 +436,7 @@ while (true) {
     } else if (line == ':recent' || line.startsWith(':recent ')) {
         executeRecent(null, activeDataset, curLimit, null, null, null, null, null, false)
     } else if (line == ':resume' || line.startsWith(':resume ')) {
-        executeResume(null, activeDataset, Config.RESUME_BUDGET_BYTES, null, null, null, null, null, false)
+        executeResume(null, activeDataset, Config.RESUME_BUDGET_BYTES, null, null, null, null, null, false, false, false)
     } else if (line.startsWith(':doc ') || line.startsWith(':doc')) {
         String sub = line.startsWith(':doc ') ? line.substring(':doc '.length()).trim() : line.substring(4).trim()
         boolean isRaw = false
@@ -452,7 +471,7 @@ while (true) {
     } else if (line.startsWith(':')) {
         println "Unknown command: ${line}. Type :help for commands."
     } else {
-        executeFederatedSearch(activeDataset, line, curLimit, false, curSnippet)
+        executeEnhancedSearch(activeDataset, line, curLimit, false, curSnippet, null, null, false, null, null, null, null, null, false, false)
     }
 
     println ""
@@ -628,6 +647,69 @@ static void printDatasets() {
 
 static void printSets() {
     printDatasets()
+}
+
+static void executeEnhancedSearch(
+    String datasetName,
+    String query,
+    int limit = 20,
+    boolean raw = false,
+    int snippetSize = 64,
+    List<String> extensions = null,
+    String archiveFilter = null,
+    boolean jsonOutput = false,
+    String ticketFacet = null,
+    String modeFacet = null,
+    String impactFacet = null,
+    String sinceDate = null,
+    String untilDate = null,
+    boolean showSignals = false,
+    boolean diagnostics = false
+) {
+    if (!raw && !jsonOutput) {
+        println "-" * 50
+        println "Enhanced Search [${datasetName}]: \"${query}\" (limit: ${limit})"
+        println "-" * 50
+    }
+    Map options = [
+        ticket_facet: ticketFacet,
+        mode_facet: modeFacet,
+        impact_facet: impactFacet,
+        since_date: sinceDate,
+        until_date: untilDate,
+        show_signals: showSignals
+    ]
+    Map result = MemoryRetrieval.searchTopic(Config.DATA_DIR, datasetName, query, limit, options)
+    List<Map> matches = (result.results as List<Map>) ?: []
+    if (jsonOutput) {
+        emitJsonArray(matches.collect { Map row ->
+            toJsonRow(row, row.fused_score as Double ?: row.rrf_score as Double, cleanSnippet(row.snippet?.toString())) + enhancedJsonFields(row)
+        })
+        return
+    }
+    if (matches.isEmpty()) {
+        printf "No results found in %.2f ms.%n", result.total_duration_ms
+        return
+    }
+    matches.eachWithIndex { Map doc, int idx ->
+        double score = (doc.fused_score ?: doc.rrf_score ?: 0.0) as double
+        printf "[%d] [%s] [%s] ID:%s  %s%n", idx + 1, doc.origin_db, doc.pool, doc.id, doc.file_path
+        if (showSignals || diagnostics) {
+            printf "    Signals: %s  |  Fused: %.4f%n", (doc.signals ?: [:]).collect { k, v -> "${k}=${v}" }.join(', '), score
+        } else {
+            printf "    Pool: %s  |  Fused: %.4f%n", doc.pool, score
+        }
+        if (doc.freshness == 'stale') {
+            println "    AUTHORITATIVE WORKLOG STALE"
+        }
+        printHangingSnippet(cleanSnippet(doc.snippet?.toString()), 95)
+        println ""
+    }
+    if (!raw) println "-" * 50
+    printf "Found %d result(s) in %.2f ms%n", matches.size(), (result.total_duration_ms as double)
+    if (diagnostics && result.pools) {
+        println "Pool sizes: ${result.pools}"
+    }
 }
 
 /**
@@ -1233,6 +1315,16 @@ static void executeRename(MemoryEngine engine, String oldName, String newName) {
  * @param until Inclusive end date
  * @return Combined FTS5 expression
  */
+static boolean shouldUseLegacySearch(String input, List<String> extensions, String archiveFilter) {
+    if (extensions && !extensions.isEmpty()) return true
+    if (archiveFilter?.trim()) return true
+    String query = (input ?: '').trim()
+    if (!query) return false
+    if (query.contains(':') && query ==~ /(?i).*\b(?:file_path|file_name|source_archive|extension):.*/) return true
+    if (query.contains('"') || query.contains('*') || query.contains(' NEAR(')) return true
+    return false
+}
+
 static String buildFacetMatchExpression(
     String baseQuery,
     String ticket,
@@ -1314,33 +1406,32 @@ static void executeResume(
     String impact,
     String since,
     String until,
-    boolean jsonOutput
+    boolean jsonOutput,
+    boolean showSignals = false,
+    boolean diagnostics = false
 ) {
-    List<File> databases = scopedDatabases(explicitDb, datasetName)
-    List<Map> recent = recentRows(
-        databases,
-        Config.RESUME_RECENT_TURNS,
-        ticket,
-        mode,
-        impact,
-        since,
-        until
-    )
-    String effectiveTicket = ticket ? queryTicketFacet(ticket) : dominantTicket(recent)
-    List<Map> relevant = effectiveTicket ? searchRows(databases, "file_path:${effectiveTicket}", 30) : []
-    List<Map> highImpact = effectiveTicket
-        ? searchRows(databases, "file_path:${effectiveTicket} AND file_path:\"impact-high\"", 30)
-        : searchRows(databases, 'file_path:"impact-high"', 30)
-    Class digestClass = Thread.currentThread().contextClassLoader.loadClass('ResumeDigest')
-    Map assembly = digestClass.assemble(recent, relevant, highImpact, budgetBytes)
+    Map options = [
+        explicit_db: explicitDb,
+        ticket_facet: ticket ? queryTicketFacet(ticket) : null,
+        mode_facet: mode,
+        impact_facet: impact,
+        since_date: since,
+        until_date: until,
+        show_signals: showSignals
+    ]
+    Map result = MemoryRetrieval.resume(Config.DATA_DIR, datasetName, budgetBytes, options)
+    Map assembly = result.assembly as Map
     if (jsonOutput) {
         emitJsonArray((assembly.items as List).collect { Map row ->
-            toJsonRow(row, row.rank as Double, cleanSnippet(row.content?.toString()))
+            toJsonRow(row, row.fused_score as Double, cleanSnippet(row.content?.toString())) + enhancedJsonFields(row)
         })
         return
     }
-    print digestClass.render(assembly)
+    print ContextPacker.renderAssembly(assembly)
     println "Resume bytes: ${assembly.content_bytes}/${assembly.budget_bytes}"
+    if (diagnostics) {
+        println "Omitted candidates: ${assembly.omitted_count ?: 0}"
+    }
 }
 
 /**
@@ -1495,30 +1586,36 @@ static Map toJsonRow(Map row, Double rank = null, String snippet = '') {
     ]
 }
 
-static void executeTicket(String ticket, String terms, int limit, int budget, boolean jsonOutput, boolean contextOutput) {
+static void executeTicket(String ticket, String terms, int limit, int budget, boolean jsonOutput, boolean contextOutput, boolean completeContext = false, boolean showSignals = false, boolean diagnostics = false) {
     if (!ticket) {
         println 'ERROR: ticket key is required'
         return
     }
-    Class retrievalClass = Thread.currentThread().contextClassLoader.loadClass('TicketRetrieval')
-    List<Map> candidates = retrievalClass.retrieve(Config.DATA_DIR, ticket, terms ?: '', Math.max(limit, 1)) as List<Map>
+    Map options = [
+        complete_context: contextOutput || completeContext,
+        budget_bytes: budget,
+        show_signals: showSignals
+    ]
+    Map result = contextOutput || completeContext
+        ? MemoryRetrieval.ticketResult(Config.DATA_DIR, ticket, terms ?: '', limit, options)
+        : MemoryRetrieval.ticketResult(Config.DATA_DIR, ticket, terms ?: '', limit, options)
+    List<Map> candidates = (result.results ?: []) as List<Map>
     Map stateCandidate = candidates.find { it.pool == 'state' }
     boolean stale = stateCandidate?.freshness == 'stale'
-    if (contextOutput) {
-        Map assembly = retrievalClass.assembleContext(candidates, budget) as Map
+    if (contextOutput || completeContext) {
+        Map assembly = (result.assembly ?: MemoryRetrieval.assembleContext(candidates, budget)) as Map
         if (jsonOutput) {
-            emitJsonArray((assembly.items as List<Map>).collect { Map row -> ticketJsonRow(row, row.snippet?.toString() ?: '') })
+            emitJsonArray((assembly.items as List<Map>).collect { Map row -> ticketJsonRow(row, row.content?.toString() ?: row.snippet?.toString() ?: '') })
             return
         }
         println "Ticket Context: ${ticket} | ${assembly.content_bytes}/${assembly.budget_bytes} bytes"
         if (stale) {
             println "AUTHORITATIVE WORKLOG STALE: ${stateCandidate.authoritative_through} < ${stateCandidate.newer_evidence_through}"
         }
-        (assembly.items as List<Map>).each { Map row ->
-            println ''
-            println "--- [${row.pool}] [${row.authority}/${row.state}/${row.freshness}] ${row.origin_db}:${row.file_path} ---"
-            println row.content
+        if (diagnostics) {
+            println "Omitted candidates: ${assembly.omitted_count ?: 0}"
         }
+        print ContextPacker.renderAssembly(assembly)
         return
     }
     if (jsonOutput) {
@@ -1531,13 +1628,20 @@ static void executeTicket(String ticket, String terms, int limit, int budget, bo
     }
     candidates.eachWithIndex { Map row, int index ->
         printf "[%d] [%s] [%s/%s/%s] %s:%s%n", index + 1, row.pool, row.authority, row.state, row.freshness, row.origin_db, row.file_path
+        if (showSignals && row.signals) {
+            printf "    Signals: %s%n", row.signals.collect { k, v -> "${k}=${v}" }.join(', ')
+        }
         printHangingSnippet(row.snippet?.toString() ?: '', 95)
         println ''
     }
 }
 
 static Map ticketJsonRow(Map row, String snippet) {
-    return toJsonRow(row, row.rank as Double, snippet) + [
+    return toJsonRow(row, row.rank as Double ?: row.fused_score as Double, snippet) + enhancedJsonFields(row)
+}
+
+static Map enhancedJsonFields(Map row) {
+    return [
         origin_db: row.origin_db,
         pool: row.pool,
         authority: row.authority,
@@ -1546,7 +1650,9 @@ static Map ticketJsonRow(Map row, String snippet) {
         event_time: row.event_time,
         timestamp_confidence: row.timestamp_confidence,
         authoritative_through: row.authoritative_through,
-        newer_evidence_through: row.newer_evidence_through
+        newer_evidence_through: row.newer_evidence_through,
+        signals: row.signals,
+        fused_score: row.fused_score ?: row.rrf_score
     ]
 }
 

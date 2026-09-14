@@ -40,6 +40,11 @@ class TurnDocument {
             "impact: ${yaml(entry.impact?.toString() ?: 'none')}",
             "turn_hash: ${yaml(turnHash)}"
         ]
+        if (entry.journalObservationId) lines << "journal_observation_id: ${yaml(entry.journalObservationId.toString())}"
+        if (entry.journalLogicalTurnKey) lines << "journal_logical_turn_key: ${yaml(entry.journalLogicalTurnKey.toString())}"
+        if (entry.journalSequence) lines << "journal_sequence: ${entry.journalSequence}"
+        if (entry.journalSourceIde) lines << "journal_source_ide: ${yaml(entry.journalSourceIde.toString())}"
+        if (entry.journalSourceFidelity) lines << "journal_source_fidelity: ${yaml(entry.journalSourceFidelity.toString())}"
         if (spillPath) lines << "spill: ${yaml(spillPath.replace('\\', '/'))}"
         if (alsoSeenIn) lines << "also_seen_in: ${JsonOutput.toJson(alsoSeenIn)}"
         lines.addAll(['---', '', '## User', '', entry.user?.toString() ?: '', '', '## Assistant', '', assistant])

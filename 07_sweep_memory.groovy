@@ -2,23 +2,37 @@ List<String> arguments = args as List<String>
 String workspaceValue = valueAfter(arguments, '--workspace-root')
 boolean forceStateRefresh = arguments.contains('--refresh-state')
 boolean forceDigestRefresh = arguments.contains('--refresh-digest')
+boolean dryRun = arguments.contains('--dry-run')
 File repositoryRoot = new File('.').canonicalFile
 File workspaceRoot = Config.workspaceRoot(workspaceValue, repositoryRoot)
 File outputRoot = new File(workspaceRoot, Config.WORKLOG_CHAT_ROOT_NAME)
+File homeDir = new File(System.getProperty('user.home') ?: '.').canonicalFile
 List<String> runner = new File(repositoryRoot, 'ai-memory-ingester').exists()
     ? [new File(repositoryRoot, 'ai-memory-ingester').absolutePath]
     : ['groovy', new File(repositoryRoot, 'run.groovy').absolutePath]
 
 long started = System.currentTimeMillis()
-Map chat = execute(runner + ['chatlog', '--since-last', '--defer-digest', '--workspace-root', workspaceRoot.absolutePath], repositoryRoot)
-boolean chatChanged = chat.output =~ /(?:unique_(?:turns|artifacts|dross)|metadata_refreshes|path_moves)=[1-9]/
-boolean chatTurnsChanged = chat.output =~ /(?:unique_turns|metadata_refreshes|path_moves)=[1-9]/
+JournalStore journalStore = new JournalStore(Config.journalDbPath())
+Map reconcileReport = null
+Map projectReport = null
+try {
+    reconcileReport = TranscriptReconciler.reconcile(journalStore, workspaceRoot, homeDir, dryRun)
+    projectReport = JournalProjector.project(journalStore, outputRoot, dryRun)
+} finally {
+    journalStore.close()
+}
+
+boolean journalChanged = ((reconcileReport?.totals?.observations_appended ?: 0) as int) > 0 ||
+    ((projectReport?.totals?.emitted ?: 0) as int) > 0 ||
+    ((projectReport?.totals?.refreshed ?: 0) as int) > 0
+boolean chatTurnsChanged = journalChanged
+
 List<Map> syncResults = []
-boolean chatSyncNeeded = chatChanged ||
+boolean chatSyncNeeded = journalChanged ||
     archiveCount(new File(Config.DATA_DIR, Config.CONVERSATION_DB_NAME), 'chat:turns') != matchingCount(new File(outputRoot, 'turns')) { it.name ==~ /turn-\d+\.md/ } ||
     archiveCount(new File(Config.DATA_DIR, Config.ARTIFACTS_DB_NAME), 'chat:artifacts') != matchingCount(new File(outputRoot, 'artifacts')) { it.name ==~ /artifact-\d+\.md/ } ||
     archiveCount(new File(Config.DATA_DIR, Config.DROSS_DB_NAME), 'chat:dross') != matchingCount(new File(outputRoot, 'dross')) { it.name.endsWith('.md') }
-if (chatSyncNeeded) {
+if (chatSyncNeeded && !dryRun) {
     syncDirectory(new File(outputRoot, 'turns'), new File(Config.DATA_DIR, Config.CONVERSATION_DB_NAME), 'chat:turns') { File file -> file.name ==~ /turn-\d+\.md/ }
     syncDirectory(new File(outputRoot, 'artifacts'), new File(Config.DATA_DIR, Config.ARTIFACTS_DB_NAME), 'chat:artifacts') { File file -> file.name ==~ /artifact-\d+\.md/ }
     syncDirectory(new File(outputRoot, 'dross'), new File(Config.DATA_DIR, Config.DROSS_DB_NAME), 'chat:dross') { File file -> file.name.endsWith('.md') }
@@ -28,17 +42,57 @@ List<String> worklogCommand = runner + [
     'worklogs', '--changed', '--sync-db', '--workspace-root', workspaceRoot.absolutePath
 ]
 if (chatTurnsChanged || forceStateRefresh) worklogCommand << '--refresh-state'
+if (dryRun) worklogCommand << '--dry-run'
 Map worklogs = execute(worklogCommand, repositoryRoot)
 boolean worklogsChanged = worklogs.output =~ /(?:^|\t)(?:changed|capsules)=[1-9]/
 if (chatSyncNeeded || worklogsChanged) reconcileDatasets()
-boolean digestUpdated = forceDigestRefresh || chatTurnsChanged || worklogsChanged || !new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists()
-if (digestUpdated) ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES)
 
-int failures = [chat, worklogs].count { (it.code as int) != 0 }
-println chat.output.trim()
+JournalStore digestStore = new JournalStore(Config.journalDbPath())
+boolean digestUpdated = false
+try {
+    digestUpdated = forceDigestRefresh || chatTurnsChanged || worklogsChanged || !new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists()
+    if (digestUpdated && !dryRun) {
+        ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES, digestStore)
+    }
+} finally {
+    digestStore.close()
+}
+
+Map integrityReport = null
+Map lagSummary = [:]
+JournalStore integrityStore = new JournalStore(Config.journalDbPath())
+try {
+    integrityReport = integrityStore.verifyIntegrity(!dryRun)
+    lagSummary = [
+        conflicts: (reconcileReport?.totals?.conflicts ?: 0),
+        lag_reports: (reconcileReport?.totals?.lag_reports ?: 0),
+        unknown_format_failures: (reconcileReport?.totals?.unknown_format_failures ?: 0)
+    ]
+} finally {
+    integrityStore.close()
+}
+
+int failures = (worklogs.code as int) != 0 ? 1 : 0
+if (reconcileReport?.status != 'ok') failures++
+if (integrityReport?.status != 'ok') failures++
+
+printReconcileLine(reconcileReport)
+printProjectLine(projectReport)
 println worklogs.output.trim()
-println "SWEEP_MEMORY\tchat_changed=${chatChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded ? 3 : 0}\tdigest_updated=${digestUpdated}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length()}\telapsed_ms=${System.currentTimeMillis() - started}"
+println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}"
 if (failures > 0) exitApp(1)
+
+static void printReconcileLine(Map report) {
+    if (!report) return
+    Map totals = report.totals as Map
+    println "RECONCILE_TRANSCRIPTS\tstatus=${report.status}\tsources=${totals.sources_scanned}\tappended=${totals.observations_appended}\tlinks=${totals.links_created}\tconflicts=${totals.conflicts}\tlag=${totals.lag_reports}"
+}
+
+static void printProjectLine(Map report) {
+    if (!report) return
+    Map totals = report.totals as Map
+    println "PROJECT_JOURNAL\tstatus=${report.status}\tscanned=${totals.canonical_scanned}\temitted=${totals.emitted}\tduplicate=${totals.duplicate}\tcursor=${totals.cursor_before}->${totals.cursor_after}"
+}
 
 static Map execute(List<String> command, File directory) {
     Process process = new ProcessBuilder(command).directory(directory).redirectErrorStream(true).start()

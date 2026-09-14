@@ -124,6 +124,31 @@ All benchmark commands are read-only. Do not run `sweep-memory`, ingestion,
 database synchronization, or digest generation while a snapshot is being
 scored.
 
+## Mandatory benchmark output
+
+Every three-branch benchmark run must produce a complete measured result. A
+narrative answer without the following fields is incomplete:
+
+1. frozen query, snapshot timestamp, journal cutoff, exclusions, byte budget,
+   and branch-specific ordering policy;
+2. successful wall-clock retrieval time for every branch, including process
+   and language-runtime startup;
+3. failed setup attempts listed separately and excluded from successful
+   retrieval timing;
+4. total matches, selected items, selected UTF-8 bytes, date span, and source
+   ceiling for every branch;
+5. isolated answers produced before cross-branch adjudication;
+6. a stable weighted fact ledger;
+7. numeric factual coverage, precision, freshness, temporal correctness,
+   authority, traceability, contradiction, and weighted overall scores;
+8. disclosed denominators for every score;
+9. retrieval and synthesis defects classified by failure layer;
+10. a populated timing-and-score summary table as the final benchmark section.
+
+The user-facing answer must repeat the branch timings and score summary. Values
+that were not measured must be reported as `Not measured`; they must never be
+estimated to make a table appear complete.
+
 ## Branch 1: fixed worklog retrieval
 
 ### Budget-normalized input
@@ -650,7 +675,7 @@ For another ticket:
 14. classify each miss by failure layer;
 15. preserve commands, paths, exclusions, and raw counts with the result.
 
-## Final comparison
+## SCTASK1544083 baseline comparison
 
 | Dimension | Fixed worklog | FTS5 top 20 | Direct prompt.log |
 |---|---|---|---|
@@ -669,3 +694,256 @@ For another ticket:
 | Strongest use | Comprehensive ticket history and architecture | Fast discovery of exact atomic evidence | Latest conversational progression and forensic journal recovery |
 | Primary weakness | Stale and mixed temporal state | Length-biased ranking and decisive-turn omission | Slow parsing and loss of early context under recency packing |
 | Confidence | High for source contents; medium for current state | High for measured ranking; medium for answer completeness | High for selected entries; medium for current external state |
+
+## MongoDB metrics benchmark
+
+### Frozen inputs
+
+Snapshot: `2026-09-14 09:18 CEST`
+
+| Item | Frozen value |
+|---|---|
+| Query intent | Case-insensitive `mongo* AND metric*` |
+| Direct-journal equivalent | Entry contains both a `mongo...` token and a `metric...` token |
+| Journal cutoff | Complete entries ending at or before `prompt.log` line 37286 |
+| Excluded journal range | Line 37287 onward, containing this benchmark and its derivative prompts |
+| Branch budget | 22,000 UTF-8 bytes |
+| Indexed-worklog order | BM25 ascending, document ID ascending, limit 20 |
+| Conversation FTS order | BM25 ascending, document ID ascending, limit 20 |
+| Direct-journal order | Source byte offset descending; complete entries only |
+| `worklogs.db` | 6,938,624 bytes; mtime `2026-09-14T05:02:34.851856Z` |
+| `convo.db` | 45,899,776 bytes; mtime `2026-09-14T05:02:33.075371Z` |
+| Primary `prompt.log` | 2,657,760 bytes at snapshot |
+| Application code or database changes | None |
+
+The scored indexed branches use 1,050-character snippets so their top 20 fit
+the byte budget. Complete documents and neighboring turns are inspected only
+after each isolated answer is frozen and therefore cannot improve its score.
+
+An earlier exploratory direct-journal attempt failed in 1.34 seconds because
+`MEMORY_WORKSPACE_ROOT` was not exported. It changed no data and is excluded
+from successful retrieval time. The measured benchmark run itself had no
+failed setup attempts.
+
+### Retrieval measurements
+
+| Branch | Total matches | Selected | Selected bytes | Query source ceiling | Successful wall time |
+|---|---:|---:|---:|---:|---:|
+| Indexed worklogs | 27 | 20 snippets | 20,755 | 200,845 bytes across matching documents | 0.02 s |
+| Conversation FTS5 | 48 | 20 snippets | 17,209 | 532,027 bytes across matching turns | 0.02 s |
+| Direct `prompt.log` | 51 | 20 complete entries | 21,772 | 115,765 bytes across matching entries | 3.75 s |
+
+The two primary worklog sources contain 177,754 bytes across 2,813 logical
+lines. They are larger than the indexed query ceiling because not every section
+contains both query terms.
+
+### Isolated branch findings
+
+#### Indexed worklogs
+
+The ranked snippets recover the KD-6999 and KD-7289 ticket scopes, the
+DocumentDB reader-safety design, the dedicated exporter and OTLP architecture,
+the stable document metric name, UAT-first rollout, and historical collector
+routing work.
+
+Quality defects:
+
+- both ticket state capsules explicitly report `freshness: stale`;
+- an unrelated KD-6541 New Relic metrics chunk consumes one top-20 position;
+- one additional action-log result is marginal;
+- the snippets omit the final six-name metric contract, image 24-9 cadence,
+  September PROD deployment, collector repair, and Grafana verification;
+- authoritative and historical chunks conflict over whether KD-6999 Phase 1
+  remains blocked or is closed.
+
+#### Conversation FTS5
+
+The top 20 recover both exporters, four stable KD-7289 metrics, UAT live
+measurements, dedicated-secret progression, image 24-9, the four-hour schedule,
+60-second scrape, 10-second batch, and the September diagnosis that PROD
+metrics were being dropped.
+
+Quality defects:
+
+- six results are only partial plumbing or planning evidence;
+- the result set presents the September 3 missing PROD allowlist and wrong
+  datasource as the latest state;
+- the actual September 4 collector repair and successful Grafana query do not
+  match both lexical terms and therefore never enter the 48-result query
+  ceiling;
+- metric naming and COUNT_MODE history require chronology-aware synthesis.
+
+#### Direct prompt.log
+
+The 20 newest complete matching entries recover the metric rename, both ticket
+scopes, UAT measurements, credential hardening, PROD diagnosis, and current
+scrape/count cadence. Nineteen entries are useful and one is marginal.
+
+Quality defects:
+
+- source-offset ordering is deterministic but not strictly chronological
+  because later journal appends can contain earlier timestamps;
+- the selector omits the final collector repair because that entry contains
+  `konto_mongo` but not a `metric...` token;
+- it omits the successful Prometheus query because that entry says `metrics`
+  but does not contain a `mongo...` token;
+- the isolated answer consequently repeats a blocker that had already been
+  resolved in adjacent journal entries.
+
+### Adjudicated fact ledger
+
+Weights use the existing 3/2/1 importance scale. `Full` receives the complete
+weight, `Partial` receives half, and `Missing` receives zero. Recorded live and
+repository statements are historical evidence unless reverified during this
+benchmark.
+
+| ID | Weight | Adjudicated fact | Indexed worklogs | FTS5 top 20 | Direct prompt.log |
+|---|---:|---|---:|---:|---:|
+| M01 | 3 | KD-6999 monitors accessTokens, refreshTokens, and sessions for long-retention reporting | Full | Full | Full |
+| M02 | 3 | KD-7289 monitors `event_message` in total-only mode | Full | Full | Full |
+| M03 | 2 | Both use the dedicated exporter image and related deployments | Full | Full | Full |
+| M04 | 3 | Final contract has six names; the document gauge no longer ends in `_total` | Partial | Partial | Full |
+| M05 | 3 | OAuth uses total/active/expired; KD-7289 emits no active, expired, or status split | Full | Partial | Full |
+| M06 | 3 | Queries use reader endpoints, secondary preference, bounds, and least privilege | Full | Full | Full |
+| M07 | 2 | UAT credentials progressed from shared application access to dedicated secrets | Partial | Full | Full |
+| M08 | 3 | UAT scrape route uses collector allowlisting and the Konto UAT datasource | Partial | Full | Full |
+| M09 | 2 | Direct retention OTLP requires authentication and `system=konto-retention` | Full | Full | Full |
+| M10 | 3 | KD-6999 UAT exposed 15 healthy series | Missing | Full | Full |
+| M11 | 3 | KD-7289 UAT reported about 132,615 documents in 0.094–0.096 seconds | Partial | Full | Full |
+| M12 | 3 | Image 24-9 uses `/livez` and a four-hour Warsaw schedule | Missing | Full | Full |
+| M13 | 2 | Prometheus scrapes every 60 seconds and collector batching is 10 seconds | Partial | Full | Full |
+| M14 | 3 | PROD exporter was recorded healthy on image 24-9 | Missing | Partial | Partial |
+| M15 | 3 | PROD collector replacement made all six allowlist entries live | Missing | Missing | Missing |
+| M16 | 3 | Prometheus Konto then returned documents, active, expired, duration, and success series | Missing | Missing | Missing |
+| M17 | 2 | Retention datasource remained empty because direct authenticated OTLP was disabled | Missing | Full | Full |
+| M18 | 1 | UAT2 collector restoration remained unresolved in the scored evidence | Missing | Full | Full |
+| M19 | 2 | KD-7289 dedicated credential hardening remained incomplete | Missing | Full | Full |
+| M20 | 2 | September PROD count totals and per-cycle performance were recorded | Missing | Missing | Missing |
+| M21 | 1 | Both indexed ticket capsules explicitly identify their own staleness | Full | Missing | Missing |
+
+Total eligible weight: 52.
+
+Coverage calculations:
+
+- indexed worklogs: 22.5 / 52 = 43.3%, rounded to 43;
+- FTS5 top 20: 37.5 / 52 = 72.1%, rounded to 72;
+- direct prompt.log: 41.5 / 52 = 79.8%, rounded to 80.
+
+### Score calculations
+
+#### Precision
+
+- Indexed worklogs: 18/20 clearly useful results and 27/28 supported or
+  correctly qualified substantive claims; average 93.
+- FTS5: 14/20 clearly useful results and 28/30 supported or correctly
+  qualified substantive claims; average 82.
+- Direct prompt.log: 19/20 useful entries and 29/30 supported or correctly
+  qualified substantive claims; average 96.
+
+#### Freshness
+
+Latest-state facts M14–M20 carry 16 weight.
+
+- Indexed worklogs receive event-recency 50 and 0/16 latest-state fact weight:
+  `(50 + 0) / 2 = 25`.
+- FTS5 and direct prompt.log each receive event-recency 100 and 6.5/16 =
+  40.6 latest-state coverage: `(100 + 41) / 2 = 70.5`, rounded to 71.
+
+The high recency component does not mean the isolated answer is current: both
+ranked conversational branches miss the adjacent September 4 repair.
+
+#### Temporal correctness
+
+- Indexed worklogs correctly classify 6 of 8 status-bearing claims: 75.
+- FTS5 correctly classifies 7 of 11 status-bearing claims: 64.
+- Direct prompt.log correctly classifies 8 of 11 status-bearing claims: 73.
+
+#### Authority
+
+- Indexed worklogs: 80, using the existing structured-worklog authority tier.
+- FTS5: 70, using the atomic-turn authority tier.
+- Direct prompt.log: 70, using the raw-journal authority tier.
+
+#### Traceability
+
+All substantive claims in all three branch answers retain an exact chunk path,
+turn path and source lines, or direct journal range. Each branch scores 100.
+
+#### Contradictions
+
+Six eligible conflicts are used:
+
+1. `_total` gauge versus the renamed document gauge;
+2. proposed status mode versus live total-only KD-7289 mode;
+3. UAT pipeline broken versus restored;
+4. shared application credentials versus dedicated credentials;
+5. allowlist present in Git versus absent live;
+6. PROD blocked versus collector repaired and metrics queryable.
+
+- Indexed worklogs resolve 2/6: 33.
+- FTS5 top 20 resolves 2/6: 33.
+- Direct prompt.log resolves 4/6: 67.
+
+#### Weighted totals
+
+Using the unchanged weights:
+
+- indexed worklogs:
+  `43×0.25 + 93×0.20 + 25×0.15 + 75×0.15 + 80×0.10 + 100×0.10 + 33×0.05 = 64.0`;
+- FTS5 top 20:
+  `72×0.25 + 82×0.20 + 71×0.15 + 64×0.15 + 70×0.10 + 100×0.10 + 33×0.05 = 73.3`;
+- direct prompt.log:
+  `80×0.25 + 96×0.20 + 71×0.15 + 73×0.15 + 70×0.10 + 100×0.10 + 67×0.05 = 81.2`.
+
+### Source-ceiling and neighbor adjudication
+
+After all isolated answers were frozen, adjacent complete turns established the
+latest recorded state:
+
+- `turn-002396.md`: the September 4 replacement of
+  `OpenTelemetryCollector/otel-cluster-collector` succeeded and all six
+  allowlist entries became live;
+- `turn-002397.md`: direct Grafana API queries found documents, active,
+  expired, duration, and success metrics, each with three collection series and
+  `system=konto`, in Prometheus Konto;
+- the Retention datasource remained empty because direct authenticated OTLP
+  was disabled;
+- `turn-002394.md`: the collector scraped every 60 seconds, batched every 10
+  seconds, and republished values calculated on the four-hour Warsaw schedule.
+
+These facts receive no branch score credit because the frozen query and
+selection did not retrieve the first two turns. This proves a lexical-query and
+context-expansion defect rather than absent source memory.
+
+### Failure-layer classification
+
+| Finding | Failure layer |
+|---|---|
+| KD-6999 and KD-7289 state capsules are stale | Source/state freshness |
+| Unrelated KD-6541 chunk enters worklog top 20 | Ranking precision |
+| Worklog snippets cut off decisive status details | Context assembly |
+| BM25 promotes planning and credential plumbing over final repair | Ranking |
+| Final repair turn lacks `metric...`; successful query turn lacks `mongo...` | Query formulation |
+| Direct source-offset order differs from event chronology | Context ordering |
+| Scored answers present repaired PROD routing as still blocked | Temporal synthesis |
+| Neighbor expansion recovers the omitted correction | Retrieval orchestration |
+
+## MongoDB metrics comparison
+
+| Dimension | Indexed worklogs | FTS5 top 20 | Direct prompt.log |
+|---|---|---|---|
+| Result/selected count | 27 matches / 20 snippets | 48 matches / 20 snippets | 51 matches / 20 complete entries |
+| Selected bytes | 20,755 | 17,209 | 21,772 |
+| Retrieval time | **0.02 s** including SQLite startup | **0.02 s** including SQLite startup | **3.75 s** including Groovy startup and parsing |
+| Source ceiling | 27 matching documents / 200,845 bytes | 48 matching turns / 532,027 bytes | 51 matching entries / 115,765 bytes |
+| Factual coverage | **43/100** — strong design, weak late delivery state | **72/100** — broad operational evidence; repair omitted | **80/100** — strongest selected fact coverage; repair still omitted |
+| Precision | **93/100** — 18/20 useful; one unrelated and one marginal result | **82/100** — 14/20 clearly useful; plumbing consumes rank | **96/100** — 19/20 useful complete entries |
+| Freshness | **25/100** — stale capsules and no latest-state facts | **71/100** — recent cadence evidence but stale blocker conclusion | **71/100** — recent cadence evidence but lexical selection misses repair |
+| Temporal correctness | **75/100** — explicit stale labels help, conflicting status remains | **64/100** — 7/11 status items correctly classified | **73/100** — resolves more progression but misses final repair |
+| Authority | **80/100** — structured worklog evidence | **70/100** — atomic conversation-turn evidence | **70/100** — primary append-only journal evidence |
+| Traceability | **100/100** — exact indexed chunk paths | **100/100** — exact turn paths and source lines | **100/100** — exact complete journal ranges |
+| Contradictions | **33/100** — resolves 2/6 known conflicts | **33/100** — resolves 2/6; final correction absent | **67/100** — resolves 4/6; final correction split across nonmatching entries |
+| Overall weighted score | **64.0/100** | **73.3/100** | **81.2/100** |
+| Strongest use | Architecture, safety constraints, and ticket scope | Fast operational evidence discovery | Latest broad narrative from complete raw entries |
+| Primary weakness | Stale state and truncated ranked snippets | BM25 and conjunction query omit decisive repair | Slow startup and entry-level conjunction misses adjacent evidence |
+| Confidence | High for measured input; medium for operational truth | High for measured ranking; medium for latest-state answer | High for selected entries; medium for latest-state answer |

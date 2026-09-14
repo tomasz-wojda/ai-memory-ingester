@@ -174,7 +174,7 @@ class TicketRetrieval {
     }
 
     static String normalizeTicket(String ticket) {
-        return (ticket ?: '').toLowerCase().replaceAll(/[^a-z0-9]/, '')
+        return TicketKey.facet(ticket)
     }
 
     private static List<Map> rows(File database, String query, List parameters, String pool) {

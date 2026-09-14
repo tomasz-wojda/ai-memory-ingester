@@ -28,6 +28,7 @@ class Config {
     static final String WORKLOG_CHAT_ROOT_NAME = 'worklog-chat'
     static final String CHAT_HASH_INDEX_NAME = 'turn-hashes.tsv'
     static final String CHAT_SWEEP_STATE_NAME = 'ingest-state.json'
+    static final int CHAT_PARSER_VERSION = 1
     static final String WORKLOG_SWEEP_STATE_NAME = 'worklog-state.json'
     static final int WORKLOG_PARSER_VERSION = 2
     static final String CHAT_RESUME_DIGEST_NAME = 'RESUME.md'

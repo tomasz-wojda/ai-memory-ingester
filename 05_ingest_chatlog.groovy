@@ -82,6 +82,7 @@ Map totals = [
     unique: [turns: 0, artifacts: 0, dross: 0],
     duplicate: [turns: 0, artifacts: 0, dross: 0],
     spill: [raw: 0, unique: 0, duplicate: 0],
+    refacet: [rescannedSources: 0, metadataRefreshes: 0, pathMoves: 0, canonicalUnchanged: 0],
     skippedUnchanged: 0,
     skippedDuplicate: 0
 ]
@@ -92,8 +93,9 @@ sources.each { File source ->
     String sourcePath = relativePath(workspaceRoot, source)
     String fullHash = sha256(source)
     Map record = (sweepState.sources as Map)?.get(sourcePath) as Map
-    boolean unchanged = record && record.full_hash == fullHash && (record.byte_offset as long) == source.length()
-    boolean duplicateFile = knownFileHashes.contains(fullHash) && !unchanged
+    boolean parserMismatch = record && ((record.parser_version ?: 0) as int) != Config.CHAT_PARSER_VERSION
+    boolean unchanged = record && !parserMismatch && record.full_hash == fullHash && (record.byte_offset as long) == source.length()
+    boolean duplicateFile = knownFileHashes.contains(fullHash) && !unchanged && !parserMismatch
 
     if (unchanged || duplicateFile) {
         if (unchanged) totals.skippedUnchanged++ else totals.skippedDuplicate++
@@ -108,9 +110,9 @@ sources.each { File source ->
     }
 
     long startOffset = 0L
-    boolean fullRescan = false
+    boolean fullRescan = parserMismatch
     if (sinceLast && record) {
-        fullRescan = SweepState.needsFullRescan(source, record)
+        fullRescan = parserMismatch || SweepState.needsFullRescan(source, record)
         startOffset = fullRescan ? 0L : SweepState.offsetFor(sweepState, sourcePath)
     }
 
@@ -122,7 +124,8 @@ sources.each { File source ->
         raw: [turns: 0, artifacts: 0, dross: 0],
         unique: [turns: 0, artifacts: 0, dross: 0],
         duplicate: [turns: 0, artifacts: 0, dross: 0],
-        spill: [raw: 0, unique: 0, duplicate: 0]
+        spill: [raw: 0, unique: 0, duplicate: 0],
+        refacet: [metadataRefreshes: 0, pathMoves: 0, canonicalUnchanged: 0]
     ]
     entries.each { Map parsed ->
         Map entry = TurnClassifier.classify(parsed, spillBytes)
@@ -141,17 +144,20 @@ sources.each { File source ->
             artifactEntry.sections = [:]
             artifactEntry.turnHash = TurnDocument.hash("artifact ${entry.rawBody}")
             Map artifactResult = TurnEmitter.emit(
-                outputRoot, artifactEntry, 'artifacts', currentSequence, hashIndex, null, dryRun
+                outputRoot, artifactEntry, 'artifacts', currentSequence, hashIndex, null, dryRun, parserMismatch
             )
+            recordRefacetResult(sourceCounts.refacet as Map, artifactResult)
             if (artifactResult.emitted) sourceCounts.spill.unique++ else sourceCounts.spill.duplicate++
             String spillPath = artifactResult.path?.toString()
             Map turnResult = TurnEmitter.emit(
-                outputRoot, entry, classifiedTier, currentSequence, hashIndex, spillPath, dryRun
+                outputRoot, entry, classifiedTier, currentSequence, hashIndex, spillPath, dryRun, parserMismatch
             )
+            recordRefacetResult(sourceCounts.refacet as Map, turnResult)
             if (turnResult.emitted) sourceCounts.unique[classifiedTier]++ else sourceCounts.duplicate[classifiedTier]++
             if (artifactResult.emitted || turnResult.emitted) sequence++
         } else {
-            Map result = TurnEmitter.emit(outputRoot, entry, classifiedTier, currentSequence, hashIndex, null, dryRun)
+            Map result = TurnEmitter.emit(outputRoot, entry, classifiedTier, currentSequence, hashIndex, null, dryRun, parserMismatch)
+            recordRefacetResult(sourceCounts.refacet as Map, result)
             if (result.emitted) {
                 sourceCounts.unique[classifiedTier]++
                 sequence++
@@ -169,10 +175,14 @@ sources.each { File source ->
     ['raw', 'unique', 'duplicate'].each { String category ->
         totals.spill[category] += sourceCounts.spill[category]
     }
+    if (parserMismatch) totals.refacet.rescannedSources++
+    ['metadataRefreshes', 'pathMoves', 'canonicalUnchanged'].each { String metric ->
+        totals.refacet[metric] += sourceCounts.refacet[metric]
+    }
     boolean sourceReconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
         sourceCounts.raw[tier] == sourceCounts.unique[tier] + sourceCounts.duplicate[tier]
     }
-    println "${sourcePath}\t${fullRescan ? 'FULL_RESCAN' : 'PROCESSED'}\t${reportFields(sourceCounts)}\treconciled=${sourceReconciled}"
+    println "${sourcePath}\t${fullRescan ? 'FULL_RESCAN' : 'PROCESSED'}\t${reportFields(sourceCounts)}\t${refacetFields(sourceCounts.refacet as Map)}\treconciled=${sourceReconciled}"
 
     if (!dryRun) {
         SweepState.record(sweepState, sourcePath, source)
@@ -196,8 +206,9 @@ boolean reconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
     totals.raw[tier] == totals.unique[tier] + totals.duplicate[tier]
 }
 double elapsedMs = (System.nanoTime() - started) / 1_000_000.0
-printf "TOTAL\t%s\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s%n",
-    reportFields(totals), totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun, digestUpdated
+printf "TOTAL\t%s\trefacet_rescanned_sources=%d\tmetadata_refreshes=%d\tpath_moves=%d\tcanonical_unchanged=%d\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s%n",
+    reportFields(totals), totals.refacet.rescannedSources, totals.refacet.metadataRefreshes, totals.refacet.pathMoves,
+    totals.refacet.canonicalUnchanged, totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun, digestUpdated
 
 /**
  * Returns a normalized path relative to the workspace.
@@ -225,6 +236,21 @@ static String reportFields(Map counts) {
     fields << "spill_unique=${counts.spill.unique}"
     fields << "spill_duplicate=${counts.spill.duplicate}"
     return fields.join('\t')
+}
+
+static void recordRefacetResult(Map counts, Map result) {
+    if (!result.containsKey('refreshed')) return
+    if (result.metadataChanged) counts.metadataRefreshes++
+    if (result.moved) counts.pathMoves++
+    if (!result.metadataChanged && !result.moved) counts.canonicalUnchanged++
+}
+
+static String refacetFields(Map counts) {
+    return [
+        "metadata_refreshes=${counts.metadataRefreshes}",
+        "path_moves=${counts.pathMoves}",
+        "canonical_unchanged=${counts.canonicalUnchanged}"
+    ].join('\t')
 }
 
 /**

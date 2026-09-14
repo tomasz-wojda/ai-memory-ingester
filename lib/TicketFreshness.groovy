@@ -132,7 +132,7 @@ class TicketFreshness {
     }
 
     static String normalizeTicket(String ticket) {
-        return (ticket ?: '').toLowerCase().replaceAll(/[^a-z0-9]/, '')
+        return TicketKey.facet(ticket)
     }
 
     static boolean isRetrievalMeta(String content) {
@@ -146,10 +146,10 @@ class TicketFreshness {
         String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
         def userMatcher = body =~ /(?s)## User\s*(.*?)(?:\n## Assistant|\z)/
         String user = userMatcher.find() ? userMatcher.group(1) : ''
-        String hyphenated = (ticket ?: '').toUpperCase()
-        String compact = normalizeTicket(ticket).toUpperCase()
-        if (!hyphenated) return false
-        return user.toUpperCase() ==~ /(?s).*(?:${java.util.regex.Pattern.quote(hyphenated)}|${java.util.regex.Pattern.quote(compact)}).*/
+        String canonical = TicketKey.canonical(ticket)
+        if (!canonical) return false
+        String compact = TicketKey.facet(canonical).toUpperCase(Locale.ROOT)
+        return user.toUpperCase(Locale.ROOT) ==~ /(?s).*(?:${java.util.regex.Pattern.quote(canonical)}|${java.util.regex.Pattern.quote(compact)}).*/
     }
 
     static boolean hasMaterialTicketEvidence(String content) {

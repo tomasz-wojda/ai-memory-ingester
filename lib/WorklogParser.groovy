@@ -8,7 +8,6 @@ import java.time.format.DateTimeFormatter
 
 class WorklogParser {
     private static final String SECTION_RULE = '=' * 80
-    private static final java.util.regex.Pattern TICKET = ~/(?i)\b(?:[A-Z]{2,10}-\d+|SCTASK\d+)\b/
 
     static Map parseFile(File source, String sourcePath = source.path, long targetBytes = Config.WORKLOG_CHUNK_TARGET_BYTES) {
         List<String> lines = source.readLines('UTF-8')
@@ -112,10 +111,10 @@ class WorklogParser {
     }
 
     static String extractTicket(File source, List<String> lines = null) {
-        def fileMatch = source.name.toUpperCase() =~ TICKET
-        if (fileMatch.find()) return fileMatch.group().toUpperCase()
-        def contentMatch = ((lines ?: source.readLines('UTF-8')).take(80).join('\n').toUpperCase()) =~ TICKET
-        return contentMatch.find() ? contentMatch.group().toUpperCase() : null
+        List<String> fileKeys = TicketKey.extract(source.name)
+        if (fileKeys) return fileKeys[0]
+        List<String> contentKeys = TicketKey.extract((lines ?: source.readLines('UTF-8')).take(80).join('\n'))
+        return contentKeys ? contentKeys[0] : null
     }
 
     static String extractSourceDate(String name) {

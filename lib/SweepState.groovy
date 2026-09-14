@@ -56,7 +56,8 @@ class SweepState {
         state.sources[sourcePath] = [
             byte_offset: processed,
             byte_length: length,
-            prefix_hash: hashPrefix(source, processed)
+            prefix_hash: hashPrefix(source, processed),
+            parser_version: Config.CHAT_PARSER_VERSION
         ]
     }
 

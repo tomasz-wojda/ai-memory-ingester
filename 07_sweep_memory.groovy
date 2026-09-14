@@ -11,8 +11,8 @@ List<String> runner = new File(repositoryRoot, 'ai-memory-ingester').exists()
 
 long started = System.currentTimeMillis()
 Map chat = execute(runner + ['chatlog', '--since-last', '--defer-digest', '--workspace-root', workspaceRoot.absolutePath], repositoryRoot)
-boolean chatChanged = chat.output =~ /unique_(?:turns|artifacts|dross)=[1-9]/
-boolean chatTurnsChanged = chat.output =~ /unique_turns=[1-9]/
+boolean chatChanged = chat.output =~ /(?:unique_(?:turns|artifacts|dross)|metadata_refreshes|path_moves)=[1-9]/
+boolean chatTurnsChanged = chat.output =~ /(?:unique_turns|metadata_refreshes|path_moves)=[1-9]/
 List<Map> syncResults = []
 boolean chatSyncNeeded = chatChanged ||
     archiveCount(new File(Config.DATA_DIR, Config.CONVERSATION_DB_NAME), 'chat:turns') != matchingCount(new File(outputRoot, 'turns')) { it.name ==~ /turn-\d+\.md/ } ||

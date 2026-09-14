@@ -52,6 +52,10 @@ RESPONSE: Deployment is healthy.
             'pair.log': '''[2026-08-15T08:00:00Z] USER: Check KD-7289 status
 [2026-08-15T08:00:00Z] ASSISTANT: Status is ready.
 ''',
+            'compact-ticket.log': '''[2026-08-15T09:00:00Z] SCTASK1544083 production delivery
+USER: Compare the related KD-6999 evidence
+ASSISTANT: SCTASK1544083 deployment is verified.
+''',
             'artifact.log': '''[2026-08-16 11:00:00] Infrastructure inventory
 cluster=synthetic-cluster
 endpoint=synthetic.internal

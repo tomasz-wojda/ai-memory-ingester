@@ -53,7 +53,7 @@ class FacetPath {
      * @return Ticket facet
      */
     static String ticketFacet(String ticket) {
-        return sanitizeToken(ticket) ?: 'noticket'
+        return TicketKey.facet(ticket)
     }
 
     /**

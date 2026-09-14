@@ -26,6 +26,10 @@ class WorklogSuite {
 
         Map parsed = WorklogParser.parseFile(fixtures.primary, 'worklog/2026-09-13_TEST-1234.log')
         verify('ticket from filename', parsed.ticket == 'TEST-1234')
+        File compactSource = new File(root.parentFile, '2026-07-01_SCTASK1544083.log')
+        compactSource.setText('SCTASK1544083 worklog\n', 'UTF-8')
+        verify('compact ticket from worklog filename', WorklogParser.extractTicket(compactSource) == 'SCTASK1544083')
+        compactSource.delete()
         verify('structured worklog', parsed.structured)
         verify('summary category', parsed.chunks.any { it.category == 'summary' })
         verify('decision category', parsed.chunks.any { it.category == 'decisions' })
@@ -69,7 +73,15 @@ class WorklogSuite {
         verify('event time outranks global sequence', candidates.findIndexOf { it.file_name == 'turn-000010.md' } < candidates.findIndexOf { it.file_name == 'turn-009999.md' })
         verify('newer evidence remains historical', candidates.findAll { it.pool == 'newer-evidence' }.every { it.authority == 'historical' })
         verify('preview excludes front matter', candidates[0].snippet.startsWith('# TEST-1234'))
-        verify('normalization variants', TicketRetrieval.normalizeTicket('TEST-1234') == TicketRetrieval.normalizeTicket('test1234'))
+        verify('normalization variants', TicketRetrieval.normalizeTicket('TEST-1234') == TicketRetrieval.normalizeTicket('test-1234'))
+        verify('compact normalization variants', [
+            TicketRetrieval.normalizeTicket('SCTASK1544083'),
+            TicketRetrieval.normalizeTicket('sctask1544083')
+        ] == ['sctask1544083', 'sctask1544083'])
+        verify('compact explicit freshness evidence', TicketFreshness.hasExplicitUserTicket(
+            '---\n---\n## User\n\nVerify sctask1544083 deployment\n\n## Assistant\n\nVerified.',
+            'SCTASK1544083'
+        ))
         verify('semantic pool retrieval', TicketRetrieval.semanticCandidates(data, 'test1234', 'verified', 5).any { it.pool == 'semantic' })
         Map context = TicketRetrieval.assembleContext(candidates, 22000)
         verify('context respects budget', (context.content_bytes as int) <= 22000)
@@ -94,7 +106,7 @@ class WorklogSuite {
 
     private static void initialize() {
         loader = new GroovyClassLoader(WorklogSuite.class.classLoader)
-        ['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
+        ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
          'FacetPath', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
          'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter', 'TicketRetrieval',
          'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { String name ->

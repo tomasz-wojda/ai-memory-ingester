@@ -187,7 +187,8 @@ class ChatLogParser {
         boolean blockHeader = text.readLines().any {
             isDateBanner(it) || isBareDateHeader(it) || it ==~ /(?i)^(?:TIMESTAMP|DATE):\s*.+$/
         }
-        boolean ticket = text ==~ /(?s)^\[[^\]]+\]\s+[A-Z][A-Z0-9]+-\d+.*$/ &&
+        String firstLine = text.readLines().find { it.trim() } ?: ''
+        boolean ticket = isBracketTimestamp(firstLine) && roleForLine(firstLine) == null && !TicketKey.extract(firstLine).isEmpty() &&
             fields['USER'] && fields['ASSISTANT']
         boolean pair = isBracketTimestamp(text.readLines().find { it.trim() } ?: '') && hasUser
         if (fenced && hasUser) return 'Fenced'
@@ -240,13 +241,7 @@ class ChatLogParser {
      * @return Ticket keys
      */
     static List<String> extractTicketKeys(String text) {
-        List<String> keys = []
-        def matcher = (text ?: '') =~ /\b([A-Z][A-Z0-9]{1,9}-\d{1,8})\b/
-        matcher.each { match ->
-            String key = match[1].toString().toUpperCase()
-            if (!keys.contains(key)) keys << key
-        }
-        return keys
+        return TicketKey.extract(text)
     }
 
     private static Map parseRegion(Map region, String sourcePath) {
@@ -260,7 +255,8 @@ class ChatLogParser {
         String user = join(fields['USER'])
         String assistant = join(fields['ASSISTANT'])
         Map<String, String> sections = extractLabelledSections(text)
-        List<String> tickets = extractTicketKeys(([user, assistant, sections.values().join('\n')].findAll().join('\n')))
+        String bodyText = [user, assistant, sections.values().join('\n')].findAll().join('\n')
+        List<String> tickets = TicketKey.prioritize(ticketHeaderText(text), bodyText)
 
         if (dialect == 'Artifact') {
             user = ''
@@ -316,6 +312,15 @@ class ChatLogParser {
             }
         }
         return fields
+    }
+
+    private static String ticketHeaderText(String text) {
+        List<String> header = []
+        for (String line : (text ?: '').readLines()) {
+            if (roleForLine(line) != null || isPromptInputHeader(line) || isPromptOutputHeader(line)) break
+            header << line
+        }
+        return header.join('\n')
     }
 
     private static String bracketTimestamp(String text) {

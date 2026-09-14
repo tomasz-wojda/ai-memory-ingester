@@ -314,7 +314,7 @@ if (!input.isEmpty()) {
         println "Unknown command: ${input}. Type :help for available commands."
         exitApp(0); return
     } else {
-        def bareTicket = input =~ /(?i)^(?:[A-Z]{2,10}-?\d+|SCTASK\d+)$/
+        def bareTicket = input =~ /(?i)^(?:[A-Z]{2,10}-\d+|SCTASK\d{6,10})$/
         if (bareTicket.matches()) {
             executeTicket(input, '', limit, budgetBytes, jsonOutput, false)
             exitApp(0); return
@@ -1612,8 +1612,13 @@ private static String cleanSnippet(String value) {
 }
 
 private static String queryTicketFacet(String value) {
-    String token = (value ?: '').toLowerCase(Locale.ROOT).replaceAll(/[^a-z0-9]/, '')
-    return token ?: 'noticket'
+    try {
+        Class ticketKey = Thread.currentThread().contextClassLoader.loadClass('TicketKey')
+        return ticketKey.getMethod('facet', String).invoke(null, value).toString()
+    } catch (ClassNotFoundException ignored) {
+        String token = (value ?: '').toLowerCase(Locale.ROOT).replaceAll(/[^a-z0-9]/, '')
+        return token ?: 'noticket'
+    }
 }
 
 private static String queryModeFacet(String value) {

@@ -13,6 +13,7 @@ class TestChatLogSuite {
     private static final List<String> failures = []
     private static GroovyClassLoader loader
     private static Class Config
+    private static Class TicketKey
     private static Class ArchiveHandler
     private static Class TimestampRepair
     private static Class ChatLogParser
@@ -40,6 +41,7 @@ class TestChatLogSuite {
         Map<String, File> sequenceFixtures = fixtureGenerator.generateSequenceOrderFixtures(temporaryRoot, true)
 
         testParserDialects(fixtures)
+        testCompactTicketContract(fixtures)
         testBoundaryAndRoleMatrix(fixtures)
         testFenceRecovery(fixtures)
         testTimestampRepair()
@@ -48,6 +50,7 @@ class TestChatLogSuite {
         testEmissionAndSpill(fixtures, temporaryRoot)
         testDiscoveryAndReport(fixtures, temporaryRoot)
         testSweep(fixtures, temporaryRoot)
+        testVersionedRefacet(fixtures, temporaryRoot)
         testDigest(temporaryRoot)
         testDeterministicDirectoryIngestion(sequenceFixtures, temporaryRoot)
         testRetrievalAndJson(temporaryRoot)
@@ -64,12 +67,13 @@ class TestChatLogSuite {
         groovy.grape.Grape.grab(classLoader: loader, group: 'org.xerial', module: 'sqlite-jdbc', version: '3.45.1.0')
         Thread.currentThread().contextClassLoader = loader
         [
-            'Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
+            'Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
             'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
             'TurnDocument', 'TurnEmitter', 'SweepState', 'TicketFreshness', 'ResumeDigest',
             'DatasetRegistry', 'SetRegistry', 'FederatedEngine'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
+        TicketKey = loader.loadClass('TicketKey')
         ArchiveHandler = loader.loadClass('ArchiveHandler')
         TimestampRepair = loader.loadClass('TimestampRepair')
         ChatLogParser = loader.loadClass('ChatLogParser')
@@ -95,6 +99,20 @@ class TestChatLogSuite {
             List<Map> entries = ChatLogParser.parseFile(fixtures[name], name)
             verify("dialect ${dialect}", entries.size() == 1 && entries[0].dialect == dialect)
         }
+    }
+
+    private static void testCompactTicketContract(Map<String, File> fixtures) {
+        List<Map> entries = ChatLogParser.parseFile(fixtures['compact-ticket.log'], 'prompt.log')
+        verify('compact ticket dialect', entries.size() == 1 && entries[0].dialect == 'Ticket')
+        verify('compact ticket header precedence', entries[0].ticketKeys == ['SCTASK1544083', 'KD-6999'])
+        verify('compact ticket canonical variants', [
+            TicketKey.canonical('SCTASK1544083'),
+            TicketKey.canonical('sctask1544083'),
+            TicketKey.canonical('kd-6999')
+        ] == ['SCTASK1544083', 'SCTASK1544083', 'KD-6999'])
+        verify('lowercase compact ticket extraction', TicketKey.extract('track sctask1544083 now') == ['SCTASK1544083'])
+        verify('compact ticket facet', FacetPath.ticketFacet('SCTASK1544083') == 'sctask1544083')
+        verify('unrelated compact token rejected', TicketKey.extract('ABC123 build output').isEmpty() && !TicketKey.supported('ABC123'))
     }
 
     private static void testFenceRecovery(Map<String, File> fixtures) {
@@ -220,6 +238,59 @@ class TestChatLogSuite {
         SweepState.record(truncationState, 'truncated.log', truncated)
         truncated.setText('[2026-08-21T09:00:00Z] USER: Replaced\n[2026-08-21T09:00:00Z] ASSISTANT: Replaced.\n', 'UTF-8')
         verify('truncation requires full rescan', SweepState.needsFullRescan(truncated, truncationState.sources['truncated.log'] as Map))
+    }
+
+    private static void testVersionedRefacet(Map<String, File> fixtures, File temporaryRoot) {
+        File workspace = new File(temporaryRoot, 'compact-refacet')
+        workspace.mkdirs()
+        File source = new File(workspace, 'prompt.log')
+        source.bytes = fixtures['compact-ticket.log'].bytes
+        File output = new File(workspace, 'worklog-chat')
+        File indexFile = new File(output, '.index/turn-hashes.tsv')
+        File stateFile = new File(output, '.index/ingest-state.json')
+
+        Map corrected = prepare(ChatLogParser.parseFile(source, 'prompt.log')[0])
+        Map legacy = new LinkedHashMap(corrected)
+        legacy.ticketKeys = []
+        Map<String, Map> hashIndex = [:]
+        Map initial = TurnEmitter.emit(output, legacy, 'turns', 41L, hashIndex)
+        String legacyPath = initial.path
+        TurnEmitter.saveHashIndex(indexFile, hashIndex)
+        Map state = SweepState.load(stateFile)
+        SweepState.record(state, 'prompt.log', source)
+        state.sources['prompt.log'].parser_version = 0
+        SweepState.save(stateFile, state)
+
+        String migrated = executeChatlogScript([
+            '--since-last', '--defer-digest', '--workspace-root', workspace.absolutePath
+        ])
+        Map refreshed = TurnEmitter.loadHashIndex(indexFile)[corrected.turnHash]
+        verify('parser version triggers full refacet', migrated.contains('FULL_RESCAN') && migrated.contains('path_moves=1'))
+        verify('refacet preserves sequence and canonical hash', refreshed.sequence == 41L && refreshed.hash == corrected.turnHash)
+        verify('refacet moves compact ticket path', refreshed.path.startsWith('turns/sctask1544083/') && !new File(output, legacyPath).exists())
+        verify('refacet refreshes ticket metadata', new File(output, refreshed.path).getText('UTF-8').contains('tickets: ["SCTASK1544083","KD-6999"]'))
+
+        String repeated = executeChatlogScript([
+            '--since-last', '--defer-digest', '--workspace-root', workspace.absolutePath
+        ])
+        verify('refacet is idempotent', repeated.contains('SKIPPED\tunchanged hash') && repeated.contains('path_moves=0'))
+
+        File collisionRoot = new File(temporaryRoot, 'compact-collision')
+        Map<String, Map> collisionIndex = [:]
+        Map collisionLegacy = new LinkedHashMap(corrected)
+        collisionLegacy.ticketKeys = []
+        Map collisionInitial = TurnEmitter.emit(collisionRoot, collisionLegacy, 'turns', 42L, collisionIndex)
+        String destinationPath = FacetPath.build('turns', corrected, 42L)
+        File destination = new File(collisionRoot, destinationPath)
+        destination.parentFile.mkdirs()
+        destination.setText('---\nturn_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n---\n', 'UTF-8')
+        boolean collisionFailed = false
+        try {
+            TurnEmitter.emit(collisionRoot, corrected, 'turns', 42L, collisionIndex, null, false, true)
+        } catch (IllegalStateException ignored) {
+            collisionFailed = true
+        }
+        verify('refacet rejects conflicting destination', collisionFailed && new File(collisionRoot, collisionInitial.path).exists())
     }
 
     private static void testDiscoveryAndReport(Map<String, File> fixtures, File temporaryRoot) {

@@ -50,12 +50,16 @@ class TurnEmitter {
         long sequence,
         Map<String, Map> hashIndex,
         String spillPath = null,
-        boolean dryRun = false
+        boolean dryRun = false,
+        boolean refreshExisting = false
     ) {
         String hash = entry.turnHash?.toString() ?: TurnDocument.hash(entry)
         entry.turnHash = hash
         String sourceLocation = location(entry)
         if (hashIndex.containsKey(hash)) {
+            if (refreshExisting && isPrimarySource(hashIndex[hash], sourceLocation)) {
+                return refreshCanonical(outputRoot, entry, tier, hashIndex, spillPath, dryRun)
+            }
             recordDuplicate(outputRoot, hashIndex, hash, sourceLocation, dryRun)
             return [emitted: false, duplicate: true, path: hashIndex[hash].path, sequence: hashIndex[hash].sequence]
         }
@@ -74,6 +78,56 @@ class TurnEmitter {
             sources: [[path: entry.sourcePath?.toString() ?: '', startLine: entry.startLine ?: 0, endLine: entry.endLine ?: 0]]
         ]
         return [emitted: true, duplicate: false, path: relativePath, sequence: sequence, bytes: content.getBytes(StandardCharsets.UTF_8).length]
+    }
+
+    static Map refreshCanonical(
+        File outputRoot,
+        Map entry,
+        String tier,
+        Map<String, Map> hashIndex,
+        String spillPath = null,
+        boolean dryRun = false
+    ) {
+        String hash = entry.turnHash?.toString() ?: TurnDocument.hash(entry)
+        Map record = hashIndex[hash]
+        long sequence = record.sequence as long
+        String previousPath = record.path.toString()
+        String relativePath = FacetPath.build(tier, entry, sequence)
+        List<String> additional = (record.sources as List).drop(1).collect {
+            "${it.path}:${it.startLine}-${it.endLine}"
+        }
+        String content = TurnDocument.render(entry, sequence, spillPath, additional)
+        File previous = new File(outputRoot, previousPath)
+        boolean metadataChanged = !previous.exists() || previous.getText('UTF-8') != content
+        boolean moved = previousPath != relativePath
+
+        if (!dryRun && (metadataChanged || moved)) {
+            File destination = new File(outputRoot, relativePath)
+            if (destination.exists() && destination.canonicalPath != previous.canonicalPath) {
+                String destinationHash = turnHashOf(destination)
+                if (destinationHash != hash) {
+                    throw new IllegalStateException("Refacet destination occupied by ${destinationHash ?: 'unknown hash'}: ${relativePath}")
+                }
+            }
+            writeAtomic(destination, content)
+            if (moved && previous.exists() && previous.canonicalPath != destination.canonicalPath) {
+                Files.delete(previous.toPath())
+                removeEmptyParents(previous.parentFile, outputRoot)
+            }
+        }
+
+        record.path = relativePath
+        return [
+            emitted: false,
+            duplicate: true,
+            refreshed: metadataChanged || moved,
+            metadataChanged: metadataChanged,
+            moved: moved,
+            path: relativePath,
+            previousPath: previousPath,
+            sequence: sequence,
+            bytes: content.getBytes(StandardCharsets.UTF_8).length
+        ]
     }
 
     /**
@@ -143,6 +197,15 @@ class TurnEmitter {
         return "${entry.sourcePath ?: ''}:${entry.startLine ?: 0}-${entry.endLine ?: 0}"
     }
 
+    private static boolean isPrimarySource(Map record, String sourceLocation) {
+        if (!record?.sources) return false
+        Map expected = record.sources[0] as Map
+        Map actual = parseLocation(sourceLocation)
+        return expected.path == actual.path &&
+            expected.startLine.toString() == actual.startLine.toString() &&
+            expected.endLine.toString() == actual.endLine.toString()
+    }
+
     private static Map parseLocation(String location) {
         def matcher = location =~ /^(.*):(\d+)-(\d+)$/
         if (!matcher.matches()) return [path: location, startLine: 0, endLine: 0]
@@ -151,5 +214,28 @@ class TurnEmitter {
 
     private static String sanitizeTsv(String value) {
         return (value ?: '').replaceAll(/[\t\r\n]+/, ' ')
+    }
+
+    private static void writeAtomic(File destination, String content) {
+        destination.parentFile.mkdirs()
+        File temporary = new File(destination.parentFile, "${destination.name}.tmp")
+        temporary.setText(content, 'UTF-8')
+        Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    private static String turnHashOf(File file) {
+        def matcher = file.getText('UTF-8') =~ /(?m)^turn_hash:\s*"?([a-f0-9]{64})"?\s*$/
+        return matcher.find() ? matcher.group(1) : null
+    }
+
+    private static void removeEmptyParents(File directory, File stop) {
+        File current = directory
+        while (current != null && current.canonicalPath != stop.canonicalPath) {
+            File[] children = current.listFiles()
+            if (children == null || children.length > 0) break
+            File parent = current.parentFile
+            Files.delete(current.toPath())
+            current = parent
+        }
     }
 }

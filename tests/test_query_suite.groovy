@@ -451,7 +451,7 @@ class TestQuerySuite {
         groovy.grape.Grape.grab(classLoader: sharedGcl, group: 'org.slf4j', module: 'slf4j-nop', version: '2.0.12')
         Thread.currentThread().contextClassLoader = sharedGcl
 
-        ['Config', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
+        ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine'].each { name ->
             sharedGcl.parseClass(new File("lib/${name}.groovy"))
         }
         configClass = sharedGcl.loadClass('Config')

@@ -368,6 +368,9 @@ class MemoryRetrieval {
         String text = (queryText ?: '').trim()
         String ticket = options.ticket_facet?.toString()
         String terms = text
+        if (!ticket && multiTicketBooleanQuery(text)) {
+            return buildParsedQuery(null, text, options)
+        }
         if (!ticket) {
             List<String> tokens = text.tokenize(' ')
             List<String> kept = []
@@ -379,7 +382,27 @@ class MemoryRetrieval {
                 }
             }
             terms = kept.join(' ').trim()
+            if (ticket && terms ==~ /(?is)^(OR|AND)\b.*/) {
+                terms = "${ticket} ${terms}".trim()
+                ticket = null
+            }
         }
+        return buildParsedQuery(ticket, terms, options)
+    }
+
+    private static boolean multiTicketBooleanQuery(String text) {
+        if (!(text ==~ /(?is).*\b(?:OR|AND)\b.*/)) return false
+        int ticketCount = 0
+        text.tokenize(' ').each { String token ->
+            String cleaned = token.replaceAll(/^[\(]+|[\),]+$/, '')
+            if (TICKET_TOKEN.matcher(cleaned).matches()) {
+                ticketCount++
+            }
+        }
+        return ticketCount >= 2
+    }
+
+    private static ParsedQuery buildParsedQuery(String ticket, String terms, Map options) {
         return new ParsedQuery(
             ticket: ticket ? TicketKey.facet(ticket) : null,
             terms: terms,

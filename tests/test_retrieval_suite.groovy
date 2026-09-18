@@ -94,6 +94,10 @@ class RetrievalSuite {
         journal.write('placeholder')
         verify('journal.db excluded from database listing', !configClass.listDatabases().any { it.name == 'journal.db' })
 
+        Map multiTicket = searchTopic('SCTASK1685388 OR SCTASK1685377', 5)
+        verify('multi-ticket OR query preserves full boolean expression', multiTicket.parsed?.terms == 'SCTASK1685388 OR SCTASK1685377')
+        verify('multi-ticket OR query does not peel a single ticket facet', !multiTicket.parsed?.ticket)
+
         println "Retrieval tests: ${passed} passed, ${failed} failed"
         if (failed > 0) System.exit(1)
     }

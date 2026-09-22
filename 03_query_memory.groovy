@@ -688,7 +688,7 @@ static void executeEnhancedSearch(
         return
     }
     if (matches.isEmpty()) {
-        printf "No results found in %.2f ms.%n", result.total_duration_ms
+        printf "No results found in %.2f ms.%n", (result.total_duration_ms as double)
         return
     }
     matches.eachWithIndex { Map doc, int idx ->

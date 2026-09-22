@@ -207,6 +207,11 @@ class TestQuerySuite {
             { out -> out.contains("Searching") && out.contains("BOregister") && out.contains("Found ") }
         )
 
+        runTest("7.2 Empty enhanced search renders duration",
+            ["query", "__definitely_no_memory_match_9f6c2d__"],
+            { out -> out.contains("No results found in") && out.contains(" ms.") && !out.contains("IllegalFormatConversionException") }
+        )
+
         // -------------------------------------------------------------------
         // Group 8: Extension and Archive Filtering Flags (--ext, -e, --archive, -A)
         // -------------------------------------------------------------------

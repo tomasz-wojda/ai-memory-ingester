@@ -193,7 +193,7 @@ groovy.grape.Grape.grab(
 
 // Load library modules in dependency order
 ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
- 'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
+ 'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
  'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
  'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',
  'WorklogEmitter', 'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',

@@ -91,6 +91,7 @@ Map totals = [
     duplicate: [turns: 0, artifacts: 0, dross: 0],
     spill: [raw: 0, unique: 0, duplicate: 0],
     refacet: [rescannedSources: 0, metadataRefreshes: 0, pathMoves: 0, canonicalUnchanged: 0],
+    excluded: 0,
     skippedUnchanged: 0,
     skippedDuplicate: 0
 ]
@@ -154,7 +155,8 @@ sources.each { File source ->
         unique: [turns: 0, artifacts: 0, dross: 0],
         duplicate: [turns: 0, artifacts: 0, dross: 0],
         spill: [raw: 0, unique: 0, duplicate: 0],
-        refacet: [metadataRefreshes: 0, pathMoves: 0, canonicalUnchanged: 0]
+        refacet: [metadataRefreshes: 0, pathMoves: 0, canonicalUnchanged: 0],
+        excluded: 0
     ]
     entries.each { Map parsed ->
         Map entry = TurnClassifier.classify(parsed, spillBytes)
@@ -164,6 +166,10 @@ sources.each { File source ->
             Map journalEvent = JournalEvent.fromParsedEntry(entry, sourcePath, legacySequence)
             Map journalResult = journalStore.backfillObservation(journalEvent)
             if (journalResult.idempotency == 'existing') journalTotals.idempotent++ else journalTotals.observations++
+        }
+        if (entry.excluded) {
+            sourceCounts.excluded++
+            return
         }
         long currentSequence = sequence
         String classifiedTier = entry.tier.toString()
@@ -214,10 +220,11 @@ sources.each { File source ->
     ['metadataRefreshes', 'pathMoves', 'canonicalUnchanged'].each { String metric ->
         totals.refacet[metric] += sourceCounts.refacet[metric]
     }
+    totals.excluded += sourceCounts.excluded
     boolean sourceReconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
         sourceCounts.raw[tier] == sourceCounts.unique[tier] + sourceCounts.duplicate[tier]
     }
-    println "${sourcePath}\t${fullRescan ? 'FULL_RESCAN' : 'PROCESSED'}\t${reportFields(sourceCounts)}\t${refacetFields(sourceCounts.refacet as Map)}\treconciled=${sourceReconciled}"
+    println "${sourcePath}\t${fullRescan ? 'FULL_RESCAN' : 'PROCESSED'}\t${reportFields(sourceCounts)}\texcluded=${sourceCounts.excluded}\t${refacetFields(sourceCounts.refacet as Map)}\treconciled=${sourceReconciled}"
 
     if (!dryRun) {
         SweepState.record(sweepState, sourcePath, source)
@@ -244,8 +251,8 @@ boolean reconciled = ['turns', 'artifacts', 'dross'].every { String tier ->
     totals.raw[tier] == totals.unique[tier] + totals.duplicate[tier]
 }
 double elapsedMs = (System.nanoTime() - started) / 1_000_000.0
-printf "TOTAL\t%s\trefacet_rescanned_sources=%d\tmetadata_refreshes=%d\tpath_moves=%d\tcanonical_unchanged=%d\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s",
-    reportFields(totals), totals.refacet.rescannedSources, totals.refacet.metadataRefreshes, totals.refacet.pathMoves,
+printf "TOTAL\t%s\texcluded=%d\trefacet_rescanned_sources=%d\tmetadata_refreshes=%d\tpath_moves=%d\tcanonical_unchanged=%d\tskipped_unchanged=%d\tskipped_duplicate_hash=%d\treconciled=%s\telapsed_ms=%.2f\tdry_run=%s\tdigest_updated=%s",
+    reportFields(totals), totals.excluded, totals.refacet.rescannedSources, totals.refacet.metadataRefreshes, totals.refacet.pathMoves,
     totals.refacet.canonicalUnchanged, totals.skippedUnchanged, totals.skippedDuplicate, reconciled, elapsedMs, dryRun, digestUpdated
 if (journalBackfill) {
     printf "\tjournal_backfill=%s\tjournal_sources=%d\tjournal_snapshots=%d\tjournal_observations=%d\tjournal_idempotent=%d\tjournal_unparsed_ranges=%d",

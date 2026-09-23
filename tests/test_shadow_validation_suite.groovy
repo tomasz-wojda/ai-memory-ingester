@@ -67,7 +67,7 @@ class TestShadowValidationSuite {
         Thread.currentThread().contextClassLoader = loader
         [
             'Config', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
-            'TurnClassifier', 'TurnEmitter', 'JournalEvent', 'JournalStore', 'JournalProjector', 'MemoryEngine',
+            'MemoryExclusion', 'TurnClassifier', 'TurnEmitter', 'JournalEvent', 'JournalStore', 'JournalProjector', 'MemoryEngine',
             'WorklogDocument', 'WorklogParser', 'DatasetRegistry', 'TicketFreshness', 'FederatedEngine',
             'TicketRetrieval', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }

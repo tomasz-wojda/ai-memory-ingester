@@ -48,7 +48,7 @@ class TestJournalSuite {
         Thread.currentThread().contextClassLoader = loader
         [
             'Config', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
-            'TurnClassifier', 'JournalEvent', 'JournalStore'
+            'MemoryExclusion', 'TurnClassifier', 'JournalEvent', 'JournalStore'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         JournalEvent = loader.loadClass('JournalEvent')

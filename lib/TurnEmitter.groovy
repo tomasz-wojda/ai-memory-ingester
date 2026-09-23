@@ -193,6 +193,41 @@ class TurnEmitter {
         Files.move(temporary.toPath(), indexFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
+    static Map pruneExcluded(File outputRoot, boolean dryRun = false) {
+        Set<String> removedPaths = [] as Set<String>
+        Map counts = [turns: 0, artifacts: 0, hashes: 0]
+        [
+            turns: [root: new File(outputRoot, 'turns'), pattern: ~/turn-\d+\.md/],
+            artifacts: [root: new File(outputRoot, 'artifacts'), pattern: ~/artifact-\d+\.md/]
+        ].each { String tier, Map definition ->
+            File root = definition.root as File
+            if (!root.exists()) return
+            root.eachFileRecurse(groovy.io.FileType.FILES) { File file ->
+                if (file.name ==~ definition.pattern && MemoryExclusion.matches(file.getText('UTF-8'))) {
+                    String relative = outputRoot.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                    removedPaths << relative
+                    counts[tier] = (counts[tier] as int) + 1
+                    if (!dryRun) {
+                        Files.delete(file.toPath())
+                        removeEmptyParents(file.parentFile, outputRoot)
+                    }
+                }
+            }
+        }
+
+        File indexFile = new File(new File(outputRoot, '.index'), Config.CHAT_HASH_INDEX_NAME)
+        Map<String, Map> hashIndex = loadHashIndex(indexFile)
+        List<String> removedHashes = hashIndex.findAll { String hash, Map record ->
+            removedPaths.contains(record.path?.toString())
+        }.keySet() as List<String>
+        counts.hashes = removedHashes.size()
+        if (!dryRun && removedHashes) {
+            removedHashes.each { String hash -> hashIndex.remove(hash) }
+            saveHashIndex(indexFile, hashIndex)
+        }
+        return counts
+    }
+
     private static String location(Map entry) {
         return "${entry.sourcePath ?: ''}:${entry.startLine ?: 0}-${entry.endLine ?: 0}"
     }

@@ -457,7 +457,7 @@ class TestQuerySuite {
         Thread.currentThread().contextClassLoader = sharedGcl
 
         ['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
-         'FacetPath', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
+         'FacetPath', 'MemoryExclusion', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
          'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter',
          'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter', 'TranscriptReconciler', 'JournalProjector',
          'DatasetRegistry', 'SetRegistry', 'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker',

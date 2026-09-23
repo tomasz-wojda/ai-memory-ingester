@@ -18,6 +18,7 @@ class TestChatLogSuite {
     private static Class TimestampRepair
     private static Class ChatLogParser
     private static Class FacetPath
+    private static Class MemoryExclusion
     private static Class TurnClassifier
     private static Class TurnDocument
     private static Class TurnEmitter
@@ -47,9 +48,11 @@ class TestChatLogSuite {
         testTimestampRepair()
         testFacetsAndHashing()
         testClassification()
+        testExclusionAndPruning(temporaryRoot)
         testEmissionAndSpill(fixtures, temporaryRoot)
         testDiscoveryAndReport(fixtures, temporaryRoot)
         testSweep(fixtures, temporaryRoot)
+        testExcludedLegacyIngestion(temporaryRoot)
         testVersionedRefacet(fixtures, temporaryRoot)
         testDigest(temporaryRoot)
         testDeterministicDirectoryIngestion(sequenceFixtures, temporaryRoot)
@@ -68,7 +71,7 @@ class TestChatLogSuite {
         Thread.currentThread().contextClassLoader = loader
         [
             'Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
-            'TimestampRepair', 'ChatLogParser', 'FacetPath', 'TurnClassifier',
+            'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
             'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
             'TicketFreshness', 'ResumeDigest', 'TicketRetrieval', 'DatasetRegistry', 'SetRegistry',
             'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'
@@ -79,6 +82,7 @@ class TestChatLogSuite {
         TimestampRepair = loader.loadClass('TimestampRepair')
         ChatLogParser = loader.loadClass('ChatLogParser')
         FacetPath = loader.loadClass('FacetPath')
+        MemoryExclusion = loader.loadClass('MemoryExclusion')
         TurnClassifier = loader.loadClass('TurnClassifier')
         TurnDocument = loader.loadClass('TurnDocument')
         TurnEmitter = loader.loadClass('TurnEmitter')
@@ -191,6 +195,99 @@ class TestChatLogSuite {
         verify('high impact', TurnClassifier.impactOf(protectedEntry) == 'high')
         verify('low impact', TurnClassifier.impactOf([sections: ['FINDINGS': 'x']]) == 'low')
         verify('no impact', TurnClassifier.impactOf([sections: [:]]) == 'none')
+    }
+
+    private static void testExclusionAndPruning(File temporaryRoot) {
+        Map excluded = [
+            user: 'Fix the ai-vault commit handoff hook',
+            assistant: 'The git add -- command was validated.',
+            rawBody: 'Fix the ai-vault commit handoff hook',
+            sections: [:],
+            dialect: 'Block'
+        ]
+        Map aiVaultNearMiss = [
+            user: 'Review ai-vault memory architecture',
+            assistant: 'The retrieval design is healthy.',
+            rawBody: 'Review ai-vault memory architecture',
+            sections: [:],
+            dialect: 'Block'
+        ]
+        Map handoffNearMiss = [
+            user: 'Review the application commit handoff',
+            assistant: 'No ai vault repository is involved.',
+            rawBody: 'Review the application commit handoff',
+            sections: [:],
+            dialect: 'Block'
+        ]
+        verify('ai-vault commit hook is excluded', MemoryExclusion.matches(excluded))
+        verify('hyphenated ai-vault commit hook is excluded', MemoryExclusion.matches('Exclude ai-vault commit-hook chatter'))
+        verify('hyphenated ai-vault commit handoff is excluded', MemoryExclusion.matches('Validate the ai-vault commit-handoff response'))
+        verify('ai-vault near miss is retained', !MemoryExclusion.matches(aiVaultNearMiss))
+        verify('non-ai-vault handoff is retained', !MemoryExclusion.matches(handoffNearMiss))
+        verify('classification carries exclusion flag', TurnClassifier.classify(excluded).excluded)
+
+        File output = new File(temporaryRoot, 'excluded-pruning')
+        File indexFile = new File(output, '.index/turn-hashes.tsv')
+        Map<String, Map> hashIndex = [:]
+        Map excludedTurn = prepare(excluded + [
+            timestampRepair: TimestampRepair.parse('2026-09-23T10:00:00Z'),
+            sourcePath: 'prompt.log',
+            startLine: 1,
+            endLine: 2
+        ])
+        Map retainedTurn = prepare(aiVaultNearMiss + [
+            timestampRepair: TimestampRepair.parse('2026-09-23T10:01:00Z'),
+            sourcePath: 'prompt.log',
+            startLine: 3,
+            endLine: 4
+        ])
+        Map excludedArtifact = new LinkedHashMap(excludedTurn)
+        excludedArtifact.dialect = 'Artifact'
+        excludedArtifact.tier = 'artifacts'
+        excludedArtifact.turnHash = TurnDocument.hash("artifact ${excludedTurn.rawBody}")
+        Map excludedTurnResult = TurnEmitter.emit(output, excludedTurn, 'turns', 1L, hashIndex)
+        Map retainedTurnResult = TurnEmitter.emit(output, retainedTurn, 'turns', 2L, hashIndex)
+        Map excludedArtifactResult = TurnEmitter.emit(output, excludedArtifact, 'artifacts', 3L, hashIndex)
+        TurnEmitter.saveHashIndex(indexFile, hashIndex)
+
+        Map pruned = TurnEmitter.pruneExcluded(output)
+        Map<String, Map> remaining = TurnEmitter.loadHashIndex(indexFile)
+        verify('excluded turn is pruned', pruned.turns == 1 && !new File(output, excludedTurnResult.path).exists())
+        verify('excluded artifact is pruned', pruned.artifacts == 1 && !new File(output, excludedArtifactResult.path).exists())
+        verify('near-miss turn remains', new File(output, retainedTurnResult.path).exists())
+        verify('pruned hashes leave index', pruned.hashes == 2 && remaining.size() == 1 && remaining.containsKey(retainedTurn.turnHash))
+    }
+
+    private static void testExcludedLegacyIngestion(File temporaryRoot) {
+        File workspace = new File(temporaryRoot, 'excluded-legacy')
+        workspace.mkdirs()
+        new File(workspace, 'prompt.log').setText(
+            '''--- PROMPT LOG ENTRY ---
+TIMESTAMP: 2026-09-23T10:00:00Z
+USER: Fix the ai-vault commit handoff hook
+ASSISTANT: Validate the git add -- command.
+--- END PROMPT LOG ENTRY ---
+''',
+            'UTF-8'
+        )
+        File journal = new File(workspace, 'journal.db')
+        String output = executeChatlogScript([
+            '--all',
+            '--defer-digest',
+            '--journal-backfill',
+            '--journal-db',
+            journal.absolutePath,
+            '--workspace-root',
+            workspace.absolutePath
+        ])
+        def store = loader.loadClass('JournalStore').getDeclaredConstructor(File).newInstance(journal)
+        try {
+            verify('excluded legacy turn remains in journal', (store.canonicalObservations() as List).size() == 1)
+        } finally {
+            store.close()
+        }
+        verify('excluded legacy turn is not materialized', countMarkdown(new File(workspace, 'worklog-chat')) == 0)
+        verify('excluded legacy turn is reported', output.contains('excluded=1'))
     }
 
     private static void testEmissionAndSpill(Map<String, File> fixtures, File temporaryRoot) {

@@ -14,6 +14,7 @@ class TurnClassifier {
         Map classified = new LinkedHashMap(entry)
         String impact = impactOf(classified)
         classified.impact = impact
+        classified.excluded = MemoryExclusion.matches(classified)
         long renderedBytes = ((classified.rawBody ?: '') as String).getBytes('UTF-8').length
         classified.spillRequired = classified.dialect != 'Artifact' && renderedBytes > spillBytes
         classified.tier = classified.dialect == 'Artifact'

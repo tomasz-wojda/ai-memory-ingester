@@ -148,7 +148,9 @@ class ResumeDigest {
     }
 
     static Map assembleFromJournal(JournalStore store, File outputRoot, int budgetBytes = Config.RESUME_BUDGET_BYTES) {
-        List<Map> canonical = store.canonicalObservations()
+        List<Map> canonical = store.canonicalObservations().findAll { Map observation ->
+            !MemoryExclusion.matches(observation)
+        }
         if (!canonical) return assemble([], [], [], budgetBytes)
         List<Map> items = canonical.collect { Map observation ->
             [

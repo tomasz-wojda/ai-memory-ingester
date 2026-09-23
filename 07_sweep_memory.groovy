@@ -12,6 +12,10 @@ List<String> runner = new File(repositoryRoot, 'ai-memory-ingester').exists()
     : ['groovy', new File(repositoryRoot, 'run.groovy').absolutePath]
 
 long started = System.currentTimeMillis()
+Map pruneReport = TurnEmitter.pruneExcluded(outputRoot, dryRun)
+boolean exclusionsPruned = ((pruneReport.turns ?: 0) as int) > 0 ||
+    ((pruneReport.artifacts ?: 0) as int) > 0 ||
+    ((pruneReport.hashes ?: 0) as int) > 0
 JournalStore journalStore = new JournalStore(Config.journalDbPath())
 Map reconcileReport = null
 Map projectReport = null
@@ -25,7 +29,7 @@ try {
 boolean journalChanged = ((reconcileReport?.totals?.observations_appended ?: 0) as int) > 0 ||
     ((projectReport?.totals?.emitted ?: 0) as int) > 0 ||
     ((projectReport?.totals?.refreshed ?: 0) as int) > 0
-boolean chatTurnsChanged = journalChanged
+boolean chatTurnsChanged = journalChanged || exclusionsPruned
 
 List<Map> syncResults = []
 boolean chatSyncNeeded = journalChanged ||
@@ -78,6 +82,7 @@ if (integrityReport?.status != 'ok') failures++
 
 printReconcileLine(reconcileReport)
 printProjectLine(projectReport)
+println "PRUNE_EXCLUDED\tturns=${pruneReport.turns}\tartifacts=${pruneReport.artifacts}\thashes=${pruneReport.hashes}\tdry_run=${dryRun}"
 println worklogs.output.trim()
 println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}"
 if (failures > 0) exitApp(1)

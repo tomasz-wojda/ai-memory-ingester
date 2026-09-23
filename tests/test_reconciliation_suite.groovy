@@ -30,6 +30,7 @@ class TestReconciliationSuite {
             testMissedRuleWriteRecovery(tempRoot, dataDir)
             testConflictRetention(dataDir)
             testProjectionRebuild(tempRoot, dataDir)
+            testExcludedProjectionAndResume(tempRoot, dataDir)
             testCursorPersistence(tempRoot, dataDir)
         } finally {
             tempRoot.deleteDir()
@@ -45,7 +46,7 @@ class TestReconciliationSuite {
         groovy.grape.Grape.grab(classLoader: loader, group: 'org.xerial', module: 'sqlite-jdbc', version: '3.45.1.0')
         Thread.currentThread().contextClassLoader = loader
         [
-            'Config', 'TicketKey', 'FacetPath', 'TimestampRepair', 'TurnClassifier', 'TurnDocument',
+            'Config', 'TicketKey', 'FacetPath', 'TimestampRepair', 'MemoryExclusion', 'TurnClassifier', 'TurnDocument',
             'TurnEmitter', 'JournalEvent', 'JournalStore', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
             'TranscriptReconciler', 'JournalProjector', 'TicketFreshness', 'ResumeDigest'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
@@ -261,6 +262,57 @@ class TestReconciliationSuite {
             }
             Map digest = ResumeDigest.assembleFromJournal(store, outputRoot, Config.RESUME_BUDGET_BYTES) as Map
             verify('resume digest from journal', (digest.items as List)?.size() >= 1)
+        } finally {
+            store.close()
+        }
+    }
+
+    private static void testExcludedProjectionAndResume(File tempRoot, File dataDir) {
+        File outputRoot = new File(tempRoot, 'excluded-projection-worklog-chat')
+        outputRoot.mkdirs()
+        File db = new File(dataDir, 'excluded-projection.db')
+        def store = JournalStore.getDeclaredConstructor(File).newInstance(db)
+        try {
+            store.record([
+                schema_version: Config.JOURNAL_EVENT_SCHEMA_VERSION,
+                source_ide: 'cursor',
+                source_kind: 'native_transcript',
+                source_fidelity: 'native_transcript',
+                source_identity: 'cursor-transcript:test/excluded',
+                prompt_id: 'excluded-projection-001',
+                session_id: 'excluded-projection',
+                user_text: 'Fix the ai-vault commit handoff hook',
+                assistant_text: 'Validate the git add -- command.',
+                event_time: '2026-09-23T10:00:00Z',
+                event_time_confidence: 'exact'
+            ])
+            store.record([
+                schema_version: Config.JOURNAL_EVENT_SCHEMA_VERSION,
+                source_ide: 'cursor',
+                source_kind: 'native_transcript',
+                source_fidelity: 'native_transcript',
+                source_identity: 'cursor-transcript:test/retained',
+                prompt_id: 'retained-projection-001',
+                session_id: 'retained-projection',
+                user_text: 'Review ai-vault memory retrieval',
+                assistant_text: 'The retrieval path remains relevant.',
+                event_time: '2026-09-23T10:01:00Z',
+                event_time_confidence: 'exact'
+            ])
+            Map projected = JournalProjector.project(store, outputRoot, false) as Map
+            List<File> turns = []
+            File turnsRoot = new File(outputRoot, 'turns')
+            if (turnsRoot.exists()) {
+                turnsRoot.eachFileRecurse(groovy.io.FileType.FILES) { File file ->
+                    if (file.name.endsWith('.md')) turns << file
+                }
+            }
+            Map digest = ResumeDigest.assembleFromJournal(store, outputRoot, Config.RESUME_BUDGET_BYTES) as Map
+            String digestContent = (digest.items as List<Map>)*.content.join('\n')
+            verify('excluded observation remains in journal', (store.canonicalObservations() as List).size() == 2)
+            verify('excluded projection is skipped', projected.totals.skipped_excluded == 1 && turns.size() == 1)
+            verify('excluded projection advances cursor', projected.totals.cursor_after == 2)
+            verify('excluded observation is absent from resume', !digestContent.contains('commit handoff') && digestContent.contains('memory retrieval'))
         } finally {
             store.close()
         }

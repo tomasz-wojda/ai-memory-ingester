@@ -18,6 +18,7 @@ class JournalProjector {
             duplicate: 0,
             refreshed: 0,
             skipped_dross: 0,
+            skipped_excluded: 0,
             cursor_before: cursor,
             cursor_after: cursor
         ]
@@ -25,6 +26,10 @@ class JournalProjector {
         observations.each { Map observation ->
             Map entry = entryFromObservation(observation)
             Map classified = TurnClassifier.classify(entry, Config.CHAT_SPILL_BYTES)
+            if (classified.excluded) {
+                totals.skipped_excluded++
+                return
+            }
             classified.turnHash = observation.turn_hash?.toString() ?: TurnDocument.hash(classified)
             classified.journalObservationId = observation.observation_id
             classified.journalLogicalTurnKey = observation.logical_turn_key

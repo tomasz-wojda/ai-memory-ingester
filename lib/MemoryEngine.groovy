@@ -414,17 +414,82 @@ class MemoryEngine {
         optimizeIndex()
     }
 
+    private static final List<String> QUERY_OPERATORS = ['AND', 'OR', 'NOT'].asImmutable()
+    private static final String SAFE_TERM = /^[\p{L}\p{N}_]+\*?$/
+    private static final String COLUMN_TERM = /^(file_path|file_name|content):(.+)$/
+    private static final String QUOTED_COLUMN_TERM = /^(file_path|file_name|content):".*"$/
+
     static String normalizeQuery(String rawQuery) {
-        if (!rawQuery) return rawQuery
+        if (!rawQuery?.trim()) return rawQuery
         String q = rawQuery.trim()
         if (q.startsWith('"') && q.endsWith('"')) return q
-        if (q.contains(':') || q.contains(' AND ') || q.contains(' OR ') || q.contains(' NOT ') || q.contains(' NEAR(')) {
-            return q
+        if (q.contains('(') || q.contains(')')) return q
+        List<String> tokens = tokenizeQuery(q)
+        boolean hasOperator = tokens.any { String token -> QUERY_OPERATORS.contains(token) }
+        if (!hasOperator && !q.contains(':') && (q.contains('.') || q.contains('/') || q.contains('\\'))) {
+            return quoteTerm(q)
         }
-        if (q.contains('.') || q.contains('/') || q.contains('\\')) {
-            return '"' + q.replaceAll('"', '""') + '"'
+        return tokens.collect { String token -> normalizeToken(token) }.join(' ')
+    }
+
+    private static List<String> tokenizeQuery(String q) {
+        List<String> tokens = []
+        StringBuilder current = new StringBuilder()
+        boolean inPhrase = false
+        int index = 0
+        while (index < q.length()) {
+            char c = q.charAt(index)
+            if (inPhrase) {
+                if (c == '"' as char) {
+                    if (index + 1 < q.length() && q.charAt(index + 1) == '"' as char) {
+                        current.append('""')
+                        index += 2
+                        continue
+                    }
+                    current.append('"')
+                    inPhrase = false
+                    tokens << current.toString()
+                    current.setLength(0)
+                } else {
+                    current.append(c)
+                }
+            } else if (c == '"' as char) {
+                if (current.length() > 0 && current.charAt(current.length() - 1) != ':' as char) {
+                    tokens << current.toString()
+                    current.setLength(0)
+                }
+                current.append('"')
+                inPhrase = true
+            } else if (Character.isWhitespace(c)) {
+                if (current.length() > 0) {
+                    tokens << current.toString()
+                    current.setLength(0)
+                }
+            } else {
+                current.append(c)
+            }
+            index++
         }
-        return q
+        if (inPhrase) current.append('"')
+        if (current.length() > 0) tokens << current.toString()
+        return tokens
+    }
+
+    private static String normalizeToken(String token) {
+        if (token.startsWith('"') && token.endsWith('"') && token.length() > 1) return token
+        if (QUERY_OPERATORS.contains(token)) return token
+        if (token ==~ SAFE_TERM) return token
+        if (token ==~ QUOTED_COLUMN_TERM) return token
+        def column = token =~ COLUMN_TERM
+        if (column.matches()) {
+            String value = column.group(2)
+            return "${column.group(1)}:${value ==~ SAFE_TERM ? value : quoteTerm(value)}"
+        }
+        return quoteTerm(token)
+    }
+
+    private static String quoteTerm(String value) {
+        return '"' + value.replaceAll('"', '""') + '"'
     }
 
     /**

@@ -110,7 +110,9 @@ class RetrievalSuite {
             '"unclosed phrase'            : '"unclosed phrase"',
             'Provis*'                     : 'Provis*',
             'kd11 AND (x OR y)'           : 'kd11 AND (x OR y)',
-            'C++ code'                    : '"C++" code'
+            'C++ code'                    : '"C++" code',
+            'file_path:"impact-high"'     : 'file_path:"impact-high"',
+            'file_path:"impact-high" AND foo-bar' : 'file_path:"impact-high" AND "foo-bar"'
         ].each { String input, String expected ->
             verify("normalizeQuery quotes unsafe terms: ${input}", memoryEngine.normalizeQuery(input) == expected)
         }

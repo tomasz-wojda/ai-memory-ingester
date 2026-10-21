@@ -445,6 +445,11 @@ class TestQuerySuite {
             { out -> !out.contains("fts5") && !out.contains("no such column") }
         )
 
+        runTest("13.4 Impact facet keeps quoted column value",
+            ["query", "pipeline", "--impact", "high"],
+            { out -> !out.contains("fts5") && !out.contains("no such column") }
+        )
+
         // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------

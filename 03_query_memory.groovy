@@ -53,7 +53,10 @@ List<String> queryTokens = []
 int i = 0
 while (i < args.length) {
     String arg = args[i]
-    if ((arg == '--limit' || arg == '-n' || arg == '-l') && i + 1 < args.length) {
+    if (arg == '--help' || arg == '-h') {
+        printQueryUsage()
+        exitApp(0); return
+    } else if ((arg == '--limit' || arg == '-n' || arg == '-l') && i + 1 < args.length) {
         try { limit = args[i + 1].toInteger() } catch (Exception ignored) {}
         i += 2
     } else if (arg.startsWith('--limit=')) {
@@ -794,6 +797,45 @@ static void executeFederatedSearch(
     }
     printf "Found %d result(s) across %d database(s) in %.2f ms (Fusion: %.2f ms)%n",
         matches.size(), res.successful_databases, res.total_duration_ms, res.fusion_duration_ms
+}
+
+/**
+ * Prints usage for the query, ticket, recent, resume, and context commands.
+ */
+static void printQueryUsage() {
+    println "Usage: ai-memory-ingester query [terms] [options]"
+    println "       ai-memory-ingester ticket <key> [terms] [options]"
+    println "       ai-memory-ingester recent|resume|context [options]"
+    println ""
+    println "Search syntax:"
+    println "  Bare terms are ANDed. Hyphenated or punctuated terms are quoted automatically."
+    println "  \"exact phrase\"  prefix*  term AND|OR|NOT term  file_path:|file_name:|content:value"
+    println ""
+    println "Options:"
+    println "  -n, -l, --limit N           Maximum results (default 20)"
+    println "  -s, --snippet-size N        Snippet window in tokens (default 64)"
+    println "  -e, --ext, --extension L    Comma-separated extension filter"
+    println "      --no-ext                Restrict to files without extension"
+    println "  -A, --archive NAME          Source archive filter"
+    println "  -D, --db NAME|PATH          Query one database"
+    println "  -S, --dataset, --set NAME   Query one dataset"
+    println "      --data-dir PATH         Override data directory"
+    println "  -L, --lines N               Document view line limit"
+    println "  -a, --all                   Document view without line limit"
+    println "  -r, --raw                   Raw output"
+    println "      --json                  JSON output (implies --raw)"
+    println "      --signals               Show ranking signals"
+    println "      --diagnostics           Show diagnostics (implies --signals)"
+    println "      --complete-context      Pack complete context rows"
+    println "      --budget BYTES          Context budget for resume and ticket"
+    println "      --ticket KEY            Ticket facet"
+    println "      --mode MODE             Mode facet"
+    println "      --impact LEVEL          Impact facet"
+    println "      --since DATE            Lower date bound"
+    println "      --until DATE            Upper date bound"
+    println "  -h, --help                  Show this help"
+    println ""
+    println "Dataset administration: --datasets, --use-dataset NAME, --create-dataset NAME [dbs...], --delete-dataset NAME, --rename-dataset OLD NEW, --add-db-to-dataset SET DB, --remove-db-from-dataset SET DB"
 }
 
 /**

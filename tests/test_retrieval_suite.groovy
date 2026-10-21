@@ -98,6 +98,36 @@ class RetrievalSuite {
         verify('multi-ticket OR query preserves full boolean expression', multiTicket.parsed?.terms == 'SCTASK1685388 OR SCTASK1685377')
         verify('multi-ticket OR query does not peel a single ticket facet', !multiTicket.parsed?.ticket)
 
+        [
+            'ai-vault'                    : '"ai-vault"',
+            '--help'                      : '"--help"',
+            'ai-vault AND commit handoff' : '"ai-vault" AND commit handoff',
+            'file_path:kd11'              : 'file_path:kd11',
+            'file_path:ai-vault'          : 'file_path:"ai-vault"',
+            'vault:foo'                   : '"vault:foo"',
+            'CUSTOMER.NEW'                : '"CUSTOMER.NEW"',
+            '"exact phrase" foo-bar'      : '"exact phrase" "foo-bar"',
+            '"unclosed phrase'            : '"unclosed phrase"',
+            'Provis*'                     : 'Provis*',
+            'kd11 AND (x OR y)'           : 'kd11 AND (x OR y)',
+            'C++ code'                    : '"C++" code'
+        ].each { String input, String expected ->
+            verify("normalizeQuery quotes unsafe terms: ${input}", memoryEngine.normalizeQuery(input) == expected)
+        }
+
+        def punctuatedEngine = memoryEngine.getDeclaredConstructor(String).newInstance(new File(data, 'convo.db').absolutePath)
+        try {
+            boolean punctuatedSearchSucceeded = true
+            try {
+                punctuatedEngine.searchBody('ai-vault mongodb-connection', 3)
+            } catch (Exception ignored) {
+                punctuatedSearchSucceeded = false
+            }
+            verify('hyphenated body search does not raise FTS errors', punctuatedSearchSucceeded)
+        } finally {
+            punctuatedEngine.close()
+        }
+
         println "Retrieval tests: ${passed} passed, ${failed} failed"
         if (failed > 0) System.exit(1)
     }

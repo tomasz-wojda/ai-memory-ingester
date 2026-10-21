@@ -426,6 +426,26 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
+        // Group 13: Query Help & Search-Term Quoting
+        // -------------------------------------------------------------------
+        println ""
+        println "--- Group 13: Query Help & Search-Term Quoting ---"
+        runTest("13.1 Query --help prints usage",
+            ["query", "--help"],
+            { out -> out.contains("Usage: ai-memory-ingester query") && out.contains("--snippet-size") && !out.contains("fts5") && !out.contains("Enhanced Search") }
+        )
+
+        runTest("13.2 Query -h prints usage",
+            ["query", "-h"],
+            { out -> out.contains("Usage: ai-memory-ingester query") && out.contains("--snippet-size") && !out.contains("fts5") && !out.contains("Enhanced Search") }
+        )
+
+        runTest("13.3 Hyphenated term does not raise FTS errors",
+            ["query", "Business-Partner"],
+            { out -> !out.contains("fts5") && !out.contains("no such column") }
+        )
+
+        // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------
         long totalElapsedMs = System.currentTimeMillis() - suiteStartTime

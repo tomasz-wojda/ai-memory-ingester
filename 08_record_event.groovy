@@ -106,7 +106,7 @@ try {
             Map payload = JournalEvent.parseJson(stdin)
             Map result = store.record(payload)
             emit(jsonOutput, result)
-            println jsonOutput ? JsonOutput.prettyPrint(JsonOutput.toJson(result)) : formatRecordResult(result)
+            println jsonOutput ? JsonOutput.prettyPrint(JsonOutput.toJson(result)) : formatRecordResult(result, payload)
             System.exit(0)
             break
         case 'get':
@@ -276,8 +276,9 @@ try {
 static void emit(boolean jsonOutput, Object payload) {
 }
 
-static String formatRecordResult(Map result) {
-    return "record-event\tid=${result.observation_id}\tsequence=${result.sequence}\tidempotency=${result.idempotency}\tevent_hash=${result.event_hash}"
+static String formatRecordResult(Map result, Map payload = [:]) {
+    List<String> tickets = ((payload.tickets instanceof Collection ? payload.tickets : []) as List).collect { it?.toString()?.trim() }.findAll { it }
+    return "record-event\tid=${result.observation_id}\tsequence=${result.sequence}\tidempotency=${result.idempotency}\tevent_hash=${result.event_hash}\ttickets=${tickets.join(',')}"
 }
 
 static String formatObservation(Map observation) {

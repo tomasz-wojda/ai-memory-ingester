@@ -1,6 +1,6 @@
 # Technical Specification: Per-Ticket Memory Split
 
-Status: proposal awaiting review. Not approved for implementation.
+Status: implemented on 2026-10-31 as task T018 of ai-worklog-scaleup. See section 10 for the differences from this proposal.
 
 Companion documents: [measured evidence](per-ticket-memory-split-evidence.md) and [implementation checklist](per-ticket-memory-split-checklist.md).
 
@@ -83,7 +83,20 @@ File `worklog-chat/ticket-resume/<KEY>.md`:
 - Per-ticket resume files are derived data; delete `worklog-chat/ticket-resume/` to remove them.
 - `record_turn.py` lock can be disabled with `AI_MEMORY_LOCK=0`.
 
-## 10. Summary (STE)
+## 10. Implementation notes
+
+Differences between the proposal and the build:
+
+- **Lock wait.** The wait is 10 seconds, not 2. `record-event` starts a JVM, so a short wait could fail a turn while a sweep writes. `AI_MEMORY_LOCK_TIMEOUT` (seconds, `record_turn.py`) and the system property `ai.memory.lock.timeout.ms` (ingester) change it. A busy lock ends `record_turn.py` with exit code 75.
+- **Sweep.** The sweep builds the files first and takes the lock only for the writes. It decides which ticket resumes to refresh itself (latest journal sequence of the ticket and the age of its state file and capsule); `06_ingest_worklogs.groovy` and `lib/WorklogEmitter.groovy` are unchanged.
+- **Capsule.** `lib/TicketStateCapsule.groovy` is unchanged. Phase, next action and open items come from the ticket state file `.ai-worklog/state/<KEY>.json` and are written into the ticket resume and the index.
+- **Active tickets.** A ticket is active when its state file has lifecycle `active`, `waiting_decision` or `queued`. A v1 state file without a lifecycle counts as active when `worklog/*_<KEY>.log` exists outside `worklog/done/`.
+- **Rollback switch.** `Config.RESUME_MODE` reads `AI_MEMORY_RESUME_MODE`; the value `global` restores the earlier single digest. The functions `ResumeDigest.write` and `ResumeDigest.assemble` are unchanged.
+- **`resume --ticket KEY`.** It prints `worklog-chat/ticket-resume/<KEY>.md` when it exists. It uses the retrieval resume when the file is missing or when `--mode`, `--impact`, `--since`, `--until` or `--json` is given. It finds the workspace through `MEMORY_WORKSPACE_ROOT` or the repository location.
+- **`record-event` line.** It ends with `tickets=<keys>`.
+- **Tests.** New `tests/test_memory_lock_suite.groovy`; four new tests in `repos/ai-vault/tests/test_harness_record_turn.py`. The retrieval and worklog suites needed no change.
+
+## 11. Summary (STE)
 
 Today, all sessions share one resume file and one log file without a lock. With ten sessions, writes can mix or get lost, and each ticket gets too little space in the resume. This proposal gives each ticket its own resume file. The global resume becomes a short index. One lock keeps the journal record and the log entry together. The journal stays the single record.
 

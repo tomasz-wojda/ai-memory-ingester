@@ -176,6 +176,328 @@ class ResumeDigest {
         return assemble(authoritative + recent, relevant, impact, budgetBytes)
     }
 
+    /**
+     * Reads canonical journal observations that are not excluded from memory.
+     *
+     * @param store Journal store
+     * @return Observations, oldest first
+     */
+    static List<Map> canonicalObservations(JournalStore store) {
+        return store.canonicalObservations().findAll { Map observation -> !MemoryExclusion.matches(observation) }
+    }
+
+    /**
+     * Groups observations by canonical ticket key.
+     *
+     * @param observations Canonical observations, oldest first
+     * @return Observations of each ticket, oldest first
+     */
+    static Map<String, List<Map>> observationsByTicket(List<Map> observations) {
+        Map<String, List<Map>> grouped = [:]
+        observations.each { Map observation ->
+            ((observation.tickets ?: []) as List)
+                .collect { TicketKey.canonical(it?.toString()) }
+                .findAll { it != null }
+                .unique()
+                .each { String key -> grouped.computeIfAbsent(key) { [] } << observation }
+        }
+        return grouped
+    }
+
+    /**
+     * Lists tickets that have an active ticket state file.
+     *
+     * @param workspaceRoot Workspace root
+     * @return Maps with key, lifecycle, phase, next_action and updated_at, sorted by key
+     */
+    static List<Map> activeTickets(File workspaceRoot) {
+        File stateDir = new File(workspaceRoot, '.ai-worklog/state')
+        if (!stateDir.isDirectory()) return []
+        List<Map> tickets = []
+        stateDir.listFiles({ File f -> f.name.endsWith('.json') } as FileFilter)?.sort { it.name }?.each { File file ->
+            Map state
+            try {
+                state = new JsonSlurper().parse(file) as Map
+            } catch (Exception ignored) {
+                return
+            }
+            String key = TicketKey.canonical(state.ticket_key?.toString() ?: file.name.replace('.json', ''))
+            if (!key) return
+            String lifecycle = state.lifecycle?.toString()
+            boolean active = lifecycle
+                ? lifecycle in ['active', 'waiting_decision', 'queued']
+                : hasOpenWorklog(workspaceRoot, key)
+            if (!active) return
+            tickets << [
+                key: key,
+                lifecycle: lifecycle ?: 'active',
+                phase: state.phase?.toString() ?: '',
+                next_action: state.next_action?.toString() ?: '',
+                updated_at: state.updated_at?.toString() ?: '',
+                state: state,
+                state_file: file
+            ]
+        }
+        return tickets
+    }
+
+    /**
+     * Builds the per-ticket resume document.
+     *
+     * @param outputRoot Worklog-chat root
+     * @param workspaceRoot Workspace root
+     * @param ticket Canonical ticket key
+     * @param observations Journal observations of the ticket, oldest first
+     * @param budgetBytes Byte budget of the document
+     * @return Map with ticket, content, latest_sequence and turns
+     */
+    static Map buildTicketResume(
+        File outputRoot,
+        File workspaceRoot,
+        String ticket,
+        List<Map> observations,
+        int budgetBytes = Config.TICKET_RESUME_BUDGET_BYTES
+    ) {
+        String facet = TicketKey.facet(ticket)
+        File capsule = new File(outputRoot, "ticket-state/${facet}.md")
+        File stateFile = new File(workspaceRoot, ".ai-worklog/state/${ticket}.json")
+        Map state = readState(stateFile)
+        Map metadata = capsule.exists() ? TicketFreshness.frontMatter(capsule.getText('UTF-8')) : [:]
+        String freshness = metadata.freshness ?: 'undetermined'
+        long latestSequence = observations ? observations.collect { it.sequence as long }.max() : 0L
+
+        List<String> head = []
+        head << "# ${ticket} Resume"
+        head << ''
+        head << '## Current state'
+        head << ''
+        head << (capsule.exists() ? clipToLine(stripFrontMatter(capsule.getText('UTF-8')), CURRENT_STATE_BYTES, capsule.name) : 'No capsule yet.')
+        head << ''
+        head << '## Next action'
+        head << ''
+        head << (state.next_action ? state.next_action.toString().trim() : 'not set')
+        head << ''
+        head << '## Open decisions'
+        head << ''
+        List<String> open = openItems(state)
+        head << (open ? open.join('\n') : 'None.')
+        head << ''
+        head << '## Recent turns'
+        head << ''
+        List<String> tail = ['', '## Sources', '']
+        String capsulePath = relativePath(workspaceRoot, capsule)
+        String statePath = relativePath(workspaceRoot, stateFile)
+        if (capsule.exists()) tail << "- `${capsulePath}`"
+        if (stateFile.exists()) tail << "- `${statePath}`"
+
+        List<Map> recent = observations.reverse().take(Config.TICKET_RESUME_RECENT_TURNS).collect { journalItem(it) }
+        String fixedHead = head.join('\n') + '\n'
+        int reserved = 700 + bytes(fixedHead) + bytes(tail.join('\n')) + recent.size() * 40
+        int available = Math.max(0, budgetBytes - reserved)
+        Map turns = assemble(recent, [], [], available + 320)
+        List<String> body = []
+        (turns.items as List<Map>).each { Map item ->
+            body << '---'
+            body << ''
+            body << "Source: `${item.file_path}`"
+            body << ''
+            body << contentOf(item).trim()
+            body << ''
+            tail << "- `${item.file_path}`"
+        }
+        if (!body) body << 'No recorded turns.'
+        String frontMatter = [
+            '---',
+            "ticket: \"${ticket}\"",
+            "generated_at: \"${Instant.now()}\"",
+            "budget_bytes: ${budgetBytes}",
+            "turns: ${turns.turn_count}",
+            "latest_sequence: ${latestSequence}",
+            "capsule: \"${capsule.exists() ? capsulePath : ''}\"",
+            "state_file: \"${stateFile.exists() ? statePath : ''}\"",
+            "freshness: \"${freshness}\"",
+            '---',
+            ''
+        ].join('\n')
+        String content = frontMatter + fixedHead + body.join('\n') + '\n' + tail.join('\n') + '\n'
+        return [ticket: ticket, content: fitBudget(content, budgetBytes), latest_sequence: latestSequence, turns: turns.turn_count]
+    }
+
+    /**
+     * Tells whether an existing per-ticket resume is still current.
+     *
+     * @param file Existing resume file
+     * @param latestSequence Latest journal sequence of the ticket
+     * @param inputs Files the resume is built from
+     * @return true when the file can stay as it is
+     */
+    static boolean ticketResumeCurrent(File file, long latestSequence, List<File> inputs) {
+        if (!file.exists()) return false
+        Map metadata = TicketFreshness.frontMatter(file.getText('UTF-8'))
+        if ((metadata.latest_sequence?.toString() ?: '') != latestSequence.toString()) return false
+        return inputs.every { File input -> !input.exists() || input.lastModified() <= file.lastModified() }
+    }
+
+    /**
+     * Builds the index form of RESUME.md.
+     *
+     * @param outputRoot Worklog-chat root
+     * @param workspaceRoot Workspace root
+     * @param budgetBytes Byte budget of the index
+     * @param observations Canonical journal observations, oldest first
+     * @return Rendered Markdown index
+     */
+    static String buildIndex(File outputRoot, File workspaceRoot, int budgetBytes, List<Map> observations) {
+        List<Map> tickets = activeTickets(workspaceRoot)
+        List<String> blocks = []
+        tickets.each { Map ticket ->
+            String key = ticket.key
+            File capsule = new File(outputRoot, "ticket-state/${TicketKey.facet(key)}.md")
+            Map metadata = capsule.exists() ? TicketFreshness.frontMatter(capsule.getText('UTF-8')) : [:]
+            File resume = new File(outputRoot, "${Config.TICKET_RESUME_DIR}/${key}.md")
+            blocks << [
+                "### ${key}",
+                '',
+                "- Lifecycle: ${ticket.lifecycle}",
+                "- Phase: ${ticket.phase ?: 'unknown'}",
+                "- Next action: ${oneLine(ticket.next_action, 300)}",
+                "- Freshness: ${metadata.freshness ?: 'undetermined'}",
+                "- Updated: ${ticket.updated_at ?: 'unknown'}",
+                "- Resume: `${relativePath(workspaceRoot, resume)}`",
+                capsule.exists() ? "- Capsule: `${relativePath(workspaceRoot, capsule)}`" : null,
+                ''
+            ].findAll { it != null }.join('\n')
+        }
+        List<Map> untagged = observations.findAll { Map observation ->
+            !((observation.tickets ?: []) as List).any { TicketKey.canonical(it?.toString()) }
+        }.reverse().take(Config.RESUME_RECENT_TURNS).collect { journalItem(it) }
+        String activeSection = "## Active tickets\n\n" + (blocks ? blocks.join('\n') : 'None.\n')
+        int reserved = 400 + bytes(activeSection)
+        Map turns = assemble(untagged, [], [], Math.max(0, budgetBytes - reserved) + 320)
+        List<String> lines = [
+            '# Worklog Chat Resume',
+            '',
+            "Generated: ${Instant.now()}",
+            "Turns: ${turns.turn_count ?: 0}",
+            "Content bytes: ${turns.content_bytes ?: 0}",
+            "Budget bytes: ${budgetBytes}",
+            '',
+            activeSection,
+            '## Recent turns without a ticket',
+            ''
+        ]
+        (turns.items as List<Map>).each { Map item ->
+            lines << '---'
+            lines << ''
+            lines << "Source: `${item.file_path}`"
+            lines << ''
+            lines << contentOf(item).trim()
+            lines << ''
+        }
+        if (!turns.items) lines << 'None.'
+        return fitBudget(lines.join('\n').trim() + '\n', budgetBytes)
+    }
+
+    /**
+     * Writes a file through a temporary file and a rename.
+     *
+     * @param target Destination file
+     * @param content New content
+     */
+    static void writeAtomic(File target, String content) {
+        target.parentFile.mkdirs()
+        File temporary = new File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
+        temporary.setText(content, 'UTF-8')
+        java.nio.file.Files.move(temporary.toPath(), target.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    private static final int CURRENT_STATE_BYTES = 5000
+
+    private static Map journalItem(Map observation) {
+        return [
+            id: observation.sequence as long,
+            source_archive: 'chat:turns',
+            file_path: "journal/${observation.observation_id}.md",
+            file_name: "turn-${observation.sequence}.md",
+            extension: '.md',
+            rank: null,
+            snippet: '',
+            content: journalTurnMarkdown(observation),
+            sequence: observation.sequence as long
+        ]
+    }
+
+    private static Map readState(File file) {
+        if (!file.exists()) return [:]
+        try {
+            return (new JsonSlurper().parse(file) as Map) ?: [:]
+        } catch (Exception ignored) {
+            return [:]
+        }
+    }
+
+    private static List<String> openItems(Map state) {
+        List<String> lines = []
+        ((state.decisions instanceof List ? state.decisions : []) as List).each { Object item ->
+            if (item instanceof Map && item.status != 'resolved') {
+                lines << "- Decision ${item.id ?: ''} (${item.status ?: 'open'}): ${oneLine(item.description?.toString(), 300)}".replace('Decision  ', 'Decision ')
+            }
+        }
+        ((state.blockers instanceof List ? state.blockers : []) as List).each { Object item ->
+            if (item instanceof Map && item.status == 'active') {
+                lines << "- Blocker: ${oneLine(item.description?.toString(), 300)}"
+            }
+        }
+        return lines
+    }
+
+    private static boolean hasOpenWorklog(File workspaceRoot, String key) {
+        File dir = new File(workspaceRoot, 'worklog')
+        return dir.isDirectory() && (dir.listFiles({ File f -> f.isFile() && f.name.endsWith("_${key}.log") } as FileFilter)?.length ?: 0) > 0
+    }
+
+    private static String stripFrontMatter(String markdown) {
+        if (!markdown.startsWith('---')) return markdown.trim()
+        int end = markdown.indexOf('\n---', 3)
+        return end < 0 ? markdown.trim() : markdown.substring(end + 4).trim()
+    }
+
+    private static String clipToLine(String text, int limit, String name) {
+        if (bytes(text) <= limit) return text
+        StringBuilder out = new StringBuilder()
+        int used = 0
+        for (String line : text.readLines()) {
+            int size = bytes(line) + 1
+            if (used + size > limit) break
+            out << line << '\n'
+            used += size
+        }
+        return out.toString().trim() + "\n\n(truncated; full capsule in ${name})"
+    }
+
+    private static String oneLine(String text, int limit) {
+        String flat = (text ?: '').replaceAll(/\s+/, ' ').trim()
+        return flat.length() <= limit ? flat : flat.substring(0, limit - 3) + '...'
+    }
+
+    private static String relativePath(File root, File file) {
+        java.nio.file.Path base = root.toPath().toAbsolutePath().normalize()
+        java.nio.file.Path target = file.toPath().toAbsolutePath().normalize()
+        if (!target.startsWith(base)) return target.toString()
+        return base.relativize(target).toString().replace('\\', '/')
+    }
+
+    private static int bytes(String text) {
+        return (text ?: '').getBytes(StandardCharsets.UTF_8).length
+    }
+
+    private static String fitBudget(String text, int budget) {
+        byte[] data = text.getBytes(StandardCharsets.UTF_8)
+        if (data.length <= budget) return text
+        return new String(data, 0, Math.max(0, budget - 1), StandardCharsets.UTF_8).replaceAll(/�$/, '') + '\n'
+    }
+
     private static String journalTurnMarkdown(Map observation) {
         Map entry = [
             user: observation.user_text ?: '',

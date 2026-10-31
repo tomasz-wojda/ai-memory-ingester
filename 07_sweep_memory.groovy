@@ -53,10 +53,15 @@ if (chatSyncNeeded || worklogsChanged) reconcileDatasets()
 
 JournalStore digestStore = new JournalStore(Config.journalDbPath())
 boolean digestUpdated = false
+int ticketResumes = 0
 try {
     digestUpdated = forceDigestRefresh || chatTurnsChanged || worklogsChanged || !new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists()
     if (digestUpdated && !dryRun) {
-        ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES, digestStore)
+        if (Config.RESUME_MODE == 'global') {
+            MemoryLock.withLock(workspaceRoot) { ResumeDigest.write(outputRoot, Config.RESUME_BUDGET_BYTES, digestStore) }
+        } else {
+            ticketResumes = writeIndexAndTicketResumes(outputRoot, workspaceRoot, digestStore, forceDigestRefresh)
+        }
     }
 } finally {
     digestStore.close()
@@ -84,8 +89,29 @@ printReconcileLine(reconcileReport)
 printProjectLine(projectReport)
 println "PRUNE_EXCLUDED\tturns=${pruneReport.turns}\tartifacts=${pruneReport.artifacts}\thashes=${pruneReport.hashes}\tdry_run=${dryRun}"
 println worklogs.output.trim()
-println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}"
+println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}\tticket_resumes=${ticketResumes}"
 if (failures > 0) exitApp(1)
+
+static int writeIndexAndTicketResumes(File outputRoot, File workspaceRoot, JournalStore store, boolean force) {
+    List<Map> observations = ResumeDigest.canonicalObservations(store)
+    Map<String, List<Map>> byTicket = ResumeDigest.observationsByTicket(observations)
+    List<Map> rendered = []
+    ResumeDigest.activeTickets(workspaceRoot).each { Map ticket ->
+        String key = ticket.key
+        List<Map> own = byTicket[key] ?: []
+        long latest = own ? own.collect { it.sequence as long }.max() : 0L
+        File target = new File(outputRoot, "${Config.TICKET_RESUME_DIR}/${key}.md")
+        List<File> inputs = [ticket.state_file as File, new File(outputRoot, "ticket-state/${TicketKey.facet(key)}.md")]
+        if (!force && ResumeDigest.ticketResumeCurrent(target, latest, inputs)) return
+        rendered << [file: target, content: ResumeDigest.buildTicketResume(outputRoot, workspaceRoot, key, own).content]
+    }
+    String index = ResumeDigest.buildIndex(outputRoot, workspaceRoot, Config.RESUME_BUDGET_BYTES, observations)
+    MemoryLock.withLock(workspaceRoot) {
+        rendered.each { Map item -> ResumeDigest.writeAtomic(item.file as File, item.content.toString()) }
+        ResumeDigest.writeAtomic(new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME), index)
+    }
+    return rendered.size()
+}
 
 static void printReconcileLine(Map report) {
     if (!report) return

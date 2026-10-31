@@ -41,6 +41,12 @@ class Config {
     static final int RESUME_BUDGET_BYTES = 22000
     static final int TICKET_CONTEXT_BUDGET_BYTES = 22000
     static final int RESUME_RECENT_TURNS = 12
+    static final String RESUME_MODE = System.getenv('AI_MEMORY_RESUME_MODE') == 'global' ? 'global' : 'index'
+    static final String TICKET_RESUME_DIR = 'ticket-resume'
+    static final int TICKET_RESUME_BUDGET_BYTES = 12000
+    static final int TICKET_RESUME_RECENT_TURNS = 12
+    static final String MEMORY_LOCK_RELATIVE_PATH = '.ai-worklog/locks/_journal.sqlite'
+    static final int MEMORY_LOCK_TIMEOUT_MS = Integer.getInteger('ai.memory.lock.timeout.ms', 10000)
     static final String WORKLOG_CHAT_ROOT_NAME = 'worklog-chat'
     static final String CHAT_HASH_INDEX_NAME = 'turn-hashes.tsv'
     static final String CHAT_SWEEP_STATE_NAME = 'ingest-state.json'

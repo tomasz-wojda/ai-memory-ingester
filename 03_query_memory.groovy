@@ -1452,6 +1452,14 @@ static void executeResume(
     boolean showSignals = false,
     boolean diagnostics = false
 ) {
+    String ticketKey = ticket ? TicketKey.canonical(ticket) : null
+    if (ticketKey && !mode && !impact && !since && !until && !jsonOutput) {
+        File ticketResume = new File(Config.workspaceRoot(null, new File('.')), "${Config.WORKLOG_CHAT_ROOT_NAME}/${Config.TICKET_RESUME_DIR}/${ticketKey}.md")
+        if (ticketResume.exists()) {
+            print ticketResume.getText('UTF-8')
+            return
+        }
+    }
     Map options = [
         explicit_db: explicitDb,
         ticket_facet: ticket ? queryTicketFacet(ticket) : null,

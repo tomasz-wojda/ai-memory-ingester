@@ -1,6 +1,6 @@
 # Implementation Checklist: Per-Ticket Memory Split
 
-Status: proposal awaiting review. Use only after the specification is approved in PLAN.
+Status: executed on 2026-10-31. Differences are in section 10 of the specification.
 
 Governing specification: [per-ticket-memory-split-specification.md](per-ticket-memory-split-specification.md).
 

@@ -153,7 +153,8 @@ class ClaudeTranscriptAdapter {
         return type in [
             'attachment', 'queue-operation', 'atis-latch', 'last-prompt', 'system',
             'file-history-snapshot', 'file-history-delta', 'ai-title', 'mode', 'permission-mode',
-            'cost-state'
+            'cost-state', 'custom-title', 'agent-name', 'api-request-shape', 'api-request', 'api-request-blob', 'tools-used',
+            'continued-in'
         ]
     }
 

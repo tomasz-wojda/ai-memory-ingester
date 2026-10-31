@@ -26,6 +26,7 @@ class TestReconciliationSuite {
         try {
             testCursorAdapterFixture()
             testClaudeAdapterFixture()
+            testClaudeControlRecordsAreIgnored()
             testUnknownCursorFormatFails()
             testMissedRuleWriteRecovery(tempRoot, dataDir)
             testConflictRetention(dataDir)
@@ -114,6 +115,28 @@ class TestReconciliationSuite {
         Map turn = (parsed.turns as List)[0] as Map
         verify('claude prompt id retained', turn.prompt_id == 'prompt-claude-001')
         verify('claude assistant text', turn.assistant_text?.contains('idempotent cursor'))
+        tempRoot.deleteDir()
+    }
+
+    private static void testClaudeControlRecordsAreIgnored() {
+        File tempRoot = new File(System.getProperty('java.io.tmpdir'), "claude-control-${System.nanoTime()}").canonicalFile
+        tempRoot.mkdirs()
+        File workspace = new File(tempRoot, 'workspace')
+        workspace.mkdirs()
+        File home = stageClaudeFixture(tempRoot, workspace)
+        File transcript = ClaudeTranscriptAdapter.discoverTranscriptFiles(workspace, home)[0] as File
+        String control = [
+            '{"type":"custom-title","customTitle":"t","sessionId":"s"}',
+            '{"type":"agent-name","agentName":"a","sessionId":"s"}',
+            '{"type":"api-request-shape","sessionId":"s","shape":{},"shapeHash":"h","timestamp":"2026-10-31T00:00:00Z","version":1}',
+            '{"type":"api-request","id":"i","sessionId":"s","shapeHash":"h","timestamp":"2026-10-31T00:00:00Z","version":1}',
+            '{"type":"api-request-blob","hash":"h","message":{},"sessionId":"s"}',
+            '{"type":"tools-used","sessionId":"s","tools":["Read"]}',
+            '{"type":"continued-in","sessionId":"s","continuedInSessionId":"n","timestamp":"2026-10-31T00:00:00Z"}'
+        ].join('\n') + '\n'
+        transcript.setText(control + transcript.getText('UTF-8'), 'UTF-8')
+        Map parsed = ClaudeTranscriptAdapter.parseFile(transcript) as Map
+        verify('claude control records do not fail the parse', (parsed.turns as List).size() == 1)
         tempRoot.deleteDir()
     }
 

@@ -94,6 +94,7 @@ Differences between the proposal and the build:
 - **Rollback switch.** `Config.RESUME_MODE` reads `AI_MEMORY_RESUME_MODE`; the value `global` restores the earlier single digest. The functions `ResumeDigest.write` and `ResumeDigest.assemble` are unchanged.
 - **`resume --ticket KEY`.** It prints `worklog-chat/ticket-resume/<KEY>.md` when it exists. It uses the retrieval resume when the file is missing or when `--mode`, `--impact`, `--since`, `--until` or `--json` is given. It finds the workspace through `MEMORY_WORKSPACE_ROOT` or the repository location.
 - **`record-event` line.** It ends with `tickets=<keys>`.
+- **Related fix found during the first real sweep.** `lib/ClaudeTranscriptAdapter.groovy` rejected seven newer Claude Code control record types (`custom-title`, `agent-name`, `api-request-shape`, `api-request`, `api-request-blob`, `tools-used`, `continued-in`), so every sweep ended with `failures=1`. They are now ignored like the other control records; `tests/test_reconciliation_suite.groovy` has a regression test.
 - **Tests.** New `tests/test_memory_lock_suite.groovy`; four new tests in `repos/ai-vault/tests/test_harness_record_turn.py`. The retrieval and worklog suites needed no change.
 
 ## 11. Summary (STE)

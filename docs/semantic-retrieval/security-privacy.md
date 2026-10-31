@@ -52,6 +52,25 @@ Severity uses: High = could expose or alter memory content or run code; Medium =
 
 ## 5. Licences and third-party material (flag for IP Legal)
 
+### 5.1 Licence policy (owner requirement: the models must be usable on the company laptop; MIT preferred)
+
+| Class | Licences | Rule |
+|---|---|---|
+| Preferred | MIT | Use first. Same for code libraries. |
+| Acceptable after IP Legal confirmation | Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC | Permissive and allow business use. Apache-2.0 asks for the licence text and notices to be kept and has a patent grant. Ask IP Legal once with the filled table of section 5.2. |
+| Excluded | Non-commercial or research-only (for example CC-BY-NC), GPL, LGPL, AGPL, SSPL, custom or "open-weights" licences with use limits, gated models that need an access agreement, and any model whose licence cannot be read | Never loaded on the company laptop. |
+
+Reasons: the machine is a company laptop and the memory holds internal business information. A model weight file is third-party material. The licensed AI tool policy asks for IP Legal approval for third-party proprietary material and for material received under an NDA; open-source licences are a different case but still go through the same table so that the decision is recorded.
+
+### 5.2 Where the models come from (company laptop)
+
+1. **Reachability is not given.** On 2026-10-31 the host `huggingface.co` did not answer from this machine: 30 of 30 requests timed out (model-card pages, the JSON API and a raw README). A company network or proxy may block it. A download on the company laptop may therefore fail.
+2. **Approved source path (choose one, decision D-22):** (a) the company artifact repository (the framework already has an `artifactory` service operator) holds a copy that IP Legal and security have approved; (b) the owner downloads the files on an approved machine, records the SHA-256 and moves them by an approved offline path; (c) the network team opens the host for the owner.
+3. **Never** download weights at run time and never from an unreviewed mirror.
+4. The licence text of each model is stored next to its weights in `models/<name>/LICENSE` and listed in `models.manifest.json`.
+
+### 5.3 Table of items
+
 Model weights and packages are third-party material. Open licences usually allow internal use, but the licence of each file must be read and recorded. **All model licences below are unverified**, because the fetch of every model card timed out on 2026-10-31. Package licences are from package pages fetched the same day.
 
 | Item | Licence | Status |
@@ -63,17 +82,19 @@ Model weights and packages are third-party material. Open licences usually allow
 | PyLate | MIT | Verified (GitHub page); version unverified |
 | RAGatouille 0.0.9 | Apache-2.0 | Verified (GitHub page); lists Python up to 3.11 |
 | sqlite-vec 0.1.9 | MIT or Apache-2.0 | Verified |
-| `BAAI/bge-reranker-v2-m3` | not checked | **Unverified: check** |
-| `BAAI/bge-m3` | not checked | **Unverified: check** |
+| `BAAI/bge-reranker-v2-m3` | not checked (my memory says Apache-2.0: do not rely on it) | **Unverified: check** |
+| `BAAI/bge-m3` | not checked (my memory says MIT: do not rely on it) | **Unverified: check** |
 | `cross-encoder/ms-marco-MiniLM-L-6-v2` | not checked | **Unverified: check** |
 | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | not checked | **Unverified: check** |
 | `jinaai/jina-colbert-v2`, `jinaai/jina-reranker-v2-base-multilingual` | not checked; may be non-commercial | **Unverified: do not use before checking; exclude if non-commercial** |
-| `colbert-ir/colbertv2.0`, `answerdotai/answerai-colbert-small-v1` | not checked | **Unverified: check** |
+| `colbert-ir/colbertv2.0`, `answerdotai/answerai-colbert-small-v1` | not checked (my memory says MIT and Apache-2.0: do not rely on it) | **Unverified: check** |
+| `BAAI/bge-reranker-base`, `BAAI/bge-reranker-large` | not checked (my memory says MIT, and Chinese and English only: do not rely on it) | **Unverified: check licence and languages** |
+| `mixedbread-ai/mxbai-rerank-base-v1`, `Alibaba-NLP/gte-multilingual-reranker-base` | not checked | **Unverified: check** |
 | `Qwen/Qwen3-Reranker-0.6B` | not checked | **Unverified: check** |
 
 Rules:
 1. No model is downloaded before its licence, size, languages and `trust_remote_code` need are read on the model card and written into this table with the date and the card revision.
-2. A model with a non-commercial or research-only licence is excluded.
+2. A model with a licence of the excluded class (section 5.1) is excluded. An MIT model is chosen over an equal Apache-2.0 model.
 3. Training data of a model is not reviewed here; the owner decides if that matters for internal use.
 4. The weights are not redistributed. They live in the user's home directory, not in a repository.
 5. The mapped skills used for this method keep their MIT notices in `repos/ai-worklog-scaleup/docs/resources/skills/`. No file of those skills was edited for this work.

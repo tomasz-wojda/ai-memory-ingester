@@ -28,6 +28,8 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 | D-18 | Commands live in the framework group `ai-worklog memory ...`, as the dashboard did | A separate script outside the framework | The owner asked for a memory service integrated into the Groovy-based framework | Proposed |
 | D-19 | RAGatouille is a candidate in the Phase 2 bake-off, not the default | RAGatouille by default (named in the owner's summary) | Its README lists Python 3.9 to 3.11 only and the latest release is 0.0.9 ("11 Feb", year not shown). sentence-transformers 6.2.0 documents a `MultiVectorEncoder` with MaxSim and PyLate (MIT) provides PLAID indexing and `rank.rerank`. The bake-off T041 decides | Proposed |
 | D-20 | One late-interaction model is chosen only after a 128-dimension variant is compared with a large multi-vector model | Take the large multi-vector model because it is multilingual | Storage for 12.4 million token vectors is about 3.2 GB at 128 dimensions in half precision and about 25 GB at 1024 dimensions ([evidence](evidence.md) section 7) | Proposed |
+| D-21 | Licence policy: MIT preferred; Apache-2.0, BSD and ISC acceptable after IP Legal confirms; non-commercial, copyleft, gated and unreadable licences excluded; the models must run on the company laptop | Accept any open licence; accept research-only licences for internal use | The owner needs to load the models on a company laptop. Weights are third-party material (IP Legal flag). An MIT model is chosen over an equal Apache-2.0 model | Proposed |
+| D-22 | The model files come only from an approved path: the company artifact repository, an approved offline transfer, or an opened host; never a run-time download or an unreviewed mirror | Download from the public model host on the laptop | The public model host did not answer from this machine (30 of 30 timeouts), and a company network may block it. A reviewed path also gives the checksum and the licence text a place | Proposed |
 
 ## 2. Alternatives not chosen (and when to revisit)
 
@@ -45,7 +47,7 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 
 | ID | Question | Recommended answer |
 |---|---|---|
-| Q1 | May the licences of the default models be accepted after they are read and recorded? | Yes, for Apache-2.0 or MIT; no for non-commercial; send anything else to IP Legal |
+| Q1 | Which licences does IP Legal accept for model weights: MIT only, or also Apache-2.0, BSD and ISC? | MIT preferred; Apache-2.0, BSD and ISC after IP Legal confirms once; exclude non-commercial, copyleft, gated and unreadable licences (D-21) |
 | Q2 | Dedicated Python virtual environment with a pinned Python, or the in-JVM route? | Virtual environment first (D-06, D-07) |
 | Q3 | Confirm the targets in SC-002 to SC-007 after the baseline run? | Yes, at gate G0, with the baseline numbers in view |
 | Q4 | Who labels the gold set, and how many hours does the owner give? | Assistant generates state-derived items and pools; owner writes 30 queries and reviews 20% (about 2 hours) |
@@ -53,10 +55,19 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 | Q6 | Is a one-time encoding job of 2 to 4 hours (large model, estimate) or minutes (small model) acceptable in Phase 2? | Yes, unattended, started overnight, resumable |
 | Q7 | Is Privacy Legal approval in place for personal data of people other than the owner, if the memory holds any? | Confirm before Phase 2 |
 | Q8 | Should `--rerank auto` be the default after gate G2? | Yes, with `AI_MEMORY_RERANK=0` as the kill switch |
+| Q9 | Which source path is approved for the model files: the company artifact repository, an offline transfer, or an opened host? | The artifact repository, if IP Legal and security approve the copy (D-22) |
+
+## 4. Licence decision tree (MIT first; all licences unverified until read)
+
+1. **Read the licence** of every candidate on its model card and store the licence text (task T020). Excluded classes stop here.
+2. **MIT and multilingual and a cross-encoder?** If one exists and passes the speed test, it is the default. (From memory, no popular multilingual cross-encoder is MIT; this is unverified.)
+3. **Otherwise, Apache-2.0 multilingual cross-encoder** after IP Legal confirms Apache-2.0 (Q1). This is the likely default.
+4. **If IP Legal accepts MIT only:** use an MIT English-only reranker in Phase 1, and rely on Phase 0 (relaxed query, prefix terms, Polish stop words) for Polish queries. Phase 2 then uses an MIT multilingual multi-vector encoder with precomputed vectors, so the cost is offline. This path is slower to reach good Polish ranking and the gold set measures the gap (system S3 against the others).
+5. **If no licence passes:** Phase 0 alone still fixes the zero-result problem and needs no model.
 
 ## Summary (STE)
 
-This log lists 20 decisions and 8 open questions. The main choices are: fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
+This log lists 22 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
 
 **Remaining 20% (not STE100):** decision, model, library and table names; the words "FTS5", "cross-encoder", "bi-encoder", "MaxP", "ONNX", "lemmatizer", "PLAID" and "dimension"; the tables; some sentences over 20 words.
 

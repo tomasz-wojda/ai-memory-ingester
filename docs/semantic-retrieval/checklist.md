@@ -17,11 +17,11 @@ Status: proposal. Use the first part to review the specification. Use the other 
 - [x] Existing locked decisions and invariants are carried over (N2, N3, I1 to I12)
 
 ### Open before approval
-- [ ] Owner has read the 20 decisions in the [decision log](decision-log.md) and approved or changed each
-- [ ] Owner has answered Q1 to Q8
+- [ ] Owner has read the 22 decisions in the [decision log](decision-log.md) and approved or changed each
+- [ ] Owner has answered Q1 to Q9
 - [ ] Targets of SC-002 to SC-007 are confirmed after the baseline run (gate G0)
 - [ ] Model licences are read and recorded in `security-privacy.md` section 5
-- [ ] No [NEEDS CLARIFICATION] marker remains (none were used; open items are Q1 to Q8)
+- [ ] No [NEEDS CLARIFICATION] marker remains (none were used; open items are Q1 to Q9)
 
 ## 2. Preconditions for EXECUTE
 
@@ -44,7 +44,8 @@ Phase 0
 - [ ] Gate G1 and `verification-phase-0.md` (T012)
 
 Phase 1
-- [ ] Licences recorded (T020)
+- [ ] Model source path approved (T019)
+- [ ] Licences recorded under the licence policy (T020)
 - [ ] Python environment with hashes (T021)
 - [ ] Latency benchmark and default model chosen (T022)
 - [ ] Models downloaded once with manifest (T023)

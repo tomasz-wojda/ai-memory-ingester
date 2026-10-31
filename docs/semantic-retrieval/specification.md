@@ -52,7 +52,7 @@ Non-goals:
 5. **One local service process** holds the models in memory. The Groovy code is a thin client. The contract is language-neutral, so a Python implementation can be replaced by an in-JVM ONNX Runtime implementation without a change to callers.
 6. **Derived data lives outside the existing databases.** A new `data/semantic.db` holds passages, scores and (Phase 2) vectors. Deleting it loses nothing that cannot be rebuilt.
 7. **A small multilingual model is the default.** Large models are opt-in until the benchmark proves they fit the latency budget (see [evidence.md](evidence.md) section 7).
-8. **No model is downloaded before its licence is checked** and recorded in [security-privacy.md](security-privacy.md).
+8. **No model is downloaded before its licence is checked** and recorded in [security-privacy.md](security-privacy.md). **MIT is preferred.** Apache-2.0, BSD and ISC are acceptable after IP Legal confirms; non-commercial, copyleft, gated and unreadable licences are excluded. The models must be usable on the company laptop, so their source path must be approved too (D-21, D-22).
 
 ## 5. User stories
 
@@ -289,7 +289,9 @@ Targets in SC-002 to SC-007 are proposals. Task T011 measures the baseline, and 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Large model too slow on the laptop | Re-ranking misses the deadline and adds no value | Small default model; anytime scoring; depth 30; benchmark gate in T022 |
-| Model licence is not usable | Work blocked or a legal problem | Licence check before download (D-08); non-commercial models excluded |
+| Model licence is not usable on the company laptop | Work blocked or a legal problem | Licence policy with MIT first (D-21); check before download (D-08); excluded classes in `security-privacy.md` 5.1 |
+| No MIT multilingual cross-encoder exists | The default cannot be both MIT and Polish-capable | Decision tree in [decision-log.md](decision-log.md) section 4: Apache-2.0 after IP Legal, or an MIT English-only reranker plus Phase 0 and Phase 2 for Polish |
+| The model host is blocked on the company network | Models cannot be fetched | Approved source path (D-22): internal artifact repository, offline transfer or an opened host; checked in task T019 |
 | Python wheels missing for the interpreter | Service cannot start | Pinned supported Python in a dedicated venv; ONNX Runtime route kept open |
 | Gold set too small or biased | Wrong decisions | At least 150 queries from real tickets, two labellers or a labelled-and-reviewed process, per-class reporting (evaluation.md) |
 | Re-ranker demotes authoritative or fresh state | Wrong answers with confidence | Fusion with priors; pins; invariants I1 to I3 and I12 in tests |
@@ -309,6 +311,7 @@ Each has a recommended answer in [decision-log.md](decision-log.md).
 4. Who labels the gold set, and how many hours does the owner give (Q4)?
 5. May artifacts be indexed for semantic search (Q5)?
 6. Is a 2 to 4 hour one-time encoding job acceptable for Phase 2 (Q6)?
+7. Which licences does IP Legal accept besides MIT, and which source path is approved for the model files (Q1, Q9)?
 
 ## Summary (STE)
 

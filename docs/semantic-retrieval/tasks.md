@@ -25,7 +25,8 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 
 ## Phase 1: cross-encoder re-ranking service
 
-- [ ] T020 OWNER [ING] Licence check: read the model cards of the candidate models, fill the table in `security-privacy.md` section 5 (licence, size, languages, `trust_remote_code`, revision, date). Questions Q1 and D-08. Starts after T012 or earlier in parallel.
+- [ ] T019 OWNER [ING] Model source path: check from the company laptop whether the model host and the package index are reachable; ask for the approved path (artifact repository, offline transfer or an opened host). Question Q9, decision D-22. Starts at once, in parallel with Phase 0.
+- [ ] T020 OWNER [ING] Licence check by the policy of `security-privacy.md` 5.1 (MIT first): read the model cards of the candidate models, store each licence text, fill the table in section 5.3 (licence, size, languages, `trust_remote_code`, revision, date), and send the Apache-2.0 candidates to IP Legal in one request. Questions Q1 and decisions D-08, D-21. Starts at once, in parallel with Phase 0. needs: T019 for the source
 - [ ] T021 [ING] Python environment: choose and install a supported Python in a dedicated venv; requirements file with hashes; a script that checks the interpreter and wheel availability. needs: T020 for the package list
 - [ ] T022 [ING] Latency benchmark (evaluation plan section 9) on `cpu` and `mps`; replace the estimates in `evidence.md` section 7; choose the default model (decision D-04). OWNER approves. needs: T021, T020
 - [ ] T023 [ING] Download the chosen models once, offline flags set after; write `models.manifest.json` with revisions and SHA-256. needs: T022
@@ -65,7 +66,7 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 ```
 T001 -> T012          T002 -> T004 -> T005 -> T011 -> T012
 T006 -> T007 -> T008 -> T009 -> T012      T010 -> T011
-T020 -> T021 -> T022 -> T023 -> T025 -> T033
+T019 -> T020 -> T021 -> T022 -> T023 -> T025 -> T033
 T024 -> T025, T027, T031        T026 + T027 + T008 -> T028 -> T029, T030 -> T032 -> T033 -> T034
 T033 -> T041 -> T042 -> T043 -> T044 -> T046 -> T047 -> T048      T042 -> T045 -> T046
 ```

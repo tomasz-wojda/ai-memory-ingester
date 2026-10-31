@@ -98,6 +98,8 @@ Reading: the Python default on this machine (3.15 release candidate) is a risk f
 
 ## 6. Model facts: unverified
 
+On 2026-10-31 and again on 2026-11-01 the host `huggingface.co` did not answer from this machine: 9 of 9 model-card pages, then 15 of 15 JSON API calls and one raw README timed out (`ETIMEDOUT`). The cause (network, proxy or the host) is unknown. A company laptop may meet the same block.
+
 The fetch of all nine Hugging Face model cards timed out twice (`ETIMEDOUT`). The following are **not verified here**. Check each licence, size, language list and `trust_remote_code` need on the model card before any download:
 
 - `BAAI/bge-reranker-v2-m3` (multilingual cross-encoder)

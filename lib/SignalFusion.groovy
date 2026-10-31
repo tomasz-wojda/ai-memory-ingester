@@ -4,6 +4,7 @@ class SignalFusion {
     static final Map<String, Integer> SIGNAL_WEIGHTS = [
         exact: 4,
         bm25: 3,
+        bm25_relaxed: 2,
         recency: 2,
         authority: 2,
         impact: 1

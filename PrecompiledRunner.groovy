@@ -50,6 +50,7 @@ class PrecompiledRunner {
         'journal': '08_record_event',
         '08': '08_record_event',
         'reconcile-transcripts': '09_reconcile_project',
+        'eval': '10_eval',
         'project-journal': '09_reconcile_project',
         'reconcile-project': '09_reconcile_project',
         '09': '09_reconcile_project'

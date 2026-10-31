@@ -34,12 +34,12 @@ Status: proposal. Use the first part to review the specification. Use the other 
 ## 3. Implementation (tick as the tasks of [tasks.md](tasks.md) finish)
 
 Phase 0
-- [ ] Metrics library and fixture corpus (T002, T003)
-- [ ] Stop-word lists and query planner (T006, T007)
-- [ ] Relaxed pool and fusion weight (T008)
-- [ ] Flags `--relax`, `--explain`; kill switch (T009)
-- [ ] `eval` command with frozen corpus (T010)
-- [ ] Gold set built, labelled, reviewed; kappa at least 0.6 (T004, T005)
+- [x] Metrics library and fixture corpus (T002, T003)
+- [x] Stop-word lists and query planner (T006, T007)
+- [x] Relaxed pool and fusion weight (T008)
+- [x] Flags `--relax`, `--explain`; kill switch (T009)
+- [x] `eval` command with frozen corpus (T010)
+- [ ] Gold set built, labelled, reviewed; kappa at least 0.6 (T004 tooling done; T005 needs the owner)
 - [ ] Baseline run and confirmed targets (T011)
 - [ ] Gate G1 and `verification-phase-0.md` (T012)
 

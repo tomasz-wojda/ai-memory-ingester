@@ -1,0 +1,389 @@
+[
+ {
+  "key": "fix101.state",
+  "db": "worklogs.db",
+  "archive": "worklog:state",
+  "path": "fix101.md",
+  "name": "fix101.md",
+  "content": "---\nticket: \"FIX-101\"\ncategory: \"state\"\nauthority: \"state\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# FIX-101 Current State\n\nSummary: the nginx ingress closes slow export requests with a 504. Status: timeout raised, monitoring for one week.\n",
+  "doc_id": "worklogs.db:worklog:state:fix101.md"
+ },
+ {
+  "key": "fix101.decision",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix101/decisions/0001-decisions.md",
+  "name": "0001-decisions.md",
+  "content": "---\nticket: \"FIX-101\"\ncategory: \"decisions\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# decisions\n\nDecision: raise the nginx ingress upstream timeout from 60 to 120 seconds, only for the /export path. Rejected: raising it for every path.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix101/decisions/0001-decisions.md"
+ },
+ {
+  "key": "fix101.finding",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix101/findings/0002-findings.md",
+  "name": "0002-findings.md",
+  "content": "---\nticket: \"FIX-101\"\ncategory: \"findings\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# findings\n\nFinding: the export endpoint needs up to 95 seconds for large customers; the 60 second ingress timeout returns 504 errors.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix101/findings/0002-findings.md"
+ },
+ {
+  "key": "fix101.next",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix101/next-action/0003-next-action.md",
+  "name": "0003-next-action.md",
+  "content": "---\nticket: \"FIX-101\"\ncategory: \"next-action\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# next-action\n\nNext action: watch the 504 rate for the export path for seven days, then close the ticket.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix101/next-action/0003-next-action.md"
+ },
+ {
+  "key": "fix101.turn1",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix101/d20260105/execute/impact-high/turn-000001.md",
+  "name": "turn-000001.md",
+  "content": "---\ntimestamp: \"2026-01-05T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-101\"]\nimpact: \"high\"\n---\n## User\n\nwhy do exports fail with 504 for big customers\n\n## Assistant\n\nThe nginx ingress timeout is 60 seconds and the export needs about 95 seconds. We decided to raise the timeout to 120 seconds for the export path only.\n",
+  "doc_id": "convo.db:chat:turns:fix101/d20260105/execute/impact-high/turn-000001.md"
+ },
+ {
+  "key": "fix101.turn2",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix101/d20260106/execute/impact-low/turn-000002.md",
+  "name": "turn-000002.md",
+  "content": "---\ntimestamp: \"2026-01-06T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-101\"]\nimpact: \"low\"\n---\n## User\n\napply the ingress change\n\n## Assistant\n\nApplied the annotation proxy-read-timeout 120 on the export ingress and checked that the 504 rate dropped.\n",
+  "doc_id": "convo.db:chat:turns:fix101/d20260106/execute/impact-low/turn-000002.md"
+ },
+ {
+  "key": "fix101.turnpl",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix101/d20260107/research/impact-none/turn-000003.md",
+  "name": "turn-000003.md",
+  "content": "---\ntimestamp: \"2026-01-07T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-101\"]\nimpact: \"none\"\n---\n## User\n\nProblem z timeoutem rozwiązaliśmy podnosząc limit do 120 sekund?\n\n## Assistant\n\nTak, limit dla ścieżki eksportu wynosi teraz 120 sekund, pozostałe ścieżki bez zmian.\n",
+  "doc_id": "convo.db:chat:turns:fix101/d20260107/research/impact-none/turn-000003.md"
+ },
+ {
+  "key": "fix101.noise",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix101/d20260108/plan/impact-none/turn-000004.md",
+  "name": "turn-000004.md",
+  "content": "---\ntimestamp: \"2026-01-08T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-101\"]\nimpact: \"none\"\n---\n## User\n\nweekly note\n\n## Assistant\n\nNothing new, waiting for the monitoring week.\n",
+  "doc_id": "convo.db:chat:turns:fix101/d20260108/plan/impact-none/turn-000004.md"
+ },
+ {
+  "key": "fix102.state",
+  "db": "worklogs.db",
+  "archive": "worklog:state",
+  "path": "fix102.md",
+  "name": "fix102.md",
+  "content": "---\nticket: \"FIX-102\"\ncategory: \"state\"\nauthority: \"state\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# FIX-102 Current State\n\nSummary: database backup retention policy. Status: lifecycle rule applied in the test bucket.\n",
+  "doc_id": "worklogs.db:worklog:state:fix102.md"
+ },
+ {
+  "key": "fix102.decision",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix102/decisions/0001-decisions.md",
+  "name": "0001-decisions.md",
+  "content": "---\nticket: \"FIX-102\"\ncategory: \"decisions\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# decisions\n\nDecision: keep daily database backups for 30 days and monthly backups for 12 months. Reason: audit asks for one year of monthly copies.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix102/decisions/0001-decisions.md"
+ },
+ {
+  "key": "fix102.finding",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix102/findings/0002-findings.md",
+  "name": "0002-findings.md",
+  "content": "---\nticket: \"FIX-102\"\ncategory: \"findings\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# findings\n\nFinding: the current lifecycle rule deletes every backup after 7 days.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix102/findings/0002-findings.md"
+ },
+ {
+  "key": "fix102.next",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix102/next-action/0003-next-action.md",
+  "name": "0003-next-action.md",
+  "content": "---\nticket: \"FIX-102\"\ncategory: \"next-action\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# next-action\n\nNext action: apply the new lifecycle rule to the production bucket after approval.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix102/next-action/0003-next-action.md"
+ },
+ {
+  "key": "fix102.turn1",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix102/d20260110/research/impact-high/turn-000005.md",
+  "name": "turn-000005.md",
+  "content": "---\ntimestamp: \"2026-01-10T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-102\"]\nimpact: \"high\"\n---\n## User\n\nhow long should we keep backups\n\n## Assistant\n\nAudit needs one year. Proposal: daily backups for 30 days, monthly backups for 12 months, offsite copy once a week.\n",
+  "doc_id": "convo.db:chat:turns:fix102/d20260110/research/impact-high/turn-000005.md"
+ },
+ {
+  "key": "fix102.turn2",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix102/d20260111/execute/impact-low/turn-000006.md",
+  "name": "turn-000006.md",
+  "content": "---\ntimestamp: \"2026-01-11T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-102\"]\nimpact: \"low\"\n---\n## User\n\napply the lifecycle rule in test\n\n## Assistant\n\nRule applied in the test bucket; the first monthly copy will appear on the first day of next month.\n",
+  "doc_id": "convo.db:chat:turns:fix102/d20260111/execute/impact-low/turn-000006.md"
+ },
+ {
+  "key": "fix102.turnpl",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix102/d20260112/research/impact-none/turn-000007.md",
+  "name": "turn-000007.md",
+  "content": "---\ntimestamp: \"2026-01-12T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-102\"]\nimpact: \"none\"\n---\n## User\n\nUstaliliśmy retencję backupów: 30 dni dziennie?\n\n## Assistant\n\nTak: 30 dni kopie dzienne i 12 miesięcy kopie miesięczne.\n",
+  "doc_id": "convo.db:chat:turns:fix102/d20260112/research/impact-none/turn-000007.md"
+ },
+ {
+  "key": "fix102.offsite",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix102/d20260113/plan/impact-none/turn-000008.md",
+  "name": "turn-000008.md",
+  "content": "---\ntimestamp: \"2026-01-13T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-102\"]\nimpact: \"none\"\n---\n## User\n\nsnapshot copies offsite\n\n## Assistant\n\nSnapshots are copied to a second region once a week by a scheduled job.\n",
+  "doc_id": "convo.db:chat:turns:fix102/d20260113/plan/impact-none/turn-000008.md"
+ },
+ {
+  "key": "fix103.state",
+  "db": "worklogs.db",
+  "archive": "worklog:state",
+  "path": "fix103.md",
+  "name": "fix103.md",
+  "content": "---\nticket: \"FIX-103\"\ncategory: \"state\"\nauthority: \"state\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# FIX-103 Current State\n\nSummary: pin the logging library to 1.8.15. Status: override merged, staging verified.\n",
+  "doc_id": "worklogs.db:worklog:state:fix103.md"
+ },
+ {
+  "key": "fix103.decision",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix103/decisions/0001-decisions.md",
+  "name": "0001-decisions.md",
+  "content": "---\nticket: \"FIX-103\"\ncategory: \"decisions\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# decisions\n\nDecision: pin the logging library to version 1.8.15 with a package override, because version 2.x removes the trace fields from audit lines.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix103/decisions/0001-decisions.md"
+ },
+ {
+  "key": "fix103.finding",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix103/findings/0002-findings.md",
+  "name": "0002-findings.md",
+  "content": "---\nticket: \"FIX-103\"\ncategory: \"findings\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# findings\n\nFinding: a nested copy of version 2.0.5 comes in through a shared library; the instrumentation patches only version 1.x.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix103/findings/0002-findings.md"
+ },
+ {
+  "key": "fix103.next",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix103/next-action/0003-next-action.md",
+  "name": "0003-next-action.md",
+  "content": "---\nticket: \"FIX-103\"\ncategory: \"next-action\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# next-action\n\nNext action: merge the override in the three services and check staging.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix103/next-action/0003-next-action.md"
+ },
+ {
+  "key": "fix103.turn1",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix103/d20260115/research/impact-high/turn-000009.md",
+  "name": "turn-000009.md",
+  "content": "---\ntimestamp: \"2026-01-15T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-103\"]\nimpact: \"high\"\n---\n## User\n\nwhy were trace ids missing in the audit lines\n\n## Assistant\n\nA nested copy of the logging library 2.0.5 is not patched by the instrumentation, so the trace fields are missing. We pinned the version to 1.8.15.\n",
+  "doc_id": "convo.db:chat:turns:fix103/d20260115/research/impact-high/turn-000009.md"
+ },
+ {
+  "key": "fix103.turn2",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix103/d20260116/execute/impact-low/turn-000010.md",
+  "name": "turn-000010.md",
+  "content": "---\ntimestamp: \"2026-01-16T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-103\"]\nimpact: \"low\"\n---\n## User\n\nadd the override\n\n## Assistant\n\nAdded overrides.logging 1.8.15 and rebuilt; only one copy remains in the lock file.\n",
+  "doc_id": "convo.db:chat:turns:fix103/d20260116/execute/impact-low/turn-000010.md"
+ },
+ {
+  "key": "fix103.turn3",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix103/d20260117/execute/impact-none/turn-000011.md",
+  "name": "turn-000011.md",
+  "content": "---\ntimestamp: \"2026-01-17T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-103\"]\nimpact: \"none\"\n---\n## User\n\ncheck the staging build\n\n## Assistant\n\nStaging build passes and audit lines carry trace ids again.\n",
+  "doc_id": "convo.db:chat:turns:fix103/d20260117/execute/impact-none/turn-000011.md"
+ },
+ {
+  "key": "fix103.noise",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix103/d20260118/plan/impact-none/turn-000012.md",
+  "name": "turn-000012.md",
+  "content": "---\ntimestamp: \"2026-01-18T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-103\"]\nimpact: \"none\"\n---\n## User\n\nrelease note\n\n## Assistant\n\nRelease note drafted.\n",
+  "doc_id": "convo.db:chat:turns:fix103/d20260118/plan/impact-none/turn-000012.md"
+ },
+ {
+  "key": "fix104.state",
+  "db": "worklogs.db",
+  "archive": "worklog:state",
+  "path": "fix104.md",
+  "name": "fix104.md",
+  "content": "---\nticket: \"FIX-104\"\ncategory: \"state\"\nauthority: \"state\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# FIX-104 Current State\n\nPodsumowanie: skrypt usuwa nieaktywnych użytkowników po 24 miesiącach. Status: tryb próbny na UAT zaplanowany.\n",
+  "doc_id": "worklogs.db:worklog:state:fix104.md"
+ },
+ {
+  "key": "fix104.decision",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix104/decisions/0001-decisions.md",
+  "name": "0001-decisions.md",
+  "content": "---\nticket: \"FIX-104\"\ncategory: \"decisions\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# decisions\n\nDecyzja: usuwanie nieaktywnych użytkowników najpierw w trybie próbnym (dry-run) na UAT, produkcja dopiero po zatwierdzeniu wyniku.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix104/decisions/0001-decisions.md"
+ },
+ {
+  "key": "fix104.finding",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix104/findings/0002-findings.md",
+  "name": "0002-findings.md",
+  "content": "---\nticket: \"FIX-104\"\ncategory: \"findings\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# findings\n\nUstalenie: skrypt usuwa konta bez logowania od 24 miesięcy; lista kont trafia do pliku wynikowego.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix104/findings/0002-findings.md"
+ },
+ {
+  "key": "fix104.next",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix104/next-action/0003-next-action.md",
+  "name": "0003-next-action.md",
+  "content": "---\nticket: \"FIX-104\"\ncategory: \"next-action\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# next-action\n\nNastępny krok: uruchomić tryb próbny na UAT i przekazać wynik właścicielowi.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix104/next-action/0003-next-action.md"
+ },
+ {
+  "key": "fix104.turn1",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix104/d20260120/plan/impact-high/turn-000013.md",
+  "name": "turn-000013.md",
+  "content": "---\ntimestamp: \"2026-01-20T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-104\"]\nimpact: \"high\"\n---\n## User\n\njaka decyzja w sprawie usuwania nieaktywnych użytkowników\n\n## Assistant\n\nNajpierw tryb próbny na UAT, potem produkcja po zatwierdzeniu listy kont.\n",
+  "doc_id": "convo.db:chat:turns:fix104/d20260120/plan/impact-high/turn-000013.md"
+ },
+ {
+  "key": "fix104.turn2",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix104/d20260121/execute/impact-low/turn-000014.md",
+  "name": "turn-000014.md",
+  "content": "---\ntimestamp: \"2026-01-21T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-104\"]\nimpact: \"low\"\n---\n## User\n\nuruchom skrypt w trybie próbnym\n\n## Assistant\n\nSkrypt w trybie próbnym znalazł 412 kont do usunięcia na UAT.\n",
+  "doc_id": "convo.db:chat:turns:fix104/d20260121/execute/impact-low/turn-000014.md"
+ },
+ {
+  "key": "fix104.turn3",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix104/d20260122/research/impact-none/turn-000015.md",
+  "name": "turn-000015.md",
+  "content": "---\ntimestamp: \"2026-01-22T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-104\"]\nimpact: \"none\"\n---\n## User\n\nwho owns the account list\n\n## Assistant\n\nThe security team owns the list of accounts and approves the result file.\n",
+  "doc_id": "convo.db:chat:turns:fix104/d20260122/research/impact-none/turn-000015.md"
+ },
+ {
+  "key": "fix104.noise",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix104/d20260123/plan/impact-none/turn-000016.md",
+  "name": "turn-000016.md",
+  "content": "---\ntimestamp: \"2026-01-23T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-104\"]\nimpact: \"none\"\n---\n## User\n\nnotatka\n\n## Assistant\n\nBrak zmian.\n",
+  "doc_id": "convo.db:chat:turns:fix104/d20260123/plan/impact-none/turn-000016.md"
+ },
+ {
+  "key": "fix105.state",
+  "db": "worklogs.db",
+  "archive": "worklog:state",
+  "path": "fix105.md",
+  "name": "fix105.md",
+  "content": "---\nticket: \"FIX-105\"\ncategory: \"state\"\nauthority: \"state\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# FIX-105 Current State\n\nPodsumowanie: odnowienie certyfikatu TLS. Certificate expires on 30 November. Status: automatyczne odnowienie przez ACME skonfigurowane.\n",
+  "doc_id": "worklogs.db:worklog:state:fix105.md"
+ },
+ {
+  "key": "fix105.decision",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix105/decisions/0001-decisions.md",
+  "name": "0001-decisions.md",
+  "content": "---\nticket: \"FIX-105\"\ncategory: \"decisions\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# decisions\n\nDecision: renew the certificate automatically through ACME. Decyzja: odnowienie certyfikatu automatycznie, bez ręcznego wniosku.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix105/decisions/0001-decisions.md"
+ },
+ {
+  "key": "fix105.finding",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix105/findings/0002-findings.md",
+  "name": "0002-findings.md",
+  "content": "---\nticket: \"FIX-105\"\ncategory: \"findings\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# findings\n\nFinding: the manual renewal needs a ticket to the network team and takes five days.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix105/findings/0002-findings.md"
+ },
+ {
+  "key": "fix105.next",
+  "db": "worklogs.db",
+  "archive": "worklog:chunks",
+  "path": "fix105/next-action/0003-next-action.md",
+  "name": "0003-next-action.md",
+  "content": "---\nticket: \"FIX-105\"\ncategory: \"next-action\"\nauthority: \"authoritative\"\nstate: \"current\"\nfreshness: \"fresh\"\n---\n# next-action\n\nNext action: check the calendar entry for the renewal date and confirm the ACME job ran. Następny krok: sprawdzić wpis w kalendarzu.\n",
+  "doc_id": "worklogs.db:worklog:chunks:fix105/next-action/0003-next-action.md"
+ },
+ {
+  "key": "fix105.turn1",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix105/d20260125/research/impact-high/turn-000017.md",
+  "name": "turn-000017.md",
+  "content": "---\ntimestamp: \"2026-01-25T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"research\"\ntickets: [\"FIX-105\"]\nimpact: \"high\"\n---\n## User\n\nkiedy odnawiamy certyfikat\n\n## Assistant\n\nCertyfikat wygasa 30 listopada. Odnowienie zrobi automatycznie zadanie ACME dwa tygodnie wcześniej.\n",
+  "doc_id": "convo.db:chat:turns:fix105/d20260125/research/impact-high/turn-000017.md"
+ },
+ {
+  "key": "fix105.turn2",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix105/d20260126/execute/impact-low/turn-000018.md",
+  "name": "turn-000018.md",
+  "content": "---\ntimestamp: \"2026-01-26T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"execute\"\ntickets: [\"FIX-105\"]\nimpact: \"low\"\n---\n## User\n\nconfigure the ACME job\n\n## Assistant\n\nACME job configured for the certificate with a renewal window of 14 days.\n",
+  "doc_id": "convo.db:chat:turns:fix105/d20260126/execute/impact-low/turn-000018.md"
+ },
+ {
+  "key": "fix105.turn3",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix105/d20260127/plan/impact-none/turn-000019.md",
+  "name": "turn-000019.md",
+  "content": "---\ntimestamp: \"2026-01-27T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-105\"]\nimpact: \"none\"\n---\n## User\n\ncalendar\n\n## Assistant\n\nCalendar entry added for the renewal date.\n",
+  "doc_id": "convo.db:chat:turns:fix105/d20260127/plan/impact-none/turn-000019.md"
+ },
+ {
+  "key": "fix105.noise",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "fix105/d20260128/plan/impact-none/turn-000020.md",
+  "name": "turn-000020.md",
+  "content": "---\ntimestamp: \"2026-01-28T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"FIX-105\"]\nimpact: \"none\"\n---\n## User\n\nstandup\n\n## Assistant\n\nStandup notes without technical content.\n",
+  "doc_id": "convo.db:chat:turns:fix105/d20260128/plan/impact-none/turn-000020.md"
+ },
+ {
+  "key": "noticket.lunch",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "noticket/d20260130/plan/impact-none/turn-000021.md",
+  "name": "turn-000021.md",
+  "content": "---\ntimestamp: \"2026-01-30T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"NOTICKET\"]\nimpact: \"none\"\n---\n## User\n\nlunch plans\n\n## Assistant\n\nLunch at noon.\n",
+  "doc_id": "convo.db:chat:turns:noticket/d20260130/plan/impact-none/turn-000021.md"
+ },
+ {
+  "key": "noticket.handoff",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "noticket/d20260131/plan/impact-none/turn-000022.md",
+  "name": "turn-000022.md",
+  "content": "---\ntimestamp: \"2026-01-31T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"NOTICKET\"]\nimpact: \"none\"\n---\n## User\n\ngit handoff\n\n## Assistant\n\nCommit handoff rendered for the docs change.\n",
+  "doc_id": "convo.db:chat:turns:noticket/d20260131/plan/impact-none/turn-000022.md"
+ },
+ {
+  "key": "noticket.summary",
+  "db": "convo.db",
+  "archive": "chat:turns",
+  "path": "noticket/d20260201/plan/impact-none/turn-000023.md",
+  "name": "turn-000023.md",
+  "content": "---\ntimestamp: \"2026-02-01T10:00:00Z\"\ntimestamp_confidence: \"exact\"\nmode: \"plan\"\ntickets: [\"NOTICKET\"]\nimpact: \"none\"\n---\n## User\n\nsummary request\n\n## Assistant\n\nSummary written in plain language.\n",
+  "doc_id": "convo.db:chat:turns:noticket/d20260201/plan/impact-none/turn-000023.md"
+ }
+]

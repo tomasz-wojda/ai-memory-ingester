@@ -103,11 +103,13 @@ class TestMemoryLockSuite {
             ]
         ])
         writeJson(new File(state, 'KD-2.json'), [ticket_key: 'KD-2', lifecycle: 'done', phase: 'closeout', next_action: 'none'])
-        writeJson(new File(state, 'KD-3.json'), [ticket_key: 'KD-3', next_action: 'Old style state file'])
+        writeJson(new File(state, 'KD-3.json'), [ticket_key: 'KD-3', governance_mode: 'execute', next_action: 'Old style state file'])
+        writeJson(new File(state, 'KD-5.json'), [ticket_key: 'KD-5', next_action: 'No phase and no mode', implementation: [state: 'complete'], verification: [state: 'partial']])
         writeJson(new File(state, 'KD-4.json'), [ticket_key: 'KD-4', next_action: 'No worklog for this one'])
         File worklog = new File(workspace, 'worklog')
         worklog.mkdirs()
         new File(worklog, '2026-10-30_KD-3.log').setText('TICKET: KD-3\n', 'UTF-8')
+        new File(worklog, '2026-10-30_KD-5.log').setText('TICKET: KD-5\n', 'UTF-8')
         File capsule = new File(workspace, 'worklog-chat/ticket-state/kd1.md')
         capsule.parentFile.mkdirs()
         capsule.setText('---\nticket: "KD-1"\nfreshness: "fresh"\n---\n\n# KD-1 Current State\n\n## TICKET SUMMARY\n\nSummary text for KD-1\n', 'UTF-8')
@@ -127,7 +129,8 @@ class TestMemoryLockSuite {
 
     private static void testActiveTickets(File workspace) {
         List<Map> active = ResumeDigest.activeTickets(workspace)
-        verify('active tickets by lifecycle and open worklog', active*.key == ['KD-1', 'KD-3'])
+        verify('active tickets by lifecycle and open worklog', active*.key == ['KD-1', 'KD-3', 'KD-5'])
+        verify('phase comes from the state, the mode or the verification state', active*.phase == ['plan', 'execute', 'verify'])
         verify('active ticket carries next action', active[0].next_action == 'Run the UAT dry-run on Monday.')
     }
 
@@ -187,6 +190,7 @@ class TestMemoryLockSuite {
         String index = ResumeDigest.buildIndex(output, workspace, 22000, observations(fixture))
         verify('index header kept', index.startsWith('# Worklog Chat Resume') && index.contains('Budget bytes: 22000'))
         verify('index lists active tickets', index.contains('### KD-1') && index.contains('### KD-3'))
+        verify('index shows the phase derived from the mode', index.contains('- Phase: execute') && index.contains('- Phase: verify') && !index.contains('- Phase: unknown'))
         verify('index skips finished tickets', !index.contains('### KD-2') && !index.contains('### KD-4'))
         verify('index points to the resume file', index.contains('worklog-chat/ticket-resume/KD-1.md'))
         verify('index has phase and freshness', index.contains('- Phase: plan') && index.contains('- Freshness: fresh'))

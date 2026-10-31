@@ -40,7 +40,7 @@ File `.ai-worklog/memory-service.json` (created by `ai-worklog memory serve --in
   "default_deadline_ms": 1200,
   "rerank_depth": 30,
   "rerank_min_scored": 10,
-  "relax_min_results": 10,
+  "relax_min_results": 1,
   "score_cache_days": 14,
   "index_archives": ["chat:turns", "worklog:chunks", "worklog:state"]
 }
@@ -153,7 +153,7 @@ Environment: `AI_MEMORY_RERANK=0` (off), `AI_MEMORY_RELAX=0` (off), `AI_MEMORY_S
   "explicit_operators": false,
   "language_guess": "en",
   "strict": "what did we decide about the traefik attribute",
-  "relaxed": "decide OR traefik OR traefi* OR attribute OR attrib*",
+  "relaxed": "decide OR deci* OR traefik OR trae* OR attribute OR attrib*",
   "stop_words_removed": ["what", "did", "we", "about", "the"],
   "form_used": "relaxed",
   "reason": "strict_returned_0"

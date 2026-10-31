@@ -41,6 +41,7 @@ class Config {
     static final int RESUME_BUDGET_BYTES = 22000
     static final int TICKET_CONTEXT_BUDGET_BYTES = 22000
     static final int RESUME_RECENT_TURNS = 12
+    static final int RELAX_MIN_RESULTS = 1
     static final String RESUME_MODE = System.getenv('AI_MEMORY_RESUME_MODE') == 'global' ? 'global' : 'index'
     static final String TICKET_RESUME_DIR = 'ticket-resume'
     static final int TICKET_RESUME_BUDGET_BYTES = 12000
@@ -380,5 +381,15 @@ class Config {
     static File journalDbPath() {
         ensureDataDir()
         return new File(DATA_DIR, JOURNAL_DB_NAME).canonicalFile
+    }
+
+    /**
+     * Tells whether the relaxed first-stage query may run. AI_MEMORY_RELAX=0 turns it off.
+     *
+     * @return true unless the kill switch is set
+     */
+    static boolean relaxEnabled() {
+        String value = System.getProperty('ai.memory.relax') ?: System.getenv('AI_MEMORY_RELAX')
+        return value != '0'
     }
 }

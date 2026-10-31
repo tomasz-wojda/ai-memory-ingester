@@ -42,6 +42,21 @@ Reading:
 - Inflection also fails: "pinned" does not match "pin", and a Polish form does not match another form of the same word. Typed prefixes and `OR` give results.
 - Latency of 0.7 to 1.0 s is mostly JVM start. The search itself is small.
 
+### 2b. Tokenizer check (SQLite FTS5, `unicode61 remove_diacritics 2`, 2026-11-01)
+
+Text indexed: "złożyliśmy decyzję o użytkownikach było".
+
+| Query | Matches | Reading |
+|---|---|---|
+| `zlozylismy` (ASCII) | 0 | ł is not folded |
+| `złozylismy` (ł kept, rest ASCII) | 1 | a variant with ł matches |
+| `złożyliśmy` (typed in full) | 1 | |
+| `uzytkownikach` (ASCII) | 1 | ż, ś, ń, ó are folded |
+| `bylo` / `było` | 0 / 1 | the most common case |
+| `zloz*` / `zł*` | 0 / 1 | prefix terms behave the same |
+
+Reading: a Polish query typed without diacritics misses every word that holds ł. The query planner adds ł variants for Polish queries (decision D-24).
+
 ## 3. Corpus size (2026-10-31)
 
 | Store | Archive | Documents | Average size | Largest | Total |

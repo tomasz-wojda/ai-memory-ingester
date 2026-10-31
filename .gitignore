@@ -28,3 +28,9 @@ prompt.log
 # Analysis data cache
 data/archive_analysis.json
 data/*.json
+
+# Evaluation gold set and pool exports (real ticket text; never commit)
+data/eval/
+data/semantic.db
+data/semantic.db-wal
+data/semantic.db-shm

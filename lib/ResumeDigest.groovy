@@ -231,7 +231,7 @@ class ResumeDigest {
             tickets << [
                 key: key,
                 lifecycle: lifecycle ?: 'active',
-                phase: state.phase?.toString() ?: '',
+                phase: phaseOf(state),
                 next_action: state.next_action?.toString() ?: '',
                 updated_at: state.updated_at?.toString() ?: '',
                 state: state,
@@ -450,6 +450,18 @@ class ResumeDigest {
             }
         }
         return lines
+    }
+
+    private static String phaseOf(Map state) {
+        String explicit = state.phase?.toString()
+        if (explicit) return explicit
+        Map closeout = state.closeout instanceof Map ? (Map) state.closeout : [:]
+        if (closeout.tempo_logged == true) return 'closeout'
+        String verification = ((state.verification instanceof Map ? state.verification : [:]).state ?: '').toString()
+        String implementation = ((state.implementation instanceof Map ? state.implementation : [:]).state ?: '').toString()
+        if (implementation == 'complete' && verification in ['partial', 'complete', 'failed']) return 'verify'
+        String mode = (state.governance_mode ?: '').toString()
+        return mode in ['research', 'innovate', 'plan', 'execute'] ? mode : 'intake'
     }
 
     private static boolean hasOpenWorklog(File workspaceRoot, String key) {

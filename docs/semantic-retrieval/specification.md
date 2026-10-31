@@ -17,7 +17,7 @@ Make memory retrieval find the right turn, worklog chunk or ticket state for a q
 Measured facts are in [evidence.md](evidence.md). In short:
 
 1. **The first stage fails on questions.** Bare terms are ANDed. All five natural-language questions and phrases in the baseline returned zero results, while the same ideas typed as `OR` or prefix queries returned ten.
-2. **No word-form matching.** There is no stemming or lemmatization. Polish inflection and English forms ("pinned" and "pin") do not match.
+2. **No word-form matching.** There is no stemming or lemmatization. Polish inflection and English forms ("pinned" and "pin") do not match. The tokenizer also does not fold the Polish letter ł, so "bylo" does not find "było" (verified in SQLite on 2026-11-01).
 3. **Ranking inside the candidate set is lexical.** BM25 rank, recency, authority and impact are fused with fixed weights. Nothing measures whether a passage answers the question.
 4. **Whole documents, no passages.** A turn can be 680 KB and an artifact 1.4 MB. Relevance is judged on the whole text.
 5. **No way to measure.** There is no labelled query set, so no change can be shown to help.
@@ -142,8 +142,9 @@ Rules:
    - **relaxed**: stop words removed, remaining terms joined with `OR`, each term of five or more letters also given as a prefix term cut to `max(4, length - 3)` letters (a light stemmer that works for English and Polish forms). Terms of fewer than four letters stay whole.
 4. Stop-word lists: English and Polish, kept in `lib/StopWords.groovy`, with Polish words listed both with and without diacritics.
 5. Fold case and diacritics the same way the index does (`unicode61 remove_diacritics 2`), so a query typed without diacritics matches indexed text with them.
-6. The relaxed form is used only when the strict form returns fewer than `relax_min_results` rows (default 10) or when `--relax on` is given. The result records which form ran.
-7. No model is needed in this stage. It is deterministic and testable alone.
+6. The relaxed form is used only when the strict form returns fewer than `relax_min_results` rows or when `--relax on` is given. **The first release uses 1** (zero rows only, decision D-23), so queries that work today are unchanged; the default may widen toward 10 after the gold set shows a gain. The result records which form ran.
+7. **Polish ł.** For a query guessed as Polish (a Polish letter or more Polish than English stop words), each word with one or two letters `l` also gets variants with `ł` ("bylo" gives "było"), because the index keeps ł. Decision D-24.
+8. No model is needed in this stage. It is deterministic and testable alone.
 
 ### 6.2 Stage 1: candidates
 

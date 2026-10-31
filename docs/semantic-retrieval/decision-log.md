@@ -30,6 +30,8 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 | D-20 | One late-interaction model is chosen only after a 128-dimension variant is compared with a large multi-vector model | Take the large multi-vector model because it is multilingual | Storage for 12.4 million token vectors is about 3.2 GB at 128 dimensions in half precision and about 25 GB at 1024 dimensions ([evidence](evidence.md) section 7) | Proposed |
 | D-21 | Licence policy: MIT preferred; Apache-2.0, BSD and ISC acceptable after IP Legal confirms; non-commercial, copyleft, gated and unreadable licences excluded; the models must run on the company laptop | Accept any open licence; accept research-only licences for internal use | The owner needs to load the models on a company laptop. Weights are third-party material (IP Legal flag). An MIT model is chosen over an equal Apache-2.0 model | Proposed |
 | D-22 | The model files come only from an approved path: the company artifact repository, an approved offline transfer, or an opened host; never a run-time download or an unreviewed mirror | Download from the public model host on the laptop | The public model host did not answer from this machine (30 of 30 timeouts), and a company network may block it. A reviewed path also gives the checksum and the licence text a place | Proposed |
+| D-23 | In the first release the relaxed query runs only when the strict query returns **zero** rows (`relax_min_results` = 1), or with `--relax on` | The spec value of 10 rows | Queries that work today return exactly what they return now, so there is no regression risk. The trigger widens only after the gold set shows a gain | Built, owner to confirm |
+| D-24 | Polish ł variants are added to the relaxed form only for queries guessed as Polish; `pod` and `go` are not stop words | Add variants for every query; keep Polish `pod` as a stop word | Verified: the FTS5 tokenizer `unicode61 remove_diacritics 2` folds every Polish diacritic except ł ("bylo" does not find "było"). `pod` (Kubernetes) and `go` (language) are common technical words here | Built, owner to confirm |
 
 ## 2. Alternatives not chosen (and when to revisit)
 
@@ -67,7 +69,7 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 
 ## Summary (STE)
 
-This log lists 22 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
+This log lists 24 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
 
 **Remaining 20% (not STE100):** decision, model, library and table names; the words "FTS5", "cross-encoder", "bi-encoder", "MaxP", "ONNX", "lemmatizer", "PLAID" and "dimension"; the tables; some sentences over 20 words.
 

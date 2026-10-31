@@ -22,22 +22,38 @@ class MemoryRetrieval {
             return ticketResult(dataDir, parsed.ticket, '', limit, options, started)
         }
         Map<String, List<Map>> pools = [:]
+        Map plan = QueryPlanner.plan(parsed.terms)
         pools.exact = exactFacetPool(databases, parsed, POOL_LIMIT)
         pools.bm25 = bodyPool(databases, parsed, POOL_LIMIT)
+        List<Map> lexical = pools.bm25
+        boolean relaxedUsed = false
+        String relaxError = null
+        if (shouldRelax(plan, options, pools.bm25.size())) {
+            try {
+                List<Map> relaxedRows = bodyPoolExpression(databases, plan.relaxed.toString(), POOL_LIMIT, 'bm25_relaxed')
+                if (relaxedRows) {
+                    pools.bm25_relaxed = relaxedRows
+                    lexical = mergeLexical(pools.bm25, relaxedRows)
+                    relaxedUsed = true
+                }
+            } catch (Exception error) {
+                relaxError = error.message
+            }
+        }
         if (parsed.hasFacet()) {
             pools.recency = recencyPool(databases, parsed, POOL_LIMIT)
             pools.authority = authorityPool(databases, parsed, POOL_LIMIT)
             pools.impact = impactPool(databases, parsed, POOL_LIMIT)
         } else {
-            pools.recency = pools.bm25.toSorted { Map left, Map right ->
+            pools.recency = lexical.toSorted { Map left, Map right ->
                 (right.sequence as long) <=> (left.sequence as long)
             }
-            pools.authority = pools.bm25.findAll { Map row ->
+            pools.authority = lexical.findAll { Map row ->
                 row.origin_db == Config.WORKLOGS_DB_NAME
             }.toSorted { Map left, Map right ->
                 authorityRank(left) <=> authorityRank(right)
             }
-            pools.impact = pools.bm25.findAll { Map row ->
+            pools.impact = lexical.findAll { Map row ->
                 row.source_archive == 'chat:turns' && row.impact == 'high'
             }.toSorted(TicketFreshness.&compareTurnEvidence)
         }
@@ -47,7 +63,8 @@ class MemoryRetrieval {
         fused = fused.findAll { !it.excluded_reason }.take(Math.max(limit * 2, limit))
         fused = hydrateDocuments(fused, dataDir)
         fused = applyFreshnessLabels(fused, dataDir, parsed.ticket)
-        fused.each { enrichPreview(it, parsed.terms) }
+        String previewTerms = relaxedUsed ? (plan.terms as List<String>).join(' ') : parsed.terms
+        fused.each { enrichPreview(it, previewTerms) }
         if (options.show_signals) {
             fused.each { Map row ->
                 row.signal_summary = (row.signals ?: [:]).collect { k, v -> "${k}:${v}" }.join(' ')
@@ -58,6 +75,11 @@ class MemoryRetrieval {
             mode: 'topic',
             query: queryText,
             parsed: parsed.properties,
+            query_plan: plan + [
+                form_used: relaxedUsed ? 'relaxed' : (plan.explicit ? 'explicit' : 'strict'),
+                relaxed_used: relaxedUsed,
+                relax_error: relaxError
+            ],
             results: fused.take(limit),
             pools: options.show_signals ? pools.collectEntries { k, v -> [k, v.size()] } : null,
             total_duration_ms: elapsedMs
@@ -76,7 +98,8 @@ class MemoryRetrieval {
             dataDir,
             ticket,
             terms ?: '',
-            Math.max(limit * 5, POOL_LIMIT)
+            Math.max(limit * 5, POOL_LIMIT),
+            options
         )
         Map<String, List<Map>> pools = [
             exact: discovered.findAll { it.pool == 'state' },
@@ -198,13 +221,16 @@ class MemoryRetrieval {
 
     private static List<Map> bodyPool(List<File> databases, ParsedQuery parsed, int limit) {
         if (!parsed.terms?.trim()) return []
+        return bodyPoolExpression(databases, parsed.terms, limit, 'bm25')
+    }
+
+    private static List<Map> bodyPoolExpression(List<File> databases, String expression, int limit, String pool) {
         List<Map> rows = []
         databases.each { File database ->
             MemoryEngine engine = new MemoryEngine(database.absolutePath)
             try {
-                String expression = parsed.ticket ? "${parsed.terms}" : parsed.terms
                 engine.searchBody(expression, limit).each { Map result ->
-                    rows << enrichSearchRow(result, database.name, 'bm25')
+                    rows << enrichSearchRow(result, database.name, pool)
                 }
             } finally {
                 engine.close()
@@ -212,6 +238,19 @@ class MemoryRetrieval {
         }
         rows.sort { Map left, Map right -> (left.rank as double) <=> (right.rank as double) }
         return rows.take(limit)
+    }
+
+    private static boolean shouldRelax(Map plan, Map options, int strictRows) {
+        String mode = (options.relax_mode ?: 'auto').toString()
+        if (mode == 'off' || !Config.relaxEnabled() || plan.explicit || !plan.relaxed) return false
+        if (mode == 'on') return true
+        int minimum = (options.relax_min_results ?: Config.RELAX_MIN_RESULTS) as int
+        return strictRows < minimum
+    }
+
+    private static List<Map> mergeLexical(List<Map> strict, List<Map> relaxed) {
+        Set<String> seen = strict.collect { Map row -> SignalFusion.stableIdOf(row) } as Set<String>
+        return strict + relaxed.findAll { Map row -> !seen.contains(SignalFusion.stableIdOf(row)) }
     }
 
     private static List<Map> recencyPool(List<File> databases, ParsedQuery parsed, int limit) {

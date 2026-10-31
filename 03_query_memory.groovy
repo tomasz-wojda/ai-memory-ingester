@@ -38,6 +38,8 @@ boolean jsonOutput = false
 boolean showSignals = false
 boolean completeContext = false
 boolean diagnostics = false
+boolean explain = false
+String relaxMode = 'auto'
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -127,6 +129,23 @@ while (i < args.length) {
         i++
     } else if (arg == '--signals') {
         showSignals = true
+        i++
+    } else if (arg == '--explain') {
+        explain = true
+        i++
+    } else if (arg == '--relax' && i + 1 < args.length) {
+        relaxMode = args[i + 1].trim().toLowerCase()
+        if (!(relaxMode in ['auto', 'on', 'off'])) {
+            println "ERROR: --relax needs auto, on or off."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg.startsWith('--relax=')) {
+        relaxMode = arg.substring('--relax='.length()).trim().toLowerCase()
+        if (!(relaxMode in ['auto', 'on', 'off'])) {
+            println "ERROR: --relax needs auto, on or off."
+            exitApp(2); return
+        }
         i++
     } else if (arg == '--complete-context') {
         completeContext = true
@@ -356,7 +375,7 @@ if (!input.isEmpty()) {
                 String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
                 executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             } else {
-                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics)
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain)
             }
         }
         exitApp(0); return
@@ -667,7 +686,9 @@ static void executeEnhancedSearch(
     String sinceDate = null,
     String untilDate = null,
     boolean showSignals = false,
-    boolean diagnostics = false
+    boolean diagnostics = false,
+    String relaxMode = 'auto',
+    boolean explain = false
 ) {
     if (!raw && !jsonOutput) {
         println "-" * 50
@@ -680,10 +701,18 @@ static void executeEnhancedSearch(
         impact_facet: impactFacet,
         since_date: sinceDate,
         until_date: untilDate,
-        show_signals: showSignals
+        show_signals: showSignals,
+        relax_mode: relaxMode
     ]
     Map result = MemoryRetrieval.searchTopic(Config.DATA_DIR, datasetName, query, limit, options)
     List<Map> matches = (result.results as List<Map>) ?: []
+    Map plan = (result.query_plan ?: [:]) as Map
+    if (explain) {
+        List<String> planLines = explainLines(plan)
+        if (jsonOutput) planLines.each { System.err.println(it) } else planLines.each { println it }
+    } else if (plan.relaxed_used && !jsonOutput) {
+        println "Relaxed query used (the strict query found no rows): ${plan.relaxed}"
+    }
     if (jsonOutput) {
         emitJsonArray(matches.collect { Map row ->
             toJsonRow(row, row.fused_score as Double ?: row.rrf_score as Double, cleanSnippet(row.snippet?.toString())) + enhancedJsonFields(row)
@@ -713,6 +742,17 @@ static void executeEnhancedSearch(
     if (diagnostics && result.pools) {
         println "Pool sizes: ${result.pools}"
     }
+}
+
+static List<String> explainLines(Map plan) {
+    if (!plan) return ['Query plan: not available for this query form']
+    return [
+        "Query plan: form=${plan.form_used} language=${plan.language_guess} explicit=${plan.explicit}",
+        "  strict:  ${plan.strict}",
+        "  relaxed: ${plan.relaxed ?: '(none)'}",
+        "  stop words removed: ${plan.stop_words_removed ?: []}",
+        plan.relax_error ? "  relaxed query failed: ${plan.relax_error}" : null
+    ].findAll { it != null } as List<String>
 }
 
 /**
@@ -809,6 +849,7 @@ static void printQueryUsage() {
     println ""
     println "Search syntax:"
     println "  Bare terms are ANDed. Hyphenated or punctuated terms are quoted automatically."
+    println "  If the strict query finds nothing, a relaxed query runs (stop words removed, OR, prefix terms)."
     println "  \"exact phrase\"  prefix*  term AND|OR|NOT term  file_path:|file_name:|content:value"
     println ""
     println "Options:"
@@ -824,6 +865,8 @@ static void printQueryUsage() {
     println "  -a, --all                   Document view without line limit"
     println "  -r, --raw                   Raw output"
     println "      --json                  JSON output (implies --raw)"
+    println "      --relax auto|on|off     Relaxed query when the strict query finds nothing (default auto; AI_MEMORY_RELAX=0 turns it off)"
+    println "      --explain               Show the query plan"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"
     println "      --complete-context      Pack complete context rows"

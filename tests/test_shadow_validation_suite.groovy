@@ -66,7 +66,7 @@ class TestShadowValidationSuite {
         groovy.grape.Grape.grab(classLoader: loader, group: 'org.xerial', module: 'sqlite-jdbc', version: '3.45.1.0')
         Thread.currentThread().contextClassLoader = loader
         [
-            'Config', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
+            'Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
             'MemoryExclusion', 'TurnClassifier', 'TurnEmitter', 'JournalEvent', 'JournalStore', 'JournalProjector', 'MemoryEngine',
             'WorklogDocument', 'WorklogParser', 'DatasetRegistry', 'TicketFreshness', 'FederatedEngine',
             'TicketRetrieval', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'

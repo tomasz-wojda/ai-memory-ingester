@@ -11,17 +11,17 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 ## Phase 0: measure and fix the first stage
 
 - [ ] T001 [ING] Tag the baseline commit `semantic-baseline`; record the suite counts (journal 25, retrieval 31, query 68, chatlog 100, reconciliation 33, shadow validation 44, worklog 42, memory lock 34).
-- [ ] T002 [P] [ING] `lib/EvalMetrics.groovy`: Recall@K, nDCG@10, MRR@10, Success@K, zero-result rate, paired bootstrap; `tests/test_eval_suite.groovy` with hand-computed cases.
-- [ ] T003 [P] [ING] Fixture corpus `tests/fixtures/semantic/` (about 40 documents, English and Polish, about 25 queries covering classes K, Q, P, T, X) and a stub scorer based on term overlap.
-- [ ] T004 [ING] Gold set tooling: `tools/gold_from_state` creates query candidates from state decisions, blockers and next actions with their capsule `sources`; pooling export; label file validator. needs: T002
+- [x] T002 [P] [ING] `lib/EvalMetrics.groovy`: Recall@K, nDCG@10, MRR@10, Success@K, zero-result rate, paired bootstrap; `tests/test_eval_suite.groovy` with hand-computed cases. _Done 2026-11-01: 27 checks._
+- [x] T003 [P] [ING] Fixture corpus `tests/fixtures/semantic/` (43 documents, English and Polish; 24 queries covering classes K, Q, P, T, X as `queries.jsonl`) and the builder `tests/SemanticFixtureBuilder.groovy`. _Done 2026-11-01. A stub scorer is not needed in Phase 0 (no model); it comes with T024._
+- [x] T004 [ING] Gold set tooling: `lib/GoldSet.groovy` (load, validate, candidates from state decisions, blockers and next actions) and the `eval --gold-candidates`, `--validate` and `--pool-export` commands. _Done 2026-11-01. On the real workspace it made 238 unlabelled candidates from 16 state files (git-ignored). The capsule-source link to a positive document is not built; the pool export is the way to find positives._ needs: T002
 - [ ] T005 OWNER [ING] Build the gold set (section 3 of the evaluation plan): 30 owner-written queries, review of 20%, kappa at least 0.6; freeze at a sequence number. needs: T004
-- [ ] T006 [P] [ING] `lib/StopWords.groovy`: English and Polish lists, with and without diacritics; tests.
-- [ ] T007 [ING] `lib/QueryPlanner.groovy`: strict and relaxed forms, prefix terms, folding, explicit-operator bypass, ticket-only path unchanged; `tests/test_query_plan_suite.groovy`. needs: T006
-- [ ] T008 [ING] `MemoryRetrieval`: use the plan; add pool `bm25_relaxed`; switch to the relaxed form below `relax_min_results`; add the weight in `SignalFusion`. Existing retrieval suite must pass unchanged. needs: T007
-- [ ] T009 [ING] Flags `--relax`, `--explain` (plan part), `AI_MEMORY_RELAX=0`; help text; JSON fields `query_plan`, `signals.bm25_relaxed`. needs: T008
-- [ ] T010 [ING] `eval` command in `run.groovy` with `--as-of-sequence`, `--systems`, `--compare`, run storage in `semantic.db` (`eval_runs`). needs: T002
-- [ ] T011 OWNER [ING] Run S0 on the gold set; confirm or change the targets of SC-002 to SC-007 (gate G0, questions Q3, Q4). needs: T005, T010
-- [ ] T012 [ING] Gate G1: run S1 against S0; write `docs/semantic-retrieval/verification-phase-0.md`; full regression of all suites; `sweep-memory` ends with `failures=0`; rebuild the jar. needs: T008, T009, T011
+- [x] T006 [P] [ING] `lib/StopWords.groovy` (English and Polish, matched on the folded form) and `lib/TextFold.groovy`; tests. _Done 2026-11-01._
+- [x] T007 [ING] `lib/QueryPlanner.groovy`: strict and relaxed forms, prefix terms, Polish ł variants, explicit-operator bypass; `tests/test_query_plan_suite.groovy` (80 checks with the integration tests). _Done 2026-11-01._ needs: T006
+- [x] T008 [ING] `MemoryRetrieval`: plan, pool `bm25_relaxed`, relaxed form only when the strict query returns zero rows (D-23), weight in `SignalFusion`; the ticket path (`TicketRetrieval.semanticCandidates`) has the same fallback. _Done 2026-11-01. Existing suites pass; five of them needed the three new classes added to their class-loading list._ needs: T007
+- [x] T009 [ING] Flags `--relax auto|on|off`, `--explain` (plan part), `AI_MEMORY_RELAX=0`; help text. _Done 2026-11-01. JSON stays an array of rows: rows carry `signals.bm25_relaxed`, and with `--explain` the plan goes to stderr._ needs: T008
+- [x] T010 [ING] `eval` command (`10_eval.groovy`, `lib/EvalRunner.groovy`, `lib/SemanticStore.groovy`) with `--as-of-sequence`, `--systems S0,S1`, paired bootstrap comparison, run storage in `semantic.db`. _Done 2026-11-01. `--compare RUN` against a stored run is not built._ needs: T002
+- [ ] T011 OWNER [ING] Run S0 on the gold set; confirm or change the targets of SC-002 to SC-007 (gate G0, questions Q3, Q4). _Waiting for T005: the tooling is ready (`eval --gold-candidates`, `--pool-export`, `--run`)._ needs: T005, T010
+- [ ] T012 [ING] Gate G1: run S1 against S0 on the real gold set; full regression; rebuild the jar. _Partly done: the interim record is in `verification-phase-0.md` (fixture numbers, real-data before and after, all suites, jar rebuilt). The gate itself needs the labelled gold set (T005, T011)._ needs: T008, T009, T011
 
 ## Phase 1: cross-encoder re-ranking service
 

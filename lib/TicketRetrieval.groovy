@@ -3,7 +3,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 class TicketRetrieval {
-    static List<Map> retrieve(File dataDir, String ticket, String terms = '', int limit = 20) {
+    static List<Map> retrieve(File dataDir, String ticket, String terms = '', int limit = 20, Map options = [:]) {
         String facet = normalizeTicket(ticket)
         List<Map> state = stateCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 1)
         List<Map> authoritative = authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 4)
@@ -21,7 +21,7 @@ class TicketRetrieval {
         Set<String> newerPaths = newerEvidence.collect { it.file_path?.toString() } as Set<String>
         List<Map> remainingRecent = recent.findAll { !newerPaths.contains(it.file_path?.toString()) }.take(5)
         List<Map> semanticOrFill = terms?.trim()
-            ? semanticCandidates(dataDir, facet, terms.trim(), 5)
+            ? semanticCandidates(dataDir, facet, terms.trim(), 5, options)
             : authoritativeCandidates(new File(dataDir, Config.WORKLOGS_DB_NAME), facet, 12).drop(authoritative.size()) +
                 recent.drop(remainingRecent.size())
         List<List<Map>> pools = stale
@@ -104,14 +104,27 @@ class TicketRetrieval {
         return newer.take(limit)
     }
 
-    static List<Map> semanticCandidates(File dataDir, String facet, String terms, int limit) {
+    static List<Map> semanticCandidates(File dataDir, String facet, String terms, int limit, Map options = [:]) {
+        List<Map> strict = semanticCandidatesFor(dataDir, facet, terms, terms, limit)
+        String relaxMode = (options.relax_mode ?: 'auto').toString()
+        if (strict || relaxMode == 'off' || !Config.relaxEnabled()) return strict
+        Map plan = QueryPlanner.plan(terms)
+        if (!plan.relaxed) return strict
+        try {
+            return semanticCandidatesFor(dataDir, facet, plan.relaxed.toString(), (plan.terms as List<String>).join(' '), limit)
+        } catch (Exception ignored) {
+            return strict
+        }
+    }
+
+    private static List<Map> semanticCandidatesFor(File dataDir, String facet, String expression, String previewTerms, int limit) {
         List<Map> results = []
         [Config.WORKLOGS_DB_NAME, Config.CONVERSATION_DB_NAME, Config.ARTIFACTS_DB_NAME].each { String name ->
             File database = new File(dataDir, name)
             if (!database.exists()) return
             MemoryEngine engine = new MemoryEngine(database.absolutePath)
             try {
-                engine.search("file_path:${facet} AND (${terms})", limit).each { result ->
+                engine.search("file_path:${facet} AND (${expression})", limit).each { result ->
                     Map document = engine.getDocument(result.id as int)
                     if (document) {
                         results << document + [
@@ -121,7 +134,7 @@ class TicketRetrieval {
                             authority: authority(document.content?.toString()),
                             state: state(document.content?.toString()),
                             freshness: freshness(document.content?.toString()),
-                            preview_terms: terms
+                            preview_terms: previewTerms
                         ]
                     }
                 }
@@ -177,7 +190,7 @@ class TicketRetrieval {
     }
 
     static String normalizeTicket(String ticket) {
-        return TicketKey.facet(ticket)
+        return TicketKey.supported(ticket) ? TicketKey.facet(ticket) : ticket
     }
 
     private static List<Map> rows(File database, String query, List parameters, String pool) {

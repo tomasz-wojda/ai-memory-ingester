@@ -74,6 +74,7 @@ Map<String, String> commands = [
     'journal':            '08_record_event.groovy',
     '08':                 '08_record_event.groovy',
     'reconcile-transcripts': '09_reconcile_project.groovy',
+    'eval':               '10_eval.groovy',
     'project-journal':    '09_reconcile_project.groovy',
     'reconcile-project':  '09_reconcile_project.groovy',
     '09':                 '09_reconcile_project.groovy'
@@ -148,6 +149,7 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println "  reconcile-transcripts            Reconcile Cursor/Claude transcripts into journal.db"
     println "  project-journal                Project canonical journal turns to Markdown/FTS inputs"
     println "  reconcile-project                Reconcile transcripts then project journal"
+    println "  eval                           Run the labelled query set (S0 strict, S1 relaxed); see eval --help"
     println ""
     System.exit(1)
 }
@@ -192,13 +194,14 @@ groovy.grape.Grape.grab(
 )
 
 // Load library modules in dependency order
-['Config', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
+['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
  'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
  'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
  'MemoryLock', 'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',
  'WorklogEmitter', 'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
  'TranscriptReconciler', 'JournalProjector', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
- 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval'].each { name ->
+ 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval', 'EvalMetrics', 'GoldSet',
+ 'SemanticStore', 'EvalRunner'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }
 

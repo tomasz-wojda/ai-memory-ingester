@@ -1,6 +1,6 @@
 # Semantic Retrieval Upgrade: Documents
 
-Status: proposal for review (2026-10-31). Not approved. Nothing is built.
+Status: proposal for review (2026-10-31). **Phase 0 is built (2026-11-01)** except the owner steps; Phases 1 and 2 are not built. See [verification-phase-0.md](verification-phase-0.md).
 
 Goal: much better retrieval from memory. Questions in plain English or Polish return the right turn, worklog chunk or ticket state, with the best answer in the first results. The design keeps SQLite FTS5 as the first stage, adds a re-ranking stage (cross-encoder first, ColBERT-style late interaction second) and runs the models in a dedicated local memory service inside the Groovy-based AI Worklog Framework.
 
@@ -16,6 +16,7 @@ Goal: much better retrieval from memory. Questions in plain English or Polish re
 | 6 | [decision-log.md](decision-log.md) | 22 decisions, a licence decision tree, alternatives not chosen, 9 open questions for the owner |
 | 7 | [tasks.md](tasks.md) | 41 tasks: 37 in 3 phases and 4 later options, with dependencies and owner steps |
 | 8 | [checklist.md](checklist.md) | Spec review list, preconditions, implementation list, regression list |
+| 9 | [verification-phase-0.md](verification-phase-0.md) | What Phase 0 built and how it was checked (interim; gate G1 waits for the gold set) |
 
 ## The main findings
 

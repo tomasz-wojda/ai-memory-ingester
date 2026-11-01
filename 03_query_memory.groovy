@@ -40,6 +40,10 @@ boolean completeContext = false
 boolean diagnostics = false
 boolean explain = false
 String relaxMode = 'auto'
+String rerankMode = 'auto'
+String lateMode = 'auto'
+int rerankDepth = Config.RERANK_DEPTH
+int rerankBudgetMs = Config.RERANK_BUDGET_MS
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -133,6 +137,34 @@ while (i < args.length) {
     } else if (arg == '--explain') {
         explain = true
         i++
+    } else if (arg == '--rerank' && i + 1 < args.length) {
+        rerankMode = args[i + 1].trim().toLowerCase()
+        if (!(rerankMode in ['auto', 'on', 'off'])) {
+            println "ERROR: --rerank needs auto, on or off."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--late' && i + 1 < args.length) {
+        lateMode = args[i + 1].trim().toLowerCase()
+        if (!(lateMode in ['auto', 'on', 'off'])) {
+            println "ERROR: --late needs auto, on or off."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--rerank-depth' && i + 1 < args.length) {
+        rerankDepth = args[i + 1].toInteger()
+        if (rerankDepth < 1 || rerankDepth > 100) {
+            println "ERROR: --rerank-depth needs a number from 1 to 100."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--rerank-budget-ms' && i + 1 < args.length) {
+        rerankBudgetMs = args[i + 1].toInteger()
+        if (rerankBudgetMs < 100 || rerankBudgetMs > 10000) {
+            println "ERROR: --rerank-budget-ms needs a number from 100 to 10000."
+            exitApp(2); return
+        }
+        i += 2
     } else if (arg == '--relax' && i + 1 < args.length) {
         relaxMode = args[i + 1].trim().toLowerCase()
         if (!(relaxMode in ['auto', 'on', 'off'])) {
@@ -375,7 +407,7 @@ if (!input.isEmpty()) {
                 String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
                 executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             } else {
-                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain)
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs])
             }
         }
         exitApp(0); return
@@ -688,7 +720,8 @@ static void executeEnhancedSearch(
     boolean showSignals = false,
     boolean diagnostics = false,
     String relaxMode = 'auto',
-    boolean explain = false
+    boolean explain = false,
+    Map semanticOptions = [:]
 ) {
     if (!raw && !jsonOutput) {
         println "-" * 50
@@ -703,12 +736,16 @@ static void executeEnhancedSearch(
         until_date: untilDate,
         show_signals: showSignals,
         relax_mode: relaxMode
-    ]
+    ] + semanticOptions
     Map result = MemoryRetrieval.searchTopic(Config.DATA_DIR, datasetName, query, limit, options)
     List<Map> matches = (result.results as List<Map>) ?: []
     Map plan = (result.query_plan ?: [:]) as Map
+    if ((semanticOptions.rerank_mode ?: 'auto') == 'on' && (result.rerank as Map)?.degraded == true && result.mode == 'topic') {
+        System.err.println("ERROR: re-ranking was requested but not done (${(result.rerank as Map).reason}).")
+        System.exit(5)
+    }
     if (explain) {
-        List<String> planLines = explainLines(plan)
+        List<String> planLines = explainLines(plan) + semanticLines(result)
         if (jsonOutput) planLines.each { System.err.println(it) } else planLines.each { println it }
     } else if (plan.relaxed_used && !jsonOutput) {
         println "Relaxed query used (the strict query found no rows): ${plan.relaxed}"
@@ -734,6 +771,9 @@ static void executeEnhancedSearch(
         if (doc.freshness == 'stale') {
             println "    AUTHORITATIVE WORKLOG STALE"
         }
+        if (doc.rerank_score != null) {
+            printf "    Rerank: %.4f (rank %d)%n", (doc.rerank_score as double), (doc.rerank_rank as int)
+        }
         printHangingSnippet(cleanSnippet(doc.snippet?.toString()), 95)
         println ""
     }
@@ -742,6 +782,21 @@ static void executeEnhancedSearch(
     if (diagnostics && result.pools) {
         println "Pool sizes: ${result.pools}"
     }
+}
+
+static List<String> semanticLines(Map result) {
+    Map rerank = (result.rerank ?: [:]) as Map
+    Map late = (result.late ?: [:]) as Map
+    List<String> lines = []
+    if (rerank) {
+        lines << (rerank.degraded
+            ? "Re-rank: skipped (${rerank.reason}); lexical order"
+            : "Re-rank: model=${rerank.model} device=${rerank.device} scored=${rerank.scored} skipped=${rerank.skipped} elapsed_ms=${rerank.elapsed_ms} depth=${rerank.depth}")
+    }
+    if (late) {
+        lines << (late.degraded ? "Late pool: skipped (${late.reason})" : "Late pool: hits=${late.hits ?: 0} model=${late.model ?: 'n/a'}")
+    }
+    return lines
 }
 
 static List<String> explainLines(Map plan) {
@@ -866,7 +921,11 @@ static void printQueryUsage() {
     println "  -r, --raw                   Raw output"
     println "      --json                  JSON output (implies --raw)"
     println "      --relax auto|on|off     Relaxed query when the strict query finds nothing (default auto; AI_MEMORY_RELAX=0 turns it off)"
-    println "      --explain               Show the query plan"
+    println "      --explain               Show the query plan and the re-rank and late pool status"
+    println "      --rerank auto|on|off    Re-rank with the memory service (default auto; on exits 5 if it cannot; AI_MEMORY_RERANK=0 turns it off)"
+    println "      --rerank-depth N        Candidates sent to the service (1 to 100, default 30)"
+    println "      --rerank-budget-ms N    Time limit of the call (100 to 10000, default 1200)"
+    println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"
     println "      --complete-context      Pack complete context rows"
@@ -1745,7 +1804,11 @@ static Map enhancedJsonFields(Map row) {
         authoritative_through: row.authoritative_through,
         newer_evidence_through: row.newer_evidence_through,
         signals: row.signals,
-        fused_score: row.fused_score ?: row.rrf_score
+        fused_score: row.fused_score ?: row.rrf_score,
+        rerank_score: row.rerank_score,
+        rerank_rank: row.rerank_rank,
+        rerank_model: row.rerank_model,
+        best_passage: row.best_passage
     ]
 }
 

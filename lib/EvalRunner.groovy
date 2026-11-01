@@ -6,8 +6,10 @@
 class EvalRunner {
 
     static final Map<String, Map> SYSTEMS = [
-        S0: [name: 'baseline: strict query only', options: [relax_mode: 'off']],
-        S1: [name: 'strict, then relaxed query when the strict query finds nothing', options: [relax_mode: 'auto']]
+        S0: [name: 'baseline: strict query only', options: [relax_mode: 'off', rerank_mode: 'off', late_mode: 'off']],
+        S1: [name: 'strict, then relaxed query when the strict query finds nothing', options: [relax_mode: 'auto', rerank_mode: 'off', late_mode: 'off']],
+        S2: [name: 'S1 plus re-rank through the memory service', options: [relax_mode: 'auto', rerank_mode: 'on', late_mode: 'off']],
+        S5: [name: 'S2 plus the late-interaction pool', options: [relax_mode: 'auto', rerank_mode: 'on', late_mode: 'on']]
     ].asImmutable()
 
     static final int RESULT_LIMIT = 100
@@ -22,19 +24,20 @@ class EvalRunner {
      * @param asOfSequence Results of turns with a higher sequence are ignored (0 turns the filter off)
      * @return Map with system, per_query, aggregate, by_class, by_language, elapsed_ms
      */
-    static Map runSystem(File dataDir, String dataset, List<Map> queries, String systemId, long asOfSequence = 0L) {
+    static Map runSystem(File dataDir, String dataset, List<Map> queries, String systemId, long asOfSequence = 0L, Map extraOptions = [:]) {
         Map system = SYSTEMS[systemId]
         if (system == null) throw new IllegalArgumentException("Unknown system ${systemId}")
         List<Map> perQuery = []
         long started = System.nanoTime()
         queries.each { Map query ->
             long queryStarted = System.nanoTime()
-            Map result = MemoryRetrieval.searchTopic(dataDir, dataset, query.query.toString(), RESULT_LIMIT, new LinkedHashMap(system.options as Map))
+            Map result = MemoryRetrieval.searchTopic(dataDir, dataset, query.query.toString(), RESULT_LIMIT, new LinkedHashMap(system.options as Map) + extraOptions)
             List<String> ranked = rankedIds(result.results as List<Map>, asOfSequence)
             Map scores = EvalMetrics.scoreQuery(ranked, GoldSet.labelMap(query)) as Map
             perQuery << [
                 qid: query.qid, 'class': query['class'], lang: query.lang, split: query.split, known_gap: query.known_gap ?: false,
                 results: ranked.size(), form_used: (result.query_plan as Map)?.form_used,
+                degraded: system.options.rerank_mode == 'on' && result.degraded == true, degraded_reason: result.degraded_reason,
                 elapsed_ms: (System.nanoTime() - queryStarted) / 1_000_000.0d
             ] + scores
         }
@@ -43,6 +46,7 @@ class EvalRunner {
             description: system.name,
             per_query: perQuery,
             aggregate: EvalMetrics.aggregate(perQuery),
+            degraded_queries: perQuery.count { it.degraded } as int,
             by_class: groupAggregate(perQuery, 'class'),
             by_language: groupAggregate(perQuery, 'lang'),
             elapsed_ms: (System.nanoTime() - started) / 1_000_000.0d

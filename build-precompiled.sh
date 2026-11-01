@@ -45,6 +45,7 @@ groovyc \
   "${ROOT}"/08_record_event.groovy \
   "${ROOT}"/09_reconcile_project.groovy \
   "${ROOT}"/10_eval.groovy \
+  "${ROOT}"/11_reindex.groovy \
   "${ROOT}"/PrecompiledRunner.groovy
 
 jar --create --file "${DIST_DIR}/ai-memory-ingester.jar" -C "${CLASSES_DIR}" .

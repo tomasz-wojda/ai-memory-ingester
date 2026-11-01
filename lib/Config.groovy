@@ -42,6 +42,12 @@ class Config {
     static final int TICKET_CONTEXT_BUDGET_BYTES = 22000
     static final int RESUME_RECENT_TURNS = 12
     static final int RELAX_MIN_RESULTS = 1
+    static final int RERANK_DEPTH = 30
+    static final int RERANK_BUDGET_MS = 1200
+    static final int RERANK_MIN_SCORED = 10
+    static final int LATE_TOP_K = 50
+    static final String SERVICE_SOCKET_RELATIVE = '.ai-worklog/run/memory-service.sock'
+    static final String SERVICE_TOKEN_RELATIVE = '.ai-worklog/run/memory-service.token'
     static final String RESUME_MODE = System.getenv('AI_MEMORY_RESUME_MODE') == 'global' ? 'global' : 'index'
     static final String TICKET_RESUME_DIR = 'ticket-resume'
     static final int TICKET_RESUME_BUDGET_BYTES = 12000
@@ -390,6 +396,26 @@ class Config {
      */
     static boolean relaxEnabled() {
         String value = System.getProperty('ai.memory.relax') ?: System.getenv('AI_MEMORY_RELAX')
+        return value != '0'
+    }
+
+    /**
+     * Tells whether the re-ranking service may be used. AI_MEMORY_RERANK=0 turns it off.
+     *
+     * @return true unless the kill switch is set
+     */
+    static boolean rerankEnabled() {
+        String value = System.getProperty('ai.memory.rerank') ?: System.getenv('AI_MEMORY_RERANK')
+        return value != '0'
+    }
+
+    /**
+     * Tells whether the late-interaction pool may be used. AI_MEMORY_LATE=0 turns it off.
+     *
+     * @return true unless the kill switch is set
+     */
+    static boolean lateEnabled() {
+        String value = System.getProperty('ai.memory.late') ?: System.getenv('AI_MEMORY_LATE')
         return value != '0'
     }
 }

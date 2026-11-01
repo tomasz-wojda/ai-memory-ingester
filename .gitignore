@@ -34,3 +34,7 @@ data/eval/
 data/semantic.db
 data/semantic.db-wal
 data/semantic.db-shm
+
+# Python bytecode
+__pycache__/
+*.pyc

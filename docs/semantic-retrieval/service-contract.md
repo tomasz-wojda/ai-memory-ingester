@@ -109,8 +109,10 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 |---|---|---|
 | `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, contract_version}` | 1 |
 | `GET /v1/models` | Configured models with revision, size, max tokens, licence id and checksum status | 1 |
-| `POST /v1/passages/upsert` | Store passages for documents: `{documents:[{doc, content_hash, passages:[{section, start, end, tokens, text}]}]}`; replaces the old passages of each document in one transaction | 1 |
-| `POST /v1/passages/delete` | `{docs:[...]}` removes passages, cached scores and vectors | 1 |
+| `POST /v1/passages/upsert` | Store passages for documents: `{documents:[{origin_db, source_archive, file_path, content_hash, passages:[{section, start, end, tokens, text}]}]}`; replaces the old passages of each document in one transaction | 1 |
+| `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors | 1 |
+| `POST /v1/passages/missing` | `{documents:[{origin_db, source_archive, file_path, content_hash}]}` returns `{missing:[indexes]}` of documents that are new or changed; used by `reindex` | 1 |
+| `GET /v1/passages/docs` | Every indexed document with its hash; used by `reindex` to find orphans | 1 |
 | `POST /v1/encode/query` | Query token vectors (debug, `--explain`) | 2 |
 | `POST /v1/index/upsert` | Encode and store vectors for stored passages: `{batch: N}`; resumable | 2 |
 | `POST /v1/search/late` | `{query, top_k, filters:{origin_db, source_archive, ticket}}` returns passages with MaxSim scores | 2 |
@@ -139,9 +141,10 @@ Reason codes for `degraded_reason`: `rerank_off`, `service_down`, `service_circu
 | `--rerank-depth N` | 1 to 100 | 30 | Candidates sent to stage 2 |
 | `--rerank-budget-ms N` | 100 to 10000 | 1200 | Deadline of the call |
 | `--relax` | `auto`, `on`, `off` | `auto` | Relaxed first-stage query (section 6.3 of the specification) |
-| `--explain` | none | off | Print the query plan, pool ranks, model score and fusion terms |
+| `--late` | `auto`, `on`, `off` | `auto` | Late-interaction pool from the service (Phase 2) |
+| `--explain` | none | off | Print the query plan, the re-rank and late status, and the model score of each row |
 
-Environment: `AI_MEMORY_RERANK=0` (off), `AI_MEMORY_RELAX=0` (off), `AI_MEMORY_SERVICE_SOCKET` (override), `AI_MEMORY_SERVICE_CONFIG` (override).
+Environment: `AI_MEMORY_RERANK=0` (off), `AI_MEMORY_LATE=0` (off), `AI_MEMORY_RELAX=0` (off), `AI_MEMORY_SWEEP_INDEX=1` (the sweep starts `reindex` in the background when the service runs), `AI_MEMORY_SERVICE_SOCKET` (override), `AI_MEMORY_SERVICE_CONFIG` (override).
 
 ### 6.2 `QueryPlan`
 
@@ -207,7 +210,8 @@ CREATE TABLE vectors (                        -- Phase 2
   passage_id   TEXT PRIMARY KEY REFERENCES passages(passage_id) ON DELETE CASCADE,
   model_id     TEXT NOT NULL,
   dimension    INTEGER NOT NULL,
-  dtype        TEXT NOT NULL,               -- float16 or int8
+  dtype        TEXT NOT NULL,               -- int8 (float16 is not built)
+  scale        REAL NOT NULL,               -- dequantization factor of the whole matrix
   token_count  INTEGER NOT NULL,
   matrix       BLOB NOT NULL                -- token_count x dimension values
 );
@@ -230,8 +234,12 @@ Group `ai-worklog memory` (added to `shared/command-contract.json` of the framew
 | `memory status` | Show address, process id, uptime, memory, models, queue, index counts | 0 running, 1 not running |
 | `memory stop` | Stop the service | 0 stopped or not running |
 | `memory doctor` | Check Python version, packages and hashes, model checksums, socket mode, disk, offline flags; read-only | 0 all pass, 1 a check failed |
-| `memory reindex [--archives A,B] [--verify] [--rebuild]` | Build or update passages and (Phase 2) vectors; resumable | 0 done, 1 failed, 3 service not running |
+| `memory reindex [--archives A,B] [--verify] [--rebuild] [--no-encode]` | Build or update passages and vectors; resumable; removes orphans. `--verify` changes nothing and exits 1 when work or orphans exist. The same command is `ai-memory-ingester reindex` | 0 done, 1 failed or problems found, 3 service not running |
 | `memory eval [--set gold] [--compare RUN] [--json]` | Run the gold set; store the run; compare with an earlier run | 0 passed gates, 1 a gate failed, 2 usage |
+
+## 8b. Service program
+
+`service/ai-memory-service` (uses `AI_MEMORY_SERVICE_PYTHON`, default `python3`): `serve [--stub]`, `status`, `stop`, `doctor`, `checksum PATH`. Global options: `--workspace-root`, `--db`. `serve` refuses a socket path longer than 100 characters (exit 2) and a second running instance (exit 1). The stub model and the stub encoder exist for tests and answer only with `--stub`.
 
 ## 9. Compatibility
 

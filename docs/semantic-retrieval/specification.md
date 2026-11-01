@@ -1,6 +1,6 @@
 # Technical Specification: Semantic Retrieval Upgrade
 
-Status: proposal for review. Not approved for implementation. Nothing in this document is built.
+Status: proposal for review. Not approved. Phase 0 and the model-neutral parts of Phases 1 and 2 are built and tested with a stub model (see the verification files); the real model, the licences, the benchmark and the gates are open.
 
 Companion documents: [evidence](evidence.md), [evaluation](evaluation.md), [service contract](service-contract.md), [security and privacy](security-privacy.md), [decision log](decision-log.md), [tasks](tasks.md), [checklist](checklist.md).
 

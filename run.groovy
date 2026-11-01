@@ -75,6 +75,7 @@ Map<String, String> commands = [
     '08':                 '08_record_event.groovy',
     'reconcile-transcripts': '09_reconcile_project.groovy',
     'eval':               '10_eval.groovy',
+    'reindex':            '11_reindex.groovy',
     'project-journal':    '09_reconcile_project.groovy',
     'reconcile-project':  '09_reconcile_project.groovy',
     '09':                 '09_reconcile_project.groovy'
@@ -150,6 +151,7 @@ if (filteredArgs.isEmpty() || !commands.containsKey(filteredArgs[0].toLowerCase(
     println "  project-journal                Project canonical journal turns to Markdown/FTS inputs"
     println "  reconcile-project                Reconcile transcripts then project journal"
     println "  eval                           Run the labelled query set (S0 strict, S1 relaxed); see eval --help"
+    println "  reindex                        Build passages and vectors in the memory service; see reindex --help"
     println ""
     System.exit(1)
 }
@@ -200,7 +202,7 @@ groovy.grape.Grape.grab(
  'MemoryLock', 'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',
  'WorklogEmitter', 'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
  'TranscriptReconciler', 'JournalProjector', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
- 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'MemoryRetrieval', 'EvalMetrics', 'GoldSet',
+ 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'MemoryRetrieval', 'EvalMetrics', 'GoldSet',
  'SemanticStore', 'EvalRunner'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }

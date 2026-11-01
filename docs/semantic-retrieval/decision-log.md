@@ -32,6 +32,12 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 | D-22 | The model files come only from an approved path: the company artifact repository, an approved offline transfer, or an opened host; never a run-time download or an unreviewed mirror | Download from the public model host on the laptop | The public model host did not answer from this machine (30 of 30 timeouts), and a company network may block it. A reviewed path also gives the checksum and the licence text a place | Proposed |
 | D-23 | In the first release the relaxed query runs only when the strict query returns **zero** rows (`relax_min_results` = 1), or with `--relax on` | The spec value of 10 rows | Queries that work today return exactly what they return now, so there is no regression risk. The trigger widens only after the gold set shows a gain | Built, owner to confirm |
 | D-24 | Polish ł variants are added to the relaxed form only for queries guessed as Polish; `pod` and `go` are not stop words | Add variants for every query; keep Polish `pod` as a stop word | Verified: the FTS5 tokenizer `unicode61 remove_diacritics 2` folds every Polish diacritic except ł ("bylo" does not find "było"). `pod` (Kubernetes) and `go` (language) are common technical words here | Built, owner to confirm |
+| D-25 | The service core uses only the Python standard library; machine-learning packages are imported only when a real model loads | A service that needs `torch` to start | The service, its protocol, the store and all tests run on the default Python today; the interpreter and wheel questions (D-07) block only the real model | Built |
+| D-26 | Re-ranking and the late pool apply to `query` with free-text terms that are not an explicit query; ticket-only queries, the ticket path with terms, and explicit queries are not re-ranked | Re-rank every result list | Explicit queries must not change (I8); ticket-only queries have no text to score | Built, owner to confirm |
+| D-27 | The client circuit is kept per endpoint, 30 seconds | One circuit for the whole service | A missing late model (503) must not switch off re-ranking | Built |
+| D-28 | The stub model and the stub encoder answer only when the service starts with `--stub` | Make the stub a normal model | A stub score is term overlap, not a quality signal; production must never use it by accident | Built |
+| D-29 | `ai-worklog memory serve --init` writes the configuration and runs the doctor; it does not start the service | Write the configuration and start | Matches "init then check"; starting stays an explicit act | Built, owner to confirm |
+| D-30 | The sweep starts `reindex` in the background only with `AI_MEMORY_SWEEP_INDEX=1`, and never waits | On by default | The model and the index are not decided; the sweep must keep its exit code and speed | Built |
 
 ## 2. Alternatives not chosen (and when to revisit)
 
@@ -69,7 +75,7 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 
 ## Summary (STE)
 
-This log lists 24 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
+This log lists 30 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
 
 **Remaining 20% (not STE100):** decision, model, library and table names; the words "FTS5", "cross-encoder", "bi-encoder", "MaxP", "ONNX", "lemmatizer", "PLAID" and "dimension"; the tables; some sentences over 20 words.
 

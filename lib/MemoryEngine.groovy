@@ -995,6 +995,32 @@ class MemoryEngine {
         return results
     }
 
+    /**
+     * Reads one document by its archive and path.
+     *
+     * @param sourceArchive Archive name
+     * @param filePath Path inside the archive
+     * @return Document map as getDocument returns it, or null
+     */
+    Map getDocumentByPath(String sourceArchive, String filePath) {
+        def row = sql.firstRow('SELECT id FROM documents WHERE source_archive = ? AND file_path = ? LIMIT 1', [sourceArchive, filePath])
+        return row ? getDocument(row.id as int) : null
+    }
+
+    /**
+     * Streams every document of an archive with its decompressed content.
+     *
+     * @param sourceArchive Archive name
+     * @param visitor Closure called with a map of id, source_archive, file_path, file_name, content
+     */
+    void eachDocument(String sourceArchive, Closure visitor) {
+        sql.eachRow('SELECT id, source_archive, file_path, file_name, content, is_compressed FROM documents WHERE source_archive = ? ORDER BY id', [sourceArchive]) { row ->
+            String text = (row.is_compressed == 1) ? decompressText(row.content) : (row.content?.toString() ?: '')
+            visitor.call([id: row.id as long, source_archive: row.source_archive.toString(), file_path: row.file_path.toString(),
+                          file_name: row.file_name.toString(), content: text])
+        }
+    }
+
     // -----------------------------------------------------------------------
     // In-Place Compression / Decompression Routines
     // -----------------------------------------------------------------------

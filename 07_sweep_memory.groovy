@@ -67,6 +67,11 @@ try {
     digestStore.close()
 }
 
+String semanticIndexNote = 'off'
+if (System.getenv('AI_MEMORY_SWEEP_INDEX') == '1' && !dryRun) {
+    semanticIndexNote = startSemanticIndex(runner, repositoryRoot, workspaceRoot)
+}
+
 Map integrityReport = null
 Map lagSummary = [:]
 JournalStore integrityStore = new JournalStore(Config.journalDbPath())
@@ -89,8 +94,25 @@ printReconcileLine(reconcileReport)
 printProjectLine(projectReport)
 println "PRUNE_EXCLUDED\tturns=${pruneReport.turns}\tartifacts=${pruneReport.artifacts}\thashes=${pruneReport.hashes}\tdry_run=${dryRun}"
 println worklogs.output.trim()
+println "SEMANTIC_INDEX\t${semanticIndexNote}"
 println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}\tticket_resumes=${ticketResumes}"
 if (failures > 0) exitApp(1)
+
+static String startSemanticIndex(List<String> runner, File repositoryRoot, File workspaceRoot) {
+    File socket = new File(workspaceRoot, Config.SERVICE_SOCKET_RELATIVE)
+    if (!socket.exists()) return 'skipped (service not running)'
+    try {
+        ProcessBuilder builder = new ProcessBuilder(runner + ['reindex', '--workspace-root', workspaceRoot.absolutePath, '--data-dir', Config.DATA_DIR.absolutePath])
+        builder.directory(repositoryRoot)
+        builder.environment().put('MEMORY_WORKSPACE_ROOT', workspaceRoot.absolutePath)
+        builder.redirectErrorStream(true)
+        builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+        builder.start()
+        return 'started in the background'
+    } catch (Exception error) {
+        return "skipped (${error.class.simpleName})"
+    }
+}
 
 static int writeIndexAndTicketResumes(File outputRoot, File workspaceRoot, JournalStore store, boolean force) {
     List<Map> observations = ResumeDigest.canonicalObservations(store)

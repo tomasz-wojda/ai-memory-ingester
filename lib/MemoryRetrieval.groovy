@@ -57,7 +57,31 @@ class MemoryRetrieval {
                 row.source_archive == 'chat:turns' && row.impact == 'high'
             }.toSorted(TicketFreshness.&compareTurnEvidence)
         }
-        List<Map> fused = SignalFusion.fuse(pools, Math.max(limit * 2, limit))
+        SemanticClient client = null
+        Map lateInfo = [used: false, degraded: false, reason: null]
+        boolean semanticQuery = parsed.terms?.trim() && !plan.explicit
+        if (semanticQuery && lateAllowed(options)) {
+            client = (options.semantic_client ?: SemanticClient.discover()) as SemanticClient
+            Map late = lateStage(dataDir, databases, parsed.terms, client, parsed)
+            lateInfo = late.info as Map
+            if (late.rows) pools.late = late.rows as List<Map>
+        } else if (semanticQuery) {
+            lateInfo = [used: false, degraded: true, reason: 'rerank_off']
+        }
+        boolean rerankWanted = semanticQuery && rerankAllowed(options)
+        int depth = (options.rerank_depth ?: Config.RERANK_DEPTH) as int
+        int fuseLimit = rerankWanted ? Math.max(Math.max(limit * 2, limit), depth) : Math.max(limit * 2, limit)
+        List<Map> fused = SignalFusion.fuse(pools, fuseLimit)
+        Map rerankInfo = [degraded: !semanticQuery ? false : true, reason: semanticQuery ? 'rerank_off' : null, depth: 0]
+        if (rerankWanted && !fused) rerankInfo = [degraded: false, reason: null, depth: 0]
+        if (rerankWanted && fused) {
+            client = client ?: ((options.semantic_client ?: SemanticClient.discover()) as SemanticClient)
+            List<Map> head = hydrateDocuments(fused.take(depth), dataDir)
+            List<String> words = (plan.terms ?: parsed.terms.tokenize(' ')) as List<String>
+            Map outcome = RerankStage.apply(head, parsed.terms, words, options, client, parsed.ticket)
+            rerankInfo = outcome.info as Map
+            fused = (outcome.rows as List<Map>) + fused.drop(depth)
+        }
         boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
         fused = NeighborExpansion.expand(fused, dataDir, allowMeta, 1)
         fused = fused.findAll { !it.excluded_reason }.take(Math.max(limit * 2, limit))
@@ -80,10 +104,47 @@ class MemoryRetrieval {
                 relaxed_used: relaxedUsed,
                 relax_error: relaxError
             ],
+            rerank: rerankInfo,
+            late: lateInfo,
+            degraded: rerankInfo.degraded == true,
+            degraded_reason: rerankInfo.reason,
             results: fused.take(limit),
             pools: options.show_signals ? pools.collectEntries { k, v -> [k, v.size()] } : null,
             total_duration_ms: elapsedMs
         ]
+    }
+
+    private static boolean rerankAllowed(Map options) {
+        String mode = (options.rerank_mode ?: 'auto').toString()
+        return mode != 'off' && Config.rerankEnabled()
+    }
+
+    private static boolean lateAllowed(Map options) {
+        String mode = (options.late_mode ?: 'auto').toString()
+        return mode != 'off' && Config.lateEnabled()
+    }
+
+    private static Map lateStage(File dataDir, List<File> databases, String query, SemanticClient client, ParsedQuery parsed) {
+        Map reply = client.searchLate(query, Config.LATE_TOP_K, parsed.ticket ? [ticket: parsed.ticket] : [:])
+        if (!reply.ok) return [rows: [], info: [used: false, degraded: true, reason: reply.reason]]
+        Set<String> allowed = databases.collect { it.name } as Set<String>
+        Map<String, MemoryEngine> engines = [:]
+        List<Map> rows = []
+        Set<String> seen = [] as Set<String>
+        try {
+            ((reply.body as Map).results ?: []).each { Map hit ->
+                String id = "${hit.origin_db}:${hit.source_archive}:${hit.file_path}".toString()
+                if (!allowed.contains(hit.origin_db?.toString()) || !seen.add(id)) return
+                File database = new File(dataDir, hit.origin_db.toString())
+                if (!database.exists()) return
+                MemoryEngine engine = engines.computeIfAbsent(database.absolutePath) { new MemoryEngine(it) }
+                Map document = engine.getDocumentByPath(hit.source_archive.toString(), hit.file_path.toString())
+                if (document) rows << (enrichDocumentRow(document, database.name) + [pool: 'late', late_score: hit.score])
+            }
+        } finally {
+            engines.values().each { MemoryEngine engine -> try { engine.close() } catch (Exception ignored) {} }
+        }
+        return [rows: rows, info: [used: !rows.isEmpty(), degraded: false, reason: null, hits: rows.size(), model: (reply.body as Map).model]]
     }
 
     static Map ticketResult(

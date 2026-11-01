@@ -109,7 +109,7 @@ if (jsonOutput) {
 }
 println "EVAL_RUN\t${runId}\tqueries=${queries.size()}\tdataset=${dataset}\tas_of_sequence=${asOfSequence}"
 runs.each { Map run ->
-    println "SYSTEM\t${run.system}\t${run.description}\telapsed_ms=${Math.round(run.elapsed_ms as double)}"
+    println "SYSTEM\t${run.system}\t${run.description}\telapsed_ms=${Math.round(run.elapsed_ms as double)}\tdegraded_queries=${run.degraded_queries}"
     printRow('all', run.aggregate as Map)
     (run.by_class as Map).each { String name, Map metrics -> printRow("class ${name}", metrics) }
     (run.by_language as Map).each { String name, Map metrics -> printRow("lang ${name}", metrics) }
@@ -135,7 +135,8 @@ static void printUsage() {
     println ""
     println "  --run                       Run the gold set against systems (default)"
     println "  --systems S0,S1             Systems to compare; the first is the reference"
-    println "                              S0 strict query only, S1 strict then relaxed query"
+    println "                              S0 strict query only, S1 strict then relaxed query,"
+    println "                              S2 S1 plus re-rank, S5 S2 plus the late pool (S2 and S5 need the service)"
     println "  --set FILE                  Gold set, JSON lines (default data/eval/gold.jsonl)"
     println "  --as-of-sequence N          Ignore turns with a higher sequence number"
     println "  --dataset NAME              Dataset (default: the active dataset)"

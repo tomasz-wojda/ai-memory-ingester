@@ -1,6 +1,6 @@
 # Semantic Retrieval Upgrade: Documents
 
-Status: proposal for review (2026-10-31). **Phase 0 is built (2026-11-01)** except the owner steps; Phases 1 and 2 are not built. See [verification-phase-0.md](verification-phase-0.md).
+Status: proposal for review (2026-10-31). **Everything that needs no decision is built (2026-11-01)**: Phase 0, and the model-neutral parts of Phases 1 and 2 (service, passages, client, re-rank stage, late store and pool, `reindex`, framework commands), tested with a stub model. **No real model, licence, benchmark, gold-set labelling or gate is done**; they wait for the owner. See [verification-phase-0.md](verification-phase-0.md), [verification-phase-1.md](verification-phase-1.md) and [verification-phase-2.md](verification-phase-2.md).
 
 Goal: much better retrieval from memory. Questions in plain English or Polish return the right turn, worklog chunk or ticket state, with the best answer in the first results. The design keeps SQLite FTS5 as the first stage, adds a re-ranking stage (cross-encoder first, ColBERT-style late interaction second) and runs the models in a dedicated local memory service inside the Groovy-based AI Worklog Framework.
 
@@ -13,10 +13,12 @@ Goal: much better retrieval from memory. Questions in plain English or Polish re
 | 3 | [service-contract.md](service-contract.md) | HTTP contract, configuration, CLI flags, output fields, data tables, framework commands |
 | 4 | [evaluation.md](evaluation.md) | Gold set, metrics, systems compared, gates, latency benchmark, test groups |
 | 5 | [security-privacy.md](security-privacy.md) | Trust boundaries, threats, privacy, model licences (all unverified), supply chain |
-| 6 | [decision-log.md](decision-log.md) | 22 decisions, a licence decision tree, alternatives not chosen, 9 open questions for the owner |
+| 6 | [decision-log.md](decision-log.md) | 30 decisions, a licence decision tree, alternatives not chosen, 9 open questions for the owner |
 | 7 | [tasks.md](tasks.md) | 41 tasks: 37 in 3 phases and 4 later options, with dependencies and owner steps |
 | 8 | [checklist.md](checklist.md) | Spec review list, preconditions, implementation list, regression list |
 | 9 | [verification-phase-0.md](verification-phase-0.md) | What Phase 0 built and how it was checked (interim; gate G1 waits for the gold set) |
+| 10 | [verification-phase-1.md](verification-phase-1.md) | Service, passages, client, re-rank stage: built, tested with a stub model; gate G2 open |
+| 11 | [verification-phase-2.md](verification-phase-2.md) | Late store, late pool, `reindex`: built, tested with a stub encoder; gate G3 open |
 
 ## The main findings
 

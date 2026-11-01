@@ -7,7 +7,9 @@ class SignalFusion {
         bm25_relaxed: 2,
         recency: 2,
         authority: 2,
-        impact: 1
+        impact: 1,
+        rerank: 5,
+        late: 3
     ].asImmutable()
 
     static List<Map> fuse(Map<String, List<Map>> signalPools, int limit = 20) {
@@ -34,6 +36,31 @@ class SignalFusion {
         }
         ranked.sort(SignalFusion.&compareRanked)
         return ranked.take(Math.max(limit, 1))
+    }
+
+    /**
+     * Adds one ranked signal to candidates that are already fused, then sorts them again.
+     *
+     * @param rows Fused candidates
+     * @param signal Signal name (its weight comes from SIGNAL_WEIGHTS)
+     * @param ranked Candidates in signal order, best first; only these get the signal
+     * @return The same rows, re-sorted
+     */
+    static List<Map> addSignal(List<Map> rows, String signal, List<Map> ranked) {
+        int weight = SIGNAL_WEIGHTS[signal] ?: 1
+        Map<String, Integer> ranks = [:]
+        ranked.eachWithIndex { Map row, int index -> ranks[stableIdOf(row)] = index + 1 }
+        rows.each { Map row ->
+            Integer rank = ranks[stableIdOf(row)]
+            if (rank != null) {
+                row.signals = new LinkedHashMap((row.signals ?: [:]) as Map)
+                row.signals[signal] = rank
+                row.fused_score = ((row.fused_score ?: 0.0d) as double) + (weight / (RRF_K + rank))
+                row.rrf_score = row.fused_score
+            }
+        }
+        rows.sort(SignalFusion.&compareRanked)
+        return rows
     }
 
     static String stableIdOf(Map candidate) {

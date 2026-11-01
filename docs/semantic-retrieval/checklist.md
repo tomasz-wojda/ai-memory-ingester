@@ -69,7 +69,7 @@ Phase 2
 - [x] Late pool (T044)
 - [x] `reindex` and orphan removal (T045)
 - [ ] Gate G3 and `verification-phase-2.md` (T046)
-- [ ] Security review of built code (T047)
+- [x] Security review of built code (T047): guidance mode, see security-review.md
 - [ ] Default switch decided (T048)
 
 ## 4. Regression (every phase; one command and one recorded result each)

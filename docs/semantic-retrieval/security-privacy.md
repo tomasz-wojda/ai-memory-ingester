@@ -108,18 +108,18 @@ Rules:
 5. `memory doctor` verifies: Python version, installed versions and hashes, model checksums, socket modes, offline flags, free disk. It is read-only.
 6. Updates are a deliberate act: a new manifest, a new run of the evaluation, a decision-log entry.
 
-## 7. Review checklist for the built code (task T047)
+## 7. Review checklist for the built code (task T047; results in [security-review.md](security-review.md))
 
-- [ ] No outbound socket in a network-blocked run
-- [ ] Socket 0600, directory 0700, token 0600, token required
-- [ ] `Origin` refused
-- [ ] `trust_remote_code` is never true; only `safetensors` loads
-- [ ] Hashes and checksums verified by `doctor`
-- [ ] No text in logs
-- [ ] Input limits enforced
-- [ ] No write to existing databases (hash test)
-- [ ] Deletion path removes passages, cache and vectors of excluded documents
-- [ ] Gold set path ignored by git
+- [x] No outbound socket (checked with `lsof` on the running service; not a network-blocked run)
+- [x] Socket 0600, directory 0700, token 0600, token required
+- [x] `Origin` refused
+- [x] `trust_remote_code` is never true; only `safetensors` loads (refusal paths tested; never loaded a real model)
+- [~] Hashes and checksums verified by `doctor` (checksums yes; hashed requirements not built)
+- [x] No text in logs
+- [x] Input limits enforced
+- [x] No write to existing databases (hash test)
+- [x] Deletion path removes passages and vectors of removed documents (`reindex`); score cache expires by age
+- [x] Gold set path ignored by git
 
 ## Summary (STE)
 

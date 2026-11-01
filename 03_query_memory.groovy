@@ -139,8 +139,8 @@ while (i < args.length) {
         i++
     } else if (arg == '--rerank' && i + 1 < args.length) {
         rerankMode = args[i + 1].trim().toLowerCase()
-        if (!(rerankMode in ['auto', 'on', 'off'])) {
-            println "ERROR: --rerank needs auto, on or off."
+        if (!(rerankMode in ['auto', 'on', 'off', 'late'])) {
+            println "ERROR: --rerank needs auto, on, off or late."
             exitApp(2); return
         }
         i += 2
@@ -740,7 +740,7 @@ static void executeEnhancedSearch(
     Map result = MemoryRetrieval.searchTopic(Config.DATA_DIR, datasetName, query, limit, options)
     List<Map> matches = (result.results as List<Map>) ?: []
     Map plan = (result.query_plan ?: [:]) as Map
-    if ((semanticOptions.rerank_mode ?: 'auto') == 'on' && (result.rerank as Map)?.degraded == true && result.mode == 'topic') {
+    if ((semanticOptions.rerank_mode ?: 'auto') in ['on', 'late'] && (result.rerank as Map)?.degraded == true && result.mode == 'topic') {
         System.err.println("ERROR: re-ranking was requested but not done (${(result.rerank as Map).reason}).")
         System.exit(5)
     }
@@ -922,7 +922,7 @@ static void printQueryUsage() {
     println "      --json                  JSON output (implies --raw)"
     println "      --relax auto|on|off     Relaxed query when the strict query finds nothing (default auto; AI_MEMORY_RELAX=0 turns it off)"
     println "      --explain               Show the query plan and the re-rank and late pool status"
-    println "      --rerank auto|on|off    Re-rank with the memory service (default auto; on exits 5 if it cannot; AI_MEMORY_RERANK=0 turns it off)"
+    println "      --rerank auto|on|off|late  Re-rank with the memory service (default auto; on and late exit 5 if they cannot; late scores with the late-interaction index; AI_MEMORY_RERANK=0 turns it off)"
     println "      --rerank-depth N        Candidates sent to the service (1 to 100, default 30)"
     println "      --rerank-budget-ms N    Time limit of the call (100 to 10000, default 1200)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"

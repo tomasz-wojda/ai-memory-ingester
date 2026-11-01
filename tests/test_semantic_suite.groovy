@@ -226,6 +226,17 @@ why do exports fail
         }
         Map explicit = search('"nginx timeout"', [late_mode: 'on'])
         verify('an explicit query gets no late pool', (explicit.results as List<Map>).every { !it.signals?.containsKey('late') })
+
+        Map rescored = search('what did we decide about the nginx timeout', [rerank_mode: 'late', late_mode: 'on'])
+        verify('late re-scoring runs on the candidates', (rescored.rerank as Map).degraded == false && (rescored.rerank as Map).device == 'late' && (rescored.rerank as Map).scored > 0)
+        verify('late re-scoring gives scores and ranks', (rescored.results as List<Map>).any { it.rerank_score != null && it.rerank_rank != null && it.signals?.containsKey('rerank') })
+        verify('late re-scoring is deterministic', ids(rescored) == ids(search('what did we decide about the nginx timeout', [rerank_mode: 'late', late_mode: 'on'])))
+        Map lateTicket = search('FIX-101 monitoring', [rerank_mode: 'late', late_mode: 'on'])
+        verify('late re-scoring keeps the state capsule first for a ticket', ids(lateTicket).first().endsWith('worklog:state:fix101.md'))
+        verify('late re-scoring never drops a lexical result', (ids(lateTicket) as Set).containsAll(ids(search('FIX-101 monitoring'))))
+        Object stopped = loader.loadClass('SemanticClient').getDeclaredConstructor(File, File).newInstance(new File(workspace, 'none.sock'), new File(workspace, 'none.token'))
+        Map lateDown = search('what did we decide about the nginx timeout', [rerank_mode: 'late', semantic_client: stopped])
+        verify('late re-scoring falls back when the service is down', (lateDown.rerank as Map).reason == 'service_down')
     }
 
     private static Map command(List<String> arguments, Map<String, String> environment = [:]) {
@@ -266,6 +277,8 @@ why do exports fail
         verify('query in auto mode falls back and says why', auto.code == 0 && auto.out.contains('Re-rank: skipped (service_down)') && auto.out.contains('Found '))
         Map killed = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--data-dir', data.absolutePath], [AI_MEMORY_RERANK: '0'])
         verify('AI_MEMORY_RERANK=0 with --rerank on exits 5 (nothing was re-ranked)', killed.code == 5)
+        Map lateCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'late', '--explain', '--limit', '3', '--data-dir', data.absolutePath])
+        verify('query --rerank late prints the late re-score line', lateCli.code == 0 && lateCli.out.contains('Re-rank: model=stub-encoder device=late'))
         Map bad = command(['query', 'nginx', '--rerank-depth', '500', '--data-dir', data.absolutePath])
         verify('a bad depth is refused', bad.code == 2 && bad.out.contains('--rerank-depth'))
         Map json = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--json', '--limit', '2', '--data-dir', data.absolutePath])
@@ -281,6 +294,8 @@ why do exports fail
         verify('S2 does not lose recall on questions', (((s2.by_class as Map).Q as Map).recall_50 as double) >= (((s1.by_class as Map).Q as Map).recall_50 as double) - 0.001d)
         Map s5 = EvalRunner.runSystem(data, 'worklog-chat', queries, 'S5', 0L, [semantic_client: client()]) as Map
         verify('S5 runs', s5.aggregate != null)
+        Map s6 = EvalRunner.runSystem(data, 'worklog-chat', queries, 'S6', 0L, [semantic_client: client()]) as Map
+        verify('S6 runs without degraded question queries', ((s6.per_query as List<Map>).findAll { it['class'] == 'Q' }).every { !it.degraded })
     }
 
     private static void initialize() {

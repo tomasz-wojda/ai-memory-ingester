@@ -24,8 +24,8 @@ Status: built and checked on 2026-11-01, **with a stub model only**. Gate G2 (a 
 
 | Suite | Result |
 |---|---|
-| `tests/service/` (Python `unittest`) | 37 run, 36 pass, 1 skipped on purpose (the real-model test needs `RUN_MODEL_TESTS=1`) |
-| `tests/test_semantic_suite.groovy` (new) | 66 pass: passages, client, re-rank on the stub service, invariants, fallback, kill switches, late pool, `reindex`, command line, evaluation systems S2 and S5 |
+| `tests/service/` (Python `unittest`) | 46 run. Default Python 3.15 release candidate: 41 pass, 5 skipped on purpose (4 need numpy, 1 needs a real model and `RUN_MODEL_TESTS=1`). Python 3.14.7 with numpy: 45 pass, 1 skipped |
+| `tests/test_semantic_suite.groovy` (new) | 74 pass under both Python interpreters: passages, client, re-rank on the stub service, invariants, fallback, kill switches, late pool and late re-score, `reindex`, command line, evaluation systems S2, S5 and S6 |
 | journal 25, retrieval 31, query 68, chatlog 100, reconciliation 33, shadow validation 44 (4 min 30 s), worklog 42, memory lock 36, eval 27, query plan 80 | all pass |
 | Framework, Groovy | 497 pass (8 new for `MemoryCommands`) |
 | Framework, pytest | 335 pass, 190 skipped (unchanged) |
@@ -54,7 +54,7 @@ What the tests prove: the contract (token, `Origin`, limits, errors, deadline cu
 - **Python environment with hashed requirements** (T021, Q2). The service runs on the default Python 3.15 release candidate only because it uses the standard library.
 - **`launchd` job** for the service. Not built.
 - **A real `ai-worklog memory serve` run with a real model**, and the `memory` commands through a real framework build with `--daemon`. The framework tests use fake launchers; the real `ai-worklog memory status` printed "not running" correctly.
-- **Formal security audit** of the built code with the `security-audit` skill (T047).
+- **The full audit workflow of the `security-audit` skill.** A guidance-mode review was done and found six small problems, all fixed ([security-review.md](security-review.md)).
 
 ## 5. Differences from the specification
 

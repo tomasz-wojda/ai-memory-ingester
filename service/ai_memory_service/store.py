@@ -181,6 +181,21 @@ class SemanticDb:
                 self.connection.execute("ROLLBACK")
                 raise
 
+    def vector_version(self, model_id):
+        with self.lock:
+            row = self.connection.execute("SELECT count(*), coalesce(max(rowid), 0) FROM vectors WHERE model_id = ?", (model_id,)).fetchone()
+        return (row[0], row[1])
+
+    def passage_texts(self, ids):
+        found = {}
+        with self.lock:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                marks = ",".join("?" * len(chunk))
+                for pid, text in self.connection.execute(f"SELECT passage_id, text FROM passages WHERE passage_id IN ({marks})", chunk):
+                    found[pid] = text
+        return found
+
     def iter_vectors(self, model_id, archives=None, origin_db=None, path_contains=None):
         query = ("SELECT v.passage_id, v.dimension, v.scale, v.token_count, v.matrix, p.origin_db, p.source_archive, p.file_path, p.text "
                  "FROM vectors v JOIN passages p ON p.passage_id = v.passage_id WHERE v.model_id = ?")
@@ -194,6 +209,7 @@ class SemanticDb:
         if path_contains:
             query += " AND p.file_path LIKE ?"
             params.append(f"%{path_contains}%")
+        query += " ORDER BY p.passage_id"
         with self.lock:
             rows = self.connection.execute(query, params).fetchall()
         for row in rows:

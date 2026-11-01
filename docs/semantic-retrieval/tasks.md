@@ -38,7 +38,7 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 - [x] T029 [ING] Score cache (14-day purge function) and `passages/upsert` and `passages/delete`; deletion by `reindex`. _Done 2026-11-01. A deletion hook inside `egest` is not built; `reindex` removes orphans._ needs: T026, T028
 - [x] T030 [ING] CLI flags `--rerank`, `--rerank-depth`, `--rerank-budget-ms`, `--late`, full `--explain`, JSON fields, exit code 5, kill switches `AI_MEMORY_RERANK=0` and `AI_MEMORY_LATE=0`. _Done 2026-11-01._ needs: T028
 - [x] T031 [FWK] `memory serve|status|stop|doctor|reindex|eval` in the framework (`MemoryCommands`, contract entry, 8 tests). _Done 2026-11-01. `serve --init` writes the configuration and runs the doctor without starting; a `launchd` plist is not built._ needs: T024
-- [x] T032 [ING] Fallback tests: service absent, wrong token, unknown model, bad contract, too many passages, too few scored, kill switch, circuit; service-off equals lexical (I10); `--rerank on` exits 5. _Done 2026-11-01 (semantic suite, 66 checks)._ needs: T028, T030
+- [x] T032 [ING] Fallback tests: service absent, wrong token, unknown model, bad contract, too many passages, too few scored, kill switch, circuit; service-off equals lexical (I10); `--rerank on` exits 5. _Done 2026-11-01 (semantic suite, 74 checks)._ needs: T028, T030
 - [ ] T033 [ING] Gate G2: run S2 (and S3, and S4 if the benchmark allowed it) against S1 on the test split; determinism run; latency tables; write `verification-phase-1.md`; full regression; rebuild the jar. needs: T029, T030, T031, T032 _Open: needs a real model, the gold set (T005, T011) and the benchmark (T022)._
 - [x] T034 [VAULT] `skills/worklog-chat-memory/SKILL.md` 1.5.0: questions, relaxed query, flags, service, fallback, `reindex`, `eval`; `scripts/validate-skills.sh` passes. _Done 2026-11-01 (written ahead of gate G2 because the flags exist; `CROSS_SKILL_INTEGRATION.md` needed no change)._ needs: T033
 
@@ -51,7 +51,7 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 - [x] T044 [ING] `late` pool in `MemoryRetrieval` (weight 3), `signals.late`, `--late`, `AI_MEMORY_LATE=0`, tests. _Done 2026-11-01._ needs: T043
 - [x] T045 [ING] `reindex [--archives] [--verify] [--rebuild] [--no-encode]` (`11_reindex.groovy`), orphan removal, incremental skip by content hash; sweep hook `AI_MEMORY_SWEEP_INDEX=1` (off by default, never waits). _Done 2026-11-01._ needs: T042
 - [ ] T046 [ING] Gate G3: run S5 and S6 against S2; storage and memory limits; unattended encoding run; write `verification-phase-2.md`; full regression. needs: T044, T045 _Open: needs the real late-interaction model and the gold set._
-- [ ] T047 [ING] Security review of the built code: full audit mode of the `security-audit` skill on the service and client, with the checklist of `security-privacy.md` section 7. needs: T046 _Partly done: the checklist items that tests can prove ran (see verification-phase-1.md); the full audit with the `security-audit` skill is not run._
+- [x] T047 [ING] Security review of the built code: done as a guidance-mode review with the `security-audit` method; six findings fixed with tests, residual risks listed in [security-review.md](security-review.md). _The full audit workflow of the skill (run folder, parallel agents) was not run._ needs: T046
 - [ ] T048 OWNER [ING] Decide Q8: switch `--rerank auto` on by default. needs: T046, T047 _Owner decision._
 
 ## Phase 3: options (not planned; each needs its own plan)

@@ -136,7 +136,7 @@ static void printUsage() {
     println "  --run                       Run the gold set against systems (default)"
     println "  --systems S0,S1             Systems to compare; the first is the reference"
     println "                              S0 strict query only, S1 strict then relaxed query,"
-    println "                              S2 S1 plus re-rank, S5 S2 plus the late pool (S2 and S5 need the service)"
+    println "                              S2 S1 plus re-rank, S5 S2 plus the late pool, S6 late re-score (S2, S5 and S6 need the service)"
     println "  --set FILE                  Gold set, JSON lines (default data/eval/gold.jsonl)"
     println "  --as-of-sequence N          Ignore turns with a higher sequence number"
     println "  --dataset NAME              Dataset (default: the active dataset)"

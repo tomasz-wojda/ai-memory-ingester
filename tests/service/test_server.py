@@ -163,6 +163,62 @@ class ServerTest(unittest.TestCase):
         for path, digest in neighbours:
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest, path.name)
 
+    def send_raw(self, head_lines, body=b""):
+        import socket as socketlib
+        request = ("\r\n".join(head_lines) + "\r\n\r\n").encode() + body
+        with socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM) as sock:
+            sock.settimeout(5)
+            sock.connect(str(self.fx.sock))
+            sock.sendall(request)
+            data = b""
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        return int(data.split(b" ", 2)[1])
+
+    def test_a_bad_content_length_is_refused_not_waited_for(self):
+        base = ["POST /v1/rerank HTTP/1.1", "Host: local", "Authorization: Bearer test-token", "Connection: close"]
+        self.assertEqual(self.send_raw(base + ["Content-Length: abc"]), 400)
+        self.assertEqual(self.send_raw(base + ["Content-Length: -5"]), 400)
+        self.assertEqual(self.send_raw(base + [f"Content-Length: {5 * 1024 * 1024}"]), 400)
+
+    def test_an_idle_connection_is_dropped_by_a_timeout(self):
+        from ai_memory_service import server as server_module
+        handler = server_module.make_handler(self.fx.app)
+        self.assertGreater(handler.timeout, 0)
+        self.assertLessEqual(handler.timeout, 30)
+
+    def test_a_config_flag_cannot_enable_the_stub_model(self):
+        fx = ServiceFixture(allow_stub=False, overrides={"allow_stub": True})
+        try:
+            status, body = fx.request("POST", "/v1/rerank", {"query": "q", "model": "stub", "passages": PASSAGES})
+            self.assertEqual((status, body["error"]), (503, "model_unavailable"))
+        finally:
+            fx.close()
+
+    def test_log_lines_hide_control_characters_and_long_paths(self):
+        import io
+        import contextlib
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            self.fx.request("GET", "/v1/" + "a" * 300 + "%0d%0aFAKE")
+        line = captured.getvalue().strip().splitlines()[-1]
+        self.assertLess(len(line), 160)
+        self.assertEqual(len(captured.getvalue().strip().splitlines()), 1)
+
+    def test_candidate_documents_can_be_scored_alone(self):
+        documents = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": name, "content_hash": "h",
+                      "passages": [{"section": "user", "start": 0, "end": 20, "tokens": 4, "text": text}]}
+                     for name, text in (("a.md", "nginx timeout raised"), ("b.md", "nginx timeout also here"), ("c.md", "nothing related"))]
+        self.fx.request("POST", "/v1/passages/upsert", {"documents": documents})
+        self.fx.request("POST", "/v1/index/upsert", {"batch": 10})
+        only = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "b.md"}, {"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "c.md"}]
+        status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx timeout", "top_k": 10, "filters": {"docs": only}})
+        self.assertEqual((status, [r["file_path"] for r in body["results"]]), (200, ["b.md", "c.md"]))
+        self.assertEqual(self.fx.request("POST", "/v1/search/late", {"query": "x", "top_k": 5, "filters": {"docs": "no"}})[0], 400)
+
     def test_models_listing_marks_licences_unverified(self):
         status, body = self.fx.request("GET", "/v1/models")
         self.assertEqual(status, 200)
@@ -232,6 +288,13 @@ class BackendTest(unittest.TestCase):
             self.assertIn("unsafe", str(caught.exception))
             with self.assertRaises(backends.ModelUnavailable):
                 backends.CrossEncoderBackend("m", {"path": str(directory / "nope")}, directory).verify()
+            (directory / "pytorch_model.bin").unlink()
+            (directory / "big.bin.txt").write_bytes(b"x" * (2 * 1024 * 1024))
+            with self.assertRaises(backends.ModelUnavailable) as caught:
+                backends.CrossEncoderBackend("m", {"path": str(directory), "sha256": "x"}, directory, max_mb=1).verify()
+            self.assertIn("above the limit", str(caught.exception))
+            (directory / "big.bin.txt").unlink()
+            (directory / "pytorch_model.bin").write_bytes(b"p")
             with self.assertRaises(backends.ModelUnavailable) as caught:
                 backends.CrossEncoderBackend("m", {"path": str(directory)}, directory).verify()
         finally:

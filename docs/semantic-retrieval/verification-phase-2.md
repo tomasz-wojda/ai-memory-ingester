@@ -20,16 +20,23 @@ All in `tests/test_semantic_suite.groovy` and `tests/service/` (see verification
 
 The stub encoder hashes words into 16-dimension vectors, so a passage that shares words with the query scores high. It tests the plumbing, not paraphrase recall.
 
+## 2b. Faster scan and candidate re-scoring (added the same day)
+
+- **Accelerated MaxSim:** with numpy installed the service keeps all vectors in one half-precision matrix in memory and scans it in blocks; the plain-Python scan stays as the fallback. Both give the same order and scores within 0.002 (tested on 40 passages with filters, with a block size of 8 tokens, and after new vectors arrive: the in-memory index follows the vector count).
+- **Measured on synthetic data** (2.0 million token vectors, 128 dimensions, 32 query tokens): numpy 198 ms; plain Python about 194 s (computed from 2.4 ms per passage), so about 1000 times faster. **Estimated** for the full corpus (12.4 million tokens): about 1.2 s and 3.2 GB of memory in half precision. Real vectors and a real encoder may differ.
+- **Tested with numpy 2.5.4 on Python 3.14.7** in a throw-away virtual environment, and without numpy on the default Python 3.15 release candidate. The service tests (46) and the semantic suite (74) pass under both.
+- **Candidate re-scoring (system S6):** `--rerank late` asks the service to scan only the vectors of the candidate documents (`filters.docs`); the best passage of each document is its score, fused as the `rerank` signal with the same state-capsule pin. Tested with the stub encoder.
+
 ## 3. Storage estimate for a real model
 
-Unchanged from [evidence.md](evidence.md) section 7: 12.4 million token vectors are about 1.6 GB at 128 dimensions in 8 bits. The built store keeps the matrix as one blob per passage in SQLite and scans all rows in pure Python; for 12.4 million tokens that scan is far too slow for interactive use. **A real index needs numpy or a compiled MaxSim and a memory-mapped matrix**, which are not built because the model and library choice (D-19, D-20) is open.
+Unchanged from [evidence.md](evidence.md) section 7: 12.4 million token vectors are about 1.6 GB at 128 dimensions in 8 bits. The store keeps one 8-bit blob per passage in SQLite. The plain-Python scan is too slow for the real corpus (about 194 s for 20,000 passages); the numpy scan measured 198 ms per 2 million token vectors on synthetic data. The in-memory half-precision matrix needs about 3.2 GB for the full corpus (estimate), close to the 4 GB limit; an 8-bit or memory-mapped matrix is not built because the real model decides the dimension (D-19, D-20).
 
 ## 4. Not verified (waiting for decisions)
 
 - **Any real late-interaction model**, its dimension, its storage and its encoding time (T041, Q6).
 - **Paraphrase recall** (the gate: +0.10 absolute on class P).
-- **Speed of the full scan** on the real corpus.
-- **Candidate re-scoring** (system S6): not built.
+- **Speed of the scan on real vectors** (the measured numbers are synthetic).
+- **Quality of candidate re-scoring** (S6) with a real encoder.
 - **The unattended encoding run** on the real memory.
 - **Gate G3.**
 

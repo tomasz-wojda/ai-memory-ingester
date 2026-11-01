@@ -10,6 +10,7 @@ from ai_memory_service.backends import StubBackend, fold, words
 from ai_memory_service.config import DEFAULTS
 from ai_memory_service.encoders import StubEncoder
 from ai_memory_service.integrity import tree_sha256, weight_problems
+from ai_memory_service import maxsim as maxsim_module
 from ai_memory_service.maxsim import maxsim, search
 from ai_memory_service.store import SemanticDb, dequantize, quantize
 
@@ -156,6 +157,75 @@ class MaxSimTest(unittest.TestCase):
         first = [h["passage_id"] for h in search(self.db, self.encoder, "same words", 5)]
         second = [h["passage_id"] for h in search(self.db, self.encoder, "same words", 5)]
         self.assertEqual(first, second)
+
+
+@unittest.skipUnless(maxsim_module.np is not None, "numpy is not installed here")
+class NumpyMaxSimTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = Path(short_temp())
+        self.db = SemanticDb(self.directory / "semantic.db")
+        self.encoder = StubEncoder()
+        vocabulary = "nginx timeout backup retention certificate renewal logging library version pinned audit trace ingress".split()
+        for i in range(40):
+            text = " ".join(vocabulary[(i * 3 + j) % len(vocabulary)] for j in range(5 + i % 7))
+            archive = "chat:turns" if i % 2 == 0 else "worklog:chunks"
+            self.db.upsert_documents([{"origin_db": "convo.db" if i % 3 else "worklogs.db", "source_archive": archive, "file_path": f"t{i % 4}/d{i}.md",
+                                       "content_hash": "h", "passages": [{"section": "user", "start": 0, "end": len(text), "tokens": 5, "text": text}]}])
+        for pid, passage in self.db.passages_without_vectors(self.encoder.model_id, 1000):
+            self.db.put_vectors(self.encoder.model_id, self.encoder.dimension, [(pid, self.encoder.encode_passage(passage))])
+
+    def tearDown(self):
+        maxsim_module.USE_NUMPY = True
+        self.db.close()
+        shutil.rmtree(self.directory, ignore_errors=True)
+
+    def both(self, query, top_k=10, **filters):
+        maxsim_module.USE_NUMPY = True
+        fast = search(self.db, self.encoder, query, top_k, **filters)
+        maxsim_module.USE_NUMPY = False
+        slow = search(self.db, self.encoder, query, top_k, **filters)
+        maxsim_module.USE_NUMPY = True
+        return fast, slow
+
+    def test_numpy_and_plain_python_agree(self):
+        for query in ("nginx timeout", "backup retention certificate", "audit trace ingress logging"):
+            fast, slow = self.both(query)
+            self.assertEqual([h["passage_id"] for h in fast], [h["passage_id"] for h in slow], query)
+            for a, b in zip(fast, slow):
+                self.assertAlmostEqual(a["score"], b["score"], delta=0.002)
+                self.assertEqual(a["text"], b["text"])
+
+    def test_filters_agree(self):
+        fast, slow = self.both("nginx timeout", 20, archives=["worklog:chunks"])
+        self.assertTrue(fast and all(h["source_archive"] == "worklog:chunks" for h in fast))
+        self.assertEqual([h["passage_id"] for h in fast], [h["passage_id"] for h in slow])
+        fast, slow = self.both("backup", 20, origin_db="worklogs.db", path_contains="t1")
+        self.assertEqual([h["passage_id"] for h in fast], [h["passage_id"] for h in slow])
+        docs = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "t2/d2.md"}]
+        fast, slow = self.both("nginx timeout", 20, docs=docs)
+        self.assertEqual([h["file_path"] for h in fast], [h["file_path"] for h in slow])
+        self.assertTrue(all(h["file_path"] == "t2/d2.md" for h in fast))
+        self.assertEqual(search(self.db, self.encoder, "nginx", 5, docs=[{"origin_db": "x", "source_archive": "y", "file_path": "z"}]), [])
+
+    def test_the_in_memory_index_follows_new_vectors(self):
+        before = search(self.db, self.encoder, "zebra quartz", 3)
+        self.db.upsert_documents([{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "new.md", "content_hash": "h",
+                                   "passages": [{"section": "user", "start": 0, "end": 11, "tokens": 2, "text": "zebra quartz"}]}])
+        for pid, passage in self.db.passages_without_vectors(self.encoder.model_id, 10):
+            self.db.put_vectors(self.encoder.model_id, self.encoder.dimension, [(pid, self.encoder.encode_passage(passage))])
+        after = search(self.db, self.encoder, "zebra quartz", 3)
+        self.assertNotEqual(before[0]["file_path"], "new.md")
+        self.assertEqual(after[0]["file_path"], "new.md")
+
+    def test_a_large_block_split_gives_the_same_scores(self):
+        maxsim_module.BLOCK_TOKENS = 8
+        try:
+            maxsim_module._indexes.clear()
+            fast, slow = self.both("nginx timeout")
+        finally:
+            maxsim_module.BLOCK_TOKENS = 200_000
+            maxsim_module._indexes.clear()
+        self.assertEqual([h["passage_id"] for h in fast], [h["passage_id"] for h in slow])
 
 
 class IntegrityTest(unittest.TestCase):

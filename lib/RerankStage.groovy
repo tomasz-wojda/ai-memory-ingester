@@ -51,6 +51,39 @@ class RerankStage {
                 }
             }
         }
+        return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+    }
+
+    /**
+     * Scores the candidates with the late-interaction index instead of the cross-encoder (system S6).
+     * The service scans only the vectors of the given documents; the best passage of each document is its score.
+     *
+     * @param rows Fused candidates, best first
+     * @param query The question as typed
+     * @param client Memory service client
+     * @param pinTicket Ticket facet whose state capsule stays first, or null
+     * @return Map with rows and info, as apply returns
+     */
+    static Map applyLate(List<Map> rows, String query, SemanticClient client, String pinTicket) {
+        Map info = [depth: rows.size(), degraded: false, reason: null, passages_sent: 0]
+        List<Map> keys = rows.collect { Map row -> [origin_db: row.origin_db, source_archive: row.source_archive, file_path: row.file_path] }
+        Map reply = client.searchLate(query, 100, [docs: keys])
+        if (!reply.ok) return degraded(rows, info, reply.reason.toString())
+        Map body = reply.body as Map
+        Map<String, Map> best = [:]
+        ((body.results ?: []) as List<Map>).each { Map hit ->
+            String docId = "${hit.origin_db}:${hit.source_archive}:${hit.file_path}".toString()
+            double score = Math.round((hit.score as double) * 10000.0d) / 10000.0d
+            if (!best.containsKey(docId) || score > (best[docId].score as double)) {
+                best[docId] = [score: score, passage: [text: hit.text]]
+            }
+        }
+        info << [model: body.model, device: 'late', scored: best.size(), skipped: rows.size() - best.size(), elapsed_ms: body.elapsed_ms]
+        if (best.isEmpty()) return degraded(rows, info, 'too_few_scored')
+        return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+    }
+
+    private static List<Map> fuse(List<Map> rows, Map<String, Map> best, Object model, String pinTicket) {
         List<Map> copies = rows.collect { Map row -> new LinkedHashMap(row) as Map }
         List<Map> scoredRows = copies.findAll { best.containsKey(SignalFusion.stableIdOf(it)) }
         Map<String, Integer> priorRank = [:]
@@ -64,7 +97,7 @@ class RerankStage {
             Map hit = best[SignalFusion.stableIdOf(row)]
             row.rerank_score = hit.score
             row.rerank_rank = index + 1
-            row.rerank_model = body.model
+            row.rerank_model = model
             row.best_passage = (hit.passage?.text ?: '').toString()
         }
         SignalFusion.addSignal(copies, 'rerank', byModel)
@@ -72,7 +105,7 @@ class RerankStage {
             Closure isCapsule = { Map row -> row.source_archive == 'worklog:state' && row.file_path?.toString() == "${pinTicket}.md".toString() }
             copies = copies.findAll(isCapsule) + copies.findAll { !isCapsule(it) }
         }
-        return [rows: copies, info: info]
+        return copies
     }
 
     private static Map degraded(List<Map> rows, Map info, String reason) {

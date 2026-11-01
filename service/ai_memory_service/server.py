@@ -63,7 +63,7 @@ class App:
     def __init__(self, config, token, allow_stub=False):
         self.config = config
         self.token = token
-        self.allow_stub = allow_stub or bool(config.get("allow_stub"))
+        self.allow_stub = bool(allow_stub)
         self.started = time.time()
         self.db = SemanticDb(db_path(config))
         self.worker = ModelWorker(int(config["queue_size"]))
@@ -246,8 +246,13 @@ class App:
             raise ProtocolError(400, "bad_request", "top_k must be between 1 and 500")
         filters = body.get("filters") or {}
         started = time.time()
+        docs = filters.get("docs")
+        if docs is not None:
+            if not isinstance(docs, list) or len(docs) > 500 or not all(
+                    isinstance(d, dict) and all(isinstance(d.get(f), str) for f in ("origin_db", "source_archive", "file_path")) for d in docs):
+                raise ProtocolError(400, "bad_request", "filters.docs must be a list of at most 500 documents")
         hits = self.submit(lambda: maxsim.search(self.db, encoder, text, top_k, filters.get("source_archive") and [filters["source_archive"]],
-                                                 filters.get("origin_db"), filters.get("ticket")))
+                                                 filters.get("origin_db"), filters.get("ticket"), docs))
         return {"contract_version": CONTRACT_VERSION, "model": encoder.model_id, "elapsed_ms": int((time.time() - started) * 1000), "results": hits}
 
     def index_status(self):
@@ -297,6 +302,7 @@ def make_handler(app):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "ai-memory-service/1"
+        timeout = 15
 
         def log_message(self, format, *args):
             return
@@ -311,7 +317,8 @@ def make_handler(app):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-            print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {self.command} {self.path} {status} {int((time.time() - started) * 1000)}ms {note}".strip(),
+            shown = "".join(c if c.isprintable() else "?" for c in self.path)[:80]
+            print(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {self.command} {shown} {status} {int((time.time() - started) * 1000)}ms {note}".strip(),
                   file=sys.stderr, flush=True)
 
         def handle_any(self):
@@ -323,7 +330,14 @@ def make_handler(app):
                 expected = f"Bearer {app.token}"
                 if not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
                     raise ProtocolError(401, "unauthorized", "Missing or wrong token")
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    self.close_connection = True
+                    raise ProtocolError(400, "bad_request", "Content-Length is not a number")
+                if length < 0:
+                    self.close_connection = True
+                    raise ProtocolError(400, "bad_request", "Content-Length is negative")
                 if length > app.config["max_body_bytes"]:
                     self.close_connection = True
                     raise ProtocolError(400, "bad_request", "The body is too large")

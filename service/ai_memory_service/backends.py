@@ -50,9 +50,10 @@ class CrossEncoderBackend:
     Real inference is not covered by the default tests (set RUN_MODEL_TESTS=1 with a cached model).
     """
 
-    def __init__(self, name, entry, model_cache):
+    def __init__(self, name, entry, model_cache, max_mb=4096):
         self.name = name
         self.entry = entry
+        self.max_mb = max_mb
         self.model_cache = Path(model_cache).expanduser()
         self.model = None
         self.device = "cpu"
@@ -68,6 +69,9 @@ class CrossEncoderBackend:
         problems = weight_problems(path)
         if problems:
             raise ModelUnavailable("; ".join(problems))
+        size_mb = sum(p.stat().st_size for p in path.rglob("*") if p.is_file()) / (1024 * 1024)
+        if size_mb > self.max_mb:
+            raise ModelUnavailable(f"the model folder is {int(size_mb)} MB, above the limit of {self.max_mb} MB")
         expected = self.entry.get("sha256")
         if not expected:
             raise ModelUnavailable("the model entry has no sha256 checksum")
@@ -121,4 +125,4 @@ def build_backend(name, config, allow_stub):
     entry = config.get("models", {}).get(name)
     if entry is None:
         raise KeyError(name)
-    return CrossEncoderBackend(name, entry, config["model_cache"])
+    return CrossEncoderBackend(name, entry, config["model_cache"], int(config.get("max_rss_mb", 4096)))

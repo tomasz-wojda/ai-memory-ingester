@@ -19,6 +19,7 @@ class SemanticClient {
 
     static final long CIRCUIT_MILLIS = 30_000L
     static final int CONTRACT_VERSION = 1
+    static final int MAX_RESPONSE_BYTES = 64 * 1024 * 1024
     private static final ConcurrentHashMap<String, Long> CIRCUITS = new ConcurrentHashMap<>()
 
     final File socketFile
@@ -126,6 +127,7 @@ class SemanticClient {
                 buffer.flip()
                 collected.write(buffer.array(), 0, buffer.limit())
                 buffer.clear()
+                if (collected.size() > MAX_RESPONSE_BYTES) throw new IOException('The service response is too large')
             }
             String text = collected.toString('UTF-8')
             int split = text.indexOf('\r\n\r\n')

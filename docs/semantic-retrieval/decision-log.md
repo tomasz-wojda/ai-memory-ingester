@@ -38,6 +38,8 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 | D-28 | The stub model and the stub encoder answer only when the service starts with `--stub` | Make the stub a normal model | A stub score is term overlap, not a quality signal; production must never use it by accident | Built |
 | D-29 | `ai-worklog memory serve --init` writes the configuration and runs the doctor; it does not start the service | Write the configuration and start | Matches "init then check"; starting stays an explicit act | Built, owner to confirm |
 | D-30 | The sweep starts `reindex` in the background only with `AI_MEMORY_SWEEP_INDEX=1`, and never waits | On by default | The model and the index are not decided; the sweep must keep its exit code and speed | Built |
+| D-31 | The service uses numpy for the late scan when it is installed (in-memory half-precision matrix, scanned in blocks) and the plain-Python scan otherwise | Plain Python only; a compiled scan | Measured about 1000 times faster on synthetic data; numpy stays optional so the service still runs on the default Python | Built |
+| D-32 | `--rerank late` re-scores the candidates with the late-interaction index (system S6) | Only the cross-encoder as a re-ranker | The specification lists a late re-score as an alternative; it moves the cost offline | Built, owner to confirm |
 
 ## 2. Alternatives not chosen (and when to revisit)
 
@@ -75,7 +77,7 @@ Status: proposal. Each row is **Proposed** until the owner approves it. Part of 
 
 ## Summary (STE)
 
-This log lists 30 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
+This log lists 32 decisions and 9 open questions. The main choices are: use only licences that are safe for a company laptop (MIT first), take the model files from an approved source, fix the first search stage first, measure with a test set, re-rank with a small multilingual model, keep the old signals in the final order, run the model in a separate service, and keep all new data in a separate database. The owner has not approved any of them yet.
 
 **Remaining 20% (not STE100):** decision, model, library and table names; the words "FTS5", "cross-encoder", "bi-encoder", "MaxP", "ONNX", "lemmatizer", "PLAID" and "dimension"; the tables; some sentences over 20 words.
 

@@ -314,6 +314,19 @@ Each has a recommended answer in [decision-log.md](decision-log.md).
 6. Is a 2 to 4 hour one-time encoding job acceptable for Phase 2 (Q6)?
 7. Which licences does IP Legal accept besides MIT, and which source path is approved for the model files (Q1, Q9)?
 
+## 16. Implementation notes (2026-11-01)
+
+Differences between this specification and the build:
+
+1. **Passage windows** are cut in characters (900, stride 675), the character fallback of section 6.3. The model tokenizer is not used.
+2. **Which queries are re-ranked.** Only `query` with free text that is not an explicit query (D-26). Ticket-only queries and the ticket path with terms are not.
+3. **Service endpoints** added: `/v1/passages/missing` and `/v1/passages/docs` (for `reindex`), and a `docs` filter on `/v1/search/late`.
+4. **The first release trigger** of the relaxed query is zero strict rows (D-23).
+5. **Circuit** per endpoint (D-27); **stub** only with `--stub` (D-28); **`serve --init`** does not start (D-29); **sweep index hook** off by default (D-30).
+6. **Added after the first build:** a numpy scan for the late index (D-31) and candidate re-scoring with `--rerank late` (D-32).
+7. **Security review:** done in guidance mode; six findings fixed ([security-review.md](security-review.md)).
+8. **Not built:** the real model paths (cross-encoder inference, a late-interaction encoder), an 8-bit or memory-mapped matrix, a deletion hook in `egest`, `launchd` job, hashed requirements and the Python environment, score-cache purge schedule, framework `memory eval --compare`, the TCP option.
+
 ## Summary (STE)
 
 Today the search needs every query word to appear in a document. Plain-language questions return nothing. This plan first fixes that and builds a test set. Then a small local model re-reads the best candidate passages and puts the most useful ones first. A separate service keeps the model ready. If the service stops, the old search still works. Authority and freshness rules stay in force. An optional index of token vectors adds recall for questions that use other words. No data leaves the computer.

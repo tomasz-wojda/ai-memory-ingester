@@ -115,7 +115,7 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 | `GET /v1/passages/docs` | Every indexed document with its hash; used by `reindex` to find orphans | 1 |
 | `POST /v1/encode/query` | Query token vectors (debug, `--explain`) | 2 |
 | `POST /v1/index/upsert` | Encode and store vectors for stored passages: `{batch: N}`; resumable | 2 |
-| `POST /v1/search/late` | `{query, top_k, filters:{origin_db, source_archive, ticket}}` returns passages with MaxSim scores | 2 |
+| `POST /v1/search/late` | `{query, top_k, filters:{origin_db, source_archive, ticket, docs:[{origin_db, source_archive, file_path}]}}` returns passages with MaxSim scores; `docs` limits the scan to candidate documents (at most 500) | 2 |
 | `GET /v1/index/status` | Counts, model id and revision, dimension, stale count, bytes on disk | 2 |
 | `POST /v1/admin/reload` | Reload configuration and models | 1 |
 
@@ -137,7 +137,7 @@ Reason codes for `degraded_reason`: `rerank_off`, `service_down`, `service_circu
 
 | Flag | Values | Default | Meaning |
 |---|---|---|---|
-| `--rerank` | `off`, `auto`, `on` | `auto` | `auto`: use the service when it answers; `on`: fail with exit 5 when it does not; `off`: never |
+| `--rerank` | `off`, `auto`, `on`, `late` | `auto` | `auto`: use the service when it answers; `on`: fail with exit 5 when it does not; `off`: never; `late`: re-score the candidates with the late-interaction index (exit 5 when it cannot) |
 | `--rerank-depth N` | 1 to 100 | 30 | Candidates sent to stage 2 |
 | `--rerank-budget-ms N` | 100 to 10000 | 1200 | Deadline of the call |
 | `--relax` | `auto`, `on`, `off` | `auto` | Relaxed first-stage query (section 6.3 of the specification) |

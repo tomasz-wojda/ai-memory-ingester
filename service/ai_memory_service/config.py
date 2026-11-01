@@ -24,7 +24,6 @@ DEFAULTS = {
     "max_body_bytes": 4 * 1024 * 1024,
     "max_passages": 100,
     "max_passage_chars": 4000,
-    "allow_stub": False,
 }
 
 

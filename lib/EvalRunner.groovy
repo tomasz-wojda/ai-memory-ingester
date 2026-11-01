@@ -9,7 +9,8 @@ class EvalRunner {
         S0: [name: 'baseline: strict query only', options: [relax_mode: 'off', rerank_mode: 'off', late_mode: 'off']],
         S1: [name: 'strict, then relaxed query when the strict query finds nothing', options: [relax_mode: 'auto', rerank_mode: 'off', late_mode: 'off']],
         S2: [name: 'S1 plus re-rank through the memory service', options: [relax_mode: 'auto', rerank_mode: 'on', late_mode: 'off']],
-        S5: [name: 'S2 plus the late-interaction pool', options: [relax_mode: 'auto', rerank_mode: 'on', late_mode: 'on']]
+        S5: [name: 'S2 plus the late-interaction pool', options: [relax_mode: 'auto', rerank_mode: 'on', late_mode: 'on']],
+        S6: [name: 'S5 with a late-interaction re-score instead of the cross-encoder', options: [relax_mode: 'auto', rerank_mode: 'late', late_mode: 'on']]
     ].asImmutable()
 
     static final int RESULT_LIMIT = 100
@@ -37,7 +38,7 @@ class EvalRunner {
             perQuery << [
                 qid: query.qid, 'class': query['class'], lang: query.lang, split: query.split, known_gap: query.known_gap ?: false,
                 results: ranked.size(), form_used: (result.query_plan as Map)?.form_used,
-                degraded: system.options.rerank_mode == 'on' && result.degraded == true, degraded_reason: result.degraded_reason,
+                degraded: (system.options.rerank_mode in ['on', 'late']) && result.degraded == true, degraded_reason: result.degraded_reason,
                 elapsed_ms: (System.nanoTime() - queryStarted) / 1_000_000.0d
             ] + scores
         }

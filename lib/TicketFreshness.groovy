@@ -73,9 +73,9 @@ class TicketFreshness {
 
     static Map frontMatter(String content) {
         Map metadata = [:]
-        def matcher = (content ?: '') =~ /(?s)^---\s*\n(.*?)\n---/
-        if (!matcher.find()) return metadata
-        matcher.group(1).readLines().each { String line ->
+        Map split = FrontMatter.split(content, false)
+        if (split == null) return metadata
+        (split.front as String).readLines().each { String line ->
             def field = line =~ /^([a-z_]+):\s*(.*)$/
             if (field.matches()) {
                 metadata[field.group(1)] = field.group(2).trim().replaceAll(/^"|"$/, '')
@@ -135,14 +135,14 @@ class TicketFreshness {
     }
 
     static boolean isRetrievalMeta(String content) {
-        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+        String body = FrontMatter.strip(content ?: '')
         def userMatcher = body =~ /(?s)## User\s*(.*?)(?:\n## Assistant|\z)/
         String user = userMatcher.find() ? userMatcher.group(1) : body
         return user ==~ /(?is).*(?:top[- ]?20|snippet|retriev|worklog\s+(?:comparison|versus)|compar(?:e|ison).*worklog|memory.*stale|fix.*stale).*/
     }
 
     static boolean hasExplicitUserTicket(String content, String ticket) {
-        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+        String body = FrontMatter.strip(content ?: '')
         def userMatcher = body =~ /(?s)## User\s*(.*?)(?:\n## Assistant|\z)/
         String user = userMatcher.find() ? userMatcher.group(1) : ''
         String canonical = TicketKey.canonical(ticket)
@@ -152,7 +152,7 @@ class TicketFreshness {
     }
 
     static boolean hasMaterialTicketEvidence(String content) {
-        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+        String body = FrontMatter.strip(content ?: '')
         return body ==~ /(?is).*\b(?:deploy(?:ed|ment|ing)?|delivery|rollout|runtime|merged|build(?:\s*#?\d+)?|image\s+\d+(?:-\d+)?|sync(?:ed|hronized)?|healthy|ready|verified|block(?:ed|er)|pending|credential|secret|pull request|PR\s*#?\d+|implemented|metric)\b.*/
     }
 

@@ -49,7 +49,7 @@ class TestMemoryLockSuite {
         [
             'Config', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
             'MemoryExclusion', 'TurnClassifier', 'JournalEvent', 'JournalStore', 'MemoryLock',
-            'TicketFreshness', 'ResumeDigest'
+            'FrontMatter', 'TicketFreshness', 'ResumeDigest'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         JournalStore = loader.loadClass('JournalStore')

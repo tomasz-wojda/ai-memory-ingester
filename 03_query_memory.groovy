@@ -1869,7 +1869,7 @@ private static String dominantTicket(List<Map> rows) {
 
 private static String cleanSnippet(String value) {
     String cleaned = (value ?: '').replace('>>>', '').replace('<<<', '').trim()
-    if (cleaned.startsWith('---')) cleaned = cleaned.replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+    if (cleaned.startsWith('---')) cleaned = FrontMatter.strip(cleaned)
     return cleaned.replaceAll(/\s+/, ' ').trim()
 }
 

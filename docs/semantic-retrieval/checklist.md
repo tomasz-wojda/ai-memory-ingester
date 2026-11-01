@@ -46,7 +46,7 @@ Phase 0
 Phase 1
 - [ ] Model source path approved (T019)
 - [ ] Licences recorded under the licence policy (T020)
-- [ ] Python environment with hashes (T021)
+- [x] Python environment with hashes (T021): numpy only; machine-learning packages wait for the model choice
 - [ ] Latency benchmark and default model chosen (T022)
 - [ ] Models downloaded once with manifest (T023)
 - [x] Service skeleton with contract tests (T024)
@@ -69,7 +69,7 @@ Phase 2
 - [x] Late pool (T044)
 - [x] `reindex` and orphan removal (T045)
 - [ ] Gate G3 and `verification-phase-2.md` (T046)
-- [x] Security review of built code (T047): guidance mode, see security-review.md
+- [x] Security review of built code (T047): guidance mode plus the skill's quick-profile audit (partial pass, run incomplete for lack of a sandbox), see security-review.md
 - [ ] Default switch decided (T048)
 
 ## 4. Regression (every phase; one command and one recorded result each)

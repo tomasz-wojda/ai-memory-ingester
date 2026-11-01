@@ -1,9 +1,13 @@
+import groovy.json.JsonOutput
+
 List<String> archives = ['chat:turns', 'worklog:chunks', 'worklog:state']
 String datasetName = null
 boolean verifyOnly = false
 boolean rebuild = false
 boolean encode = true
 int batchSize = 50
+final int MAX_UPSERT_PASSAGES = 1000
+final int MAX_UPSERT_BYTES = 2000000
 boolean help = false
 String workspaceValue = null
 
@@ -60,6 +64,10 @@ int skipped = 0
 int upserted = 0
 int passageCount = 0
 int needed = 0
+int failed = 0
+int oversized = 0
+int unknown = 0
+boolean halted = false
 
 databases.each { File database ->
     MemoryEngine engine = new MemoryEngine(database.absolutePath)
@@ -69,23 +77,59 @@ databases.each { File database ->
             Closure flush = {
                 if (batch.isEmpty()) return
                 List<Map> keys = batch.collect { [origin_db: it.origin_db, source_archive: it.source_archive, file_path: it.file_path, content_hash: it.content_hash] }
-                List<Integer> missing = rebuild ? (0..<batch.size()).toList() : ((client.missingPassages(keys).body as Map)?.missing ?: []) as List<Integer>
+                List<Integer> missing
+                if (rebuild) {
+                    missing = (0..<batch.size()).toList()
+                } else {
+                    Map comparison = client.missingPassages(keys)
+                    if (!comparison.ok) {
+                        unknown += batch.size()
+                        System.err.println("Could not compare documents with the index: ${comparison.reason}")
+                        batch.clear()
+                        return
+                    }
+                    missing = ((comparison.body as Map)?.missing ?: []) as List<Integer>
+                }
                 needed += missing.size()
                 skipped += batch.size() - missing.size()
-                if (!verifyOnly && missing) {
-                    List<Map> documents = missing.collect { int index ->
+                if (!verifyOnly && missing && !halted) {
+                    List<Map> documents = []
+                    int groupPassages = 0
+                    int groupBytes = 0
+                    Closure send = {
+                        if (documents.isEmpty()) return
+                        Map reply = client.upsertPassages(documents)
+                        if (!reply.ok) {
+                            halted = true
+                            failed += documents.size()
+                            System.err.println("Upsert failed: ${reply.reason}")
+                        } else {
+                            upserted += documents.size()
+                            passageCount += ((reply.body as Map).passages ?: 0) as int
+                        }
+                        documents.clear()
+                        groupPassages = 0
+                        groupBytes = 0
+                    }
+                    missing.each { int index ->
+                        if (halted || index < 0 || index >= batch.size()) return
                         Map doc = batch[index]
                         List<Map> passages = PassageBuilder.split(doc)
-                        [origin_db: doc.origin_db, source_archive: doc.source_archive, file_path: doc.file_path, content_hash: doc.content_hash,
-                         passages: passages.collect { [section: it.section, start: it.start, end: it.end, tokens: it.tokens, text: it.text] }]
+                        Map document = [origin_db: doc.origin_db, source_archive: doc.source_archive, file_path: doc.file_path, content_hash: doc.content_hash,
+                                        passages: passages.collect { [section: it.section, start: it.start, end: it.end, tokens: it.tokens, text: it.text] }]
+                        int documentBytes = JsonOutput.toJson(document).length()
+                        if (passages.size() > MAX_UPSERT_PASSAGES || documentBytes > MAX_UPSERT_BYTES) {
+                            oversized++
+                            System.err.println("Skipped a document that does not fit in one call: ${doc.origin_db} ${doc.source_archive} ${doc.file_path}")
+                            return
+                        }
+                        if (groupPassages + passages.size() > MAX_UPSERT_PASSAGES || groupBytes + documentBytes > MAX_UPSERT_BYTES) send.call()
+                        if (halted) return
+                        documents << document
+                        groupPassages += passages.size()
+                        groupBytes += documentBytes
                     }
-                    Map reply = client.upsertPassages(documents)
-                    if (!reply.ok) {
-                        System.err.println("Upsert failed: ${reply.reason}")
-                        System.exit(1)
-                    }
-                    upserted += documents.size()
-                    passageCount += ((reply.body as Map).passages ?: 0) as int
+                    if (!halted) send.call()
                 }
                 batch.clear()
             }
@@ -107,6 +151,7 @@ databases.each { File database ->
 Set<String> scopeArchives = archives as Set<String>
 Set<String> scopeDatabases = databases.collect { it.name } as Set<String>
 Map listing = client.listDocuments()
+if (!listing.ok) System.err.println("Could not list the indexed documents: ${listing.reason}")
 List<Map> orphans = listing.ok
     ? ((listing.body as Map).documents as List<Map>).findAll { Map d ->
         scopeArchives.contains(d.source_archive) && scopeDatabases.contains(d.origin_db) &&
@@ -136,5 +181,6 @@ if (!verifyOnly && encode) {
         encodeNote = 'skipped (no late-interaction model)'
     }
 }
-println "REINDEX\tmode=${verifyOnly ? 'verify' : (rebuild ? 'rebuild' : 'update')}\tscanned=${scanned}\tneeded=${needed}\tskipped=${skipped}\tdocuments=${upserted}\tpassages=${passageCount}\torphans=${orphans.size()}\tremoved=${removed}\tencoded=${encoded}\tencode=${encodeNote}\telapsed_ms=${System.currentTimeMillis() - started}"
-if (verifyOnly && (needed > 0 || orphans)) System.exit(1)
+println "REINDEX\tmode=${verifyOnly ? 'verify' : (rebuild ? 'rebuild' : 'update')}\tscanned=${scanned}\tneeded=${needed}\tskipped=${skipped}\tdocuments=${upserted}\tfailed=${failed}\toversized=${oversized}\tunknown=${unknown}\tpassages=${passageCount}\torphans=${orphans.size()}\torphan_check=${listing.ok ? 'ok' : 'failed'}\tremoved=${removed}\tencoded=${encoded}\tencode=${encodeNote}\telapsed_ms=${System.currentTimeMillis() - started}"
+if (verifyOnly && (needed > 0 || orphans || unknown > 0 || !listing.ok)) System.exit(1)
+if (!verifyOnly && (failed > 0 || oversized > 0 || unknown > 0 || !listing.ok)) System.exit(1)

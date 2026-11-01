@@ -380,7 +380,7 @@ class MemoryEngine {
      * @return Formatted FTS5 match expression
      */
     static String extractSearchBody(String content) {
-        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '').trim()
+        String body = FrontMatter.strip(content ?: '').trim()
         if (!body) return ''
         StringBuilder parts = new StringBuilder()
         def userMatcher = body =~ /(?s)## User\s*(.*?)(?:\n## Assistant|\z)/

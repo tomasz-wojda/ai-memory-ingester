@@ -177,7 +177,7 @@ class TicketRetrieval {
     }
 
     static String bodyPreview(String content, String terms = '', int size = 320) {
-        String body = (content ?: '').replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '').trim()
+        String body = FrontMatter.strip(content ?: '').trim()
         if (!body) return ''
         int start = 0
         List<String> tokens = (terms ?: '').toLowerCase().tokenize(' ').findAll { it.size() > 2 }

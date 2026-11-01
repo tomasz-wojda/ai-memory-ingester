@@ -32,26 +32,30 @@ class RerankStage {
         if (passages.isEmpty()) return degraded(rows, info, 'too_few_scored')
         Map reply = client.rerank(query, passages, options.rerank_model?.toString(), budget)
         if (!reply.ok) return degraded(rows, info, reply.reason.toString())
-        Map body = reply.body as Map
-        List<Map> results = (body.results ?: []) as List<Map>
-        int minimum = Math.min((options.rerank_min_scored ?: Config.RERANK_MIN_SCORED) as int, passages.size())
-        int scored = (body.scored ?: 0) as int
-        info << [model: body.model, device: body.device, scored: scored, skipped: body.skipped ?: 0, elapsed_ms: body.elapsed_ms]
-        if (scored < minimum) return degraded(rows, info, 'too_few_scored')
+        try {
+            Map body = reply.body as Map
+            List<Map> results = (body.results ?: []) as List<Map>
+            int minimum = Math.min((options.rerank_min_scored ?: Config.RERANK_MIN_SCORED) as int, passages.size())
+            int scored = (body.scored ?: 0) as int
+            info << [model: body.model, device: body.device, scored: scored, skipped: body.skipped ?: 0, elapsed_ms: body.elapsed_ms]
+            if (scored < minimum) return degraded(rows, info, 'too_few_scored')
 
-        Map<String, Map> best = [:]
-        Map<String, Map> passageById = passages.collectEntries { [(it.id as String): it] }
-        results.each { Map result ->
-            if (result.status == 'scored' && result.score != null) {
-                String docId = docOfPassage[result.id as String]
-                double score = Math.round((result.score as double) * 10000.0d) / 10000.0d
-                Map current = best[docId]
-                if (current == null || score > (current.score as double)) {
-                    best[docId] = [score: score, passage: passageById[result.id as String]]
+            Map<String, Map> best = [:]
+            Map<String, Map> passageById = passages.collectEntries { [(it.id as String): it] }
+            results.each { Map result ->
+                if (result.status == 'scored' && result.score != null) {
+                    String docId = docOfPassage[result.id as String]
+                    double score = Math.round((result.score as double) * 10000.0d) / 10000.0d
+                    Map current = best[docId]
+                    if (current == null || score > (current.score as double)) {
+                        best[docId] = [score: score, passage: passageById[result.id as String]]
+                    }
                 }
             }
+            return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+        } catch (RuntimeException ignored) {
+            return degraded(rows, info, 'service_down')
         }
-        return [rows: fuse(rows, best, body.model, pinTicket), info: info]
     }
 
     /**
@@ -69,18 +73,22 @@ class RerankStage {
         List<Map> keys = rows.collect { Map row -> [origin_db: row.origin_db, source_archive: row.source_archive, file_path: row.file_path] }
         Map reply = client.searchLate(query, 100, [docs: keys])
         if (!reply.ok) return degraded(rows, info, reply.reason.toString())
-        Map body = reply.body as Map
-        Map<String, Map> best = [:]
-        ((body.results ?: []) as List<Map>).each { Map hit ->
-            String docId = "${hit.origin_db}:${hit.source_archive}:${hit.file_path}".toString()
-            double score = Math.round((hit.score as double) * 10000.0d) / 10000.0d
-            if (!best.containsKey(docId) || score > (best[docId].score as double)) {
-                best[docId] = [score: score, passage: [text: hit.text]]
+        try {
+            Map body = reply.body as Map
+            Map<String, Map> best = [:]
+            ((body.results ?: []) as List<Map>).each { Map hit ->
+                String docId = "${hit.origin_db}:${hit.source_archive}:${hit.file_path}".toString()
+                double score = Math.round((hit.score as double) * 10000.0d) / 10000.0d
+                if (!best.containsKey(docId) || score > (best[docId].score as double)) {
+                    best[docId] = [score: score, passage: [text: hit.text]]
+                }
             }
+            info << [model: body.model, device: 'late', scored: best.size(), skipped: rows.size() - best.size(), elapsed_ms: body.elapsed_ms]
+            if (best.isEmpty()) return degraded(rows, info, 'too_few_scored')
+            return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+        } catch (RuntimeException ignored) {
+            return degraded(rows, info, 'service_down')
         }
-        info << [model: body.model, device: 'late', scored: best.size(), skipped: rows.size() - best.size(), elapsed_ms: body.elapsed_ms]
-        if (best.isEmpty()) return degraded(rows, info, 'too_few_scored')
-        return [rows: fuse(rows, best, body.model, pinTicket), info: info]
     }
 
     private static List<Map> fuse(List<Map> rows, Map<String, Map> best, Object model, String pinTicket) {

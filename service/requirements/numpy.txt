@@ -1,0 +1,5 @@
+# Optional accelerator for the late-interaction scan (decision D-31).
+# Hash taken on 2026-11-01 from the PyPI wheel for CPython 3.14 on macOS arm64 only.
+# For another Python or platform, download the wheel and run `python -m pip hash <wheel>`, then add its hash here.
+numpy==2.5.4 \
+    --hash=sha256:956555e0603a4d38019ae6925711cb9dc43195c076a928accf7ea5d50bddfe53

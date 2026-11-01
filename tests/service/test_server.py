@@ -184,6 +184,23 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.send_raw(base + ["Content-Length: -5"]), 400)
         self.assertEqual(self.send_raw(base + [f"Content-Length: {5 * 1024 * 1024}"]), 400)
 
+    def test_a_refused_request_closes_the_connection(self):
+        import socket as socketlib
+        follow_up = b"GET /v1/health HTTP/1.1\r\nHost: local\r\nAuthorization: Bearer test-token\r\n\r\n"
+        for extra in ("Authorization: Bearer wrong", "Authorization: Bearer test-token\r\nOrigin: http://evil.example"):
+            head = f"POST /v1/rerank HTTP/1.1\r\nHost: local\r\n{extra}\r\nContent-Length: {len(follow_up)}\r\n\r\n".encode()
+            with socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM) as sock:
+                sock.settimeout(3)
+                sock.connect(str(self.fx.sock))
+                sock.sendall(head + follow_up)
+                data = b""
+                while True:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+            self.assertEqual(data.count(b"HTTP/1."), 1, extra)
+
     def test_an_idle_connection_is_dropped_by_a_timeout(self):
         from ai_memory_service import server as server_module
         handler = server_module.make_handler(self.fx.app)

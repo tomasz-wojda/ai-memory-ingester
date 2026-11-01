@@ -325,10 +325,12 @@ def make_handler(app):
             started = time.time()
             try:
                 if self.headers.get("Origin") is not None:
+                    self.close_connection = True
                     raise ProtocolError(403, "forbidden", "Requests with an Origin header are refused")
                 supplied = (self.headers.get("Authorization") or "")
                 expected = f"Bearer {app.token}"
                 if not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+                    self.close_connection = True
                     raise ProtocolError(401, "unauthorized", "Missing or wrong token")
                 try:
                     length = int(self.headers.get("Content-Length") or 0)

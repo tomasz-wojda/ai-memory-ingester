@@ -49,7 +49,7 @@ class TestReconciliationSuite {
         [
             'Config', 'TicketKey', 'FacetPath', 'TimestampRepair', 'MemoryExclusion', 'TurnClassifier', 'TurnDocument',
             'TurnEmitter', 'JournalEvent', 'JournalStore', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
-            'TranscriptReconciler', 'JournalProjector', 'TicketFreshness', 'ResumeDigest'
+            'TranscriptReconciler', 'JournalProjector', 'FrontMatter', 'TicketFreshness', 'ResumeDigest'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         JournalEvent = loader.loadClass('JournalEvent')

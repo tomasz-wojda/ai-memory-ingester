@@ -481,7 +481,7 @@ class TestQuerySuite {
         groovy.grape.Grape.grab(classLoader: sharedGcl, group: 'org.slf4j', module: 'slf4j-nop', version: '2.0.12')
         Thread.currentThread().contextClassLoader = sharedGcl
 
-        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
+        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'FrontMatter', 'MemoryEngine', 'TimestampRepair', 'ChatLogParser',
          'FacetPath', 'MemoryExclusion', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
          'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter',
          'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter', 'TranscriptReconciler', 'JournalProjector',

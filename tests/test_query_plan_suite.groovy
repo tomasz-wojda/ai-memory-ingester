@@ -254,7 +254,7 @@ class TestQueryPlanSuite {
     private static void initialize() {
         loader = new GroovyClassLoader(TestQueryPlanSuite.classLoader)
         Thread.currentThread().contextClassLoader = loader
-        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
+        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
          'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'MemoryRetrieval', 'FederatedEngine', 'EvalMetrics', 'GoldSet',
          'SemanticStore', 'EvalRunner'].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         loader.parseClass(new File('tests/SemanticFixtureBuilder.groovy'))

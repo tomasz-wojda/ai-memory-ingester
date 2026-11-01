@@ -70,7 +70,7 @@ class TestChatLogSuite {
         groovy.grape.Grape.grab(classLoader: loader, group: 'org.xerial', module: 'sqlite-jdbc', version: '3.45.1.0')
         Thread.currentThread().contextClassLoader = loader
         [
-            'Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
+            'Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'FrontMatter', 'MemoryEngine',
             'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
             'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
             'TicketFreshness', 'ResumeDigest', 'TicketRetrieval', 'DatasetRegistry', 'SetRegistry',

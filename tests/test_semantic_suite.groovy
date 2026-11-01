@@ -28,10 +28,12 @@ class TestSemanticSuite {
             data = fixture.data as File
             Config.setDataDir(data.absolutePath)
             testPassageBuilder()
+            testFrontMatterParsing()
             testClientWithoutService()
             startService()
             SemanticClient.resetCircuit()
             testClient()
+            testClientBadRequestKeepsCircuitClosed()
             testRerank()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
@@ -80,6 +82,35 @@ class TestSemanticSuite {
 
     private static List<String> ids(Map result) {
         return (result.results as List<Map>).collect { Map row -> "${row.origin_db}:${row.source_archive}:${row.file_path}".toString() }
+    }
+
+    private static void testFrontMatterParsing() {
+        Class freshness = loader.loadClass('FrontMatter')
+        Class ticketFreshness = loader.loadClass('TicketFreshness')
+        Map plain = freshness.split("---\nmode: x\n---\nbody\n") as Map
+        verify('front matter is split from the body', plain != null && plain.front == 'mode: x' && plain.body == 'body\n')
+        Map borrowed = freshness.split("---\n\n--- \n") as Map
+        verify('a closing marker may borrow the newline of the opening run', borrowed != null && borrowed.front == '' && borrowed.body == '')
+        verify('text without a closing marker has no front matter', freshness.split("---\nmode: x\nbody") == null)
+        verify('text without an opening marker has no front matter', freshness.split("body\n---\n") == null)
+        verify('front matter metadata is still read', ticketFreshness.frontMatter("---\nmode: \"execute\"\n---\nbody")['mode'] == 'execute')
+        String hostile = '---' + ('\n' * 300000) + 'tail'
+        long began = System.nanoTime()
+        Map hostileSplit = freshness.split(hostile) as Map
+        Map hostileMeta = ticketFreshness.frontMatter(hostile) as Map
+        List<Map> hostilePassages = PassageBuilder.split([origin_db: 'a.db', source_archive: 'chat:turns', file_path: 'x.md', content: hostile]) as List<Map>
+        long elapsedMs = (System.nanoTime() - began).intdiv(1_000_000)
+        verify('a hostile run of newlines is parsed in linear time', hostileSplit == null && hostileMeta.isEmpty() && elapsedMs < 3000 && hostilePassages != null)
+    }
+
+    private static void testClientBadRequestKeepsCircuitClosed() {
+        SemanticClient.resetCircuit()
+        Map bad = client().upsertPassages([[origin_db: 'x']]) as Map
+        verify('a bad request is reported as bad_request', !bad.ok && bad.reason == 'bad_request')
+        Map key = [origin_db: 'circuit.db', source_archive: 'chat:turns', file_path: 'circuit/turn-1.md']
+        Map good = client().upsertPassages([key + [content_hash: 'h', passages: [[section: 'user', start: 0, end: 4, tokens: 1, text: 'okay']]]]) as Map
+        verify('a bad request does not open the circuit', good.ok)
+        client().deletePassages([key])
     }
 
     private static void testPassageBuilder() {
@@ -266,6 +297,17 @@ why do exports fail
         verify('reindex encodes vectors when a late model exists', rebuild.out.contains('encode=done'))
         Map help = command(['reindex', '--help'])
         verify('reindex --help prints usage', help.code == 0 && help.out.contains('--verify'))
+        def engine = loader.loadClass('MemoryEngine').getDeclaredConstructor(String).newInstance(new File(data, 'convo.db').absolutePath)
+        try {
+            String huge = 'zzqq ' * 200000
+            engine.insertDocument('test:huge', 'huge/big.md', 'big.md', '.md', huge.length(), huge)
+            engine.insertDocument('test:huge', 'huge/small.md', 'small.md', '.md', 20, 'small zzqq document')
+        } finally {
+            engine.close()
+        }
+        Map large = command(['reindex', '--archives', 'test:huge', '--data-dir', data.absolutePath])
+        verify('reindex skips a document that cannot fit in one call and reports it', large.code == 1 && large.out.contains('oversized=1') && large.err.contains('does not fit'))
+        verify('reindex still indexes the other documents after an oversized one', large.out.contains('documents=1') && large.out.contains('orphan_check=ok'))
     }
 
     private static void testCommandLine() {
@@ -301,7 +343,7 @@ why do exports fail
     private static void initialize() {
         loader = new GroovyClassLoader(TestSemanticSuite.classLoader)
         Thread.currentThread().contextClassLoader = loader
-        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
+        ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
          'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'MemoryRetrieval', 'FederatedEngine',
          'EvalMetrics', 'GoldSet', 'SemanticStore', 'EvalRunner'].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         loader.parseClass(new File('tests/SemanticFixtureBuilder.groovy'))

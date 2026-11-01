@@ -196,7 +196,7 @@ groovy.grape.Grape.grab(
 )
 
 // Load library modules in dependency order
-['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'MemoryEngine',
+['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'ArchiveHandler', 'ContentExtractor', 'FrontMatter', 'MemoryEngine',
  'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
  'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
  'MemoryLock', 'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',

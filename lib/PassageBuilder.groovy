@@ -26,7 +26,7 @@ class PassageBuilder {
     static List<Map> split(Map doc) {
         String content = doc.content?.toString() ?: ''
         Map meta = TicketFreshness.frontMatter(content)
-        String body = content.replaceFirst(/(?s)^---\s*\n.*?\n---\s*\n/, '')
+        String body = FrontMatter.strip(content)
         List<Map> passages = []
         sections(doc.source_archive?.toString(), body).each { Map section ->
             String text = section.text as String

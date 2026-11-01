@@ -1,6 +1,6 @@
 # Security Review of the Built Code (T047)
 
-Status: review done on 2026-11-01 by reading the code with the `security-audit` skill method (real trust boundaries, evidence, smallest fix). It is a **guidance-mode review, not the skill's full audit workflow**: the full workflow writes a run folder outside the repository and uses parallel agents; it was not run. Part of [the specification](specification.md); threats are from [security-privacy.md](security-privacy.md).
+Status: review done on 2026-11-01 by reading the code with the `security-audit` skill method (real trust boundaries, evidence, smallest fix). Section 1 to 3 are a guidance-mode review. Section 4 records the skill's full workflow, run afterwards at the `quick` profile. Part of [the specification](specification.md); threats are from [security-privacy.md](security-privacy.md).
 
 Scope: `service/ai_memory_service/` (server, protocol, store, backends, integrity, doctor, maxsim, config), `lib/SemanticClient.groovy`, `lib/PassageBuilder.groovy`, `lib/RerankStage.groovy`, `11_reindex.groovy`, the sweep hook in `07_sweep_memory.groovy`.
 
@@ -41,11 +41,26 @@ Scope: `service/ai_memory_service/` (server, protocol, store, backends, integrit
 | The model checksum is verified at load, not on every use; a file swapped on disk while the service runs is not noticed | The model folder is owned by the user; the same user can already read the token | Re-check on `admin/reload`; `doctor` re-checks on demand |
 | The TCP option (`tcp_port`) is in the configuration but not built; only the Unix socket exists | Not needed; smaller attack surface | If built, it needs the `Origin` rule, a connection cap and its own review |
 | Python packages and model weights are not installed, so supply-chain controls (hashed requirements, signed manifests) are untested | Decisions Q1, Q2, D-21, D-22 are open | Review again when the real environment exists |
-| The `security-audit` skill's full workflow was not run | It writes outside the repository and uses parallel agents | Run it after a real model is installed, if wanted |
+| The `security-audit` skill's full workflow ran only at the `quick` profile | One wave, scoped, source only; see section 4 | Run the `standard` profile after a real model is installed, if wanted |
+
+## 4. Full audit workflow (quick profile)
+
+Run on 2026-11-01 with the `security-audit` skill. The run folder is outside the repository (`~/security-audit-skill/ai-memory-ingester/run-1/`) and holds the architecture note, the coverage ledger, `findings.json`, `REPORT.md`, `FINDINGS-DETAIL.md` and `NEEDS-VALIDATION.md`. Both validators pass.
+
+- **Partial pass.** Profile `quick`, scoped to the service and its clients, source only: no OS sandbox and no trusted artifact promotion exist on this machine, so no hunter or verifier ran target code. 15 of 18 agents were used: 4 reconnaissance, 7 hunters, 1 critic, 3 verifiers.
+- **Run status: incomplete**, reason `no_sandbox_for_independent_reproduction`. The one confirmed record has a timing that the parent measured outside the execution boundary; no independent verifier could reproduce it under that boundary.
+- **Ledger:** 9 units, 7 covered, 2 deferred (pid file and `stop` trust; socket and token locations outside the run directory), 0 candidates, 0 blocked.
+- **Confirmed (low):** the front-matter regular expression takes quadratic time on a leading run of newlines (80,000 newlines took 12.4 s). Fixed with a linear parser in `lib/FrontMatter.groovy`, fuzz-tested against the old pattern on 20,000 inputs, and applied to all seven uses, including archive ingestion.
+- **Needs validation:** one oversized document makes every reindex fail before orphan removal. Confirmed by a verifier from source, not run before the fix. Fixed: upserts are grouped under 1000 passages and 2 MB, an oversized document is skipped and reported, failed calls are counted, orphan removal still runs, and the summary line gains `failed`, `oversized`, `unknown` and `orphan_check`.
+- **Rejected:** the state-capsule pin does not check `origin_db`. An archive cannot be named `worklog:state`, and archive ingestion does not reach the searched databases. Kept as hardening.
+- **Further fixes from the critic's weak checks:** a 400 no longer opens the 30 s client circuit; a malformed 200 reply degrades to the lexical order; the server closes the connection after a 401 or 403; the launchers run Python with `-P`.
+- **Not fixed, listed as hardening in the run report:** no cap on connection threads, no total body deadline, `purge_cache` has no caller, no peer-credential check, the model folder checksum skips symlinked subfolders, and others. All need the token or the owner.
+
+Tests added: 6 parser, 2 client and 2 reindex cases in `tests/test_semantic_suite.groovy` (84 pass) and one connection case in `tests/service/test_server.py`, shown to fail without its fix.
 
 ## Summary (STE)
 
-I read the built service and client for security problems. I found six small problems and fixed all of them, each with a test. The main ones were a bad length header that could hold a thread, no time limit for idle connections, a config key that could turn on the test model, and unlimited log text. The service has no network connection, keeps its files private, and writes only to its own database. The checks that need a real model and a real Python environment cannot run yet. I did not run the full audit workflow of the skill.
+I read the built service and client for security problems. I found six small problems and fixed all of them, each with a test. The main ones were a bad length header that could hold a thread, no time limit for idle connections, a config key that could turn on the test model, and unlimited log text. The service has no network connection, keeps its files private, and writes only to its own database. The checks that need a real model and a real Python environment cannot run yet. I also ran the skill's quick audit. It found one slow-pattern problem and one reindex problem, and both are fixed. That audit is a partial pass.
 
 **Remaining 20% (not STE100):** file, endpoint and test names; the words "bearer", "socket", "checksum", "safetensors", "supply chain", "severity" and "hash"; the tables; some sentences over 20 words.
 

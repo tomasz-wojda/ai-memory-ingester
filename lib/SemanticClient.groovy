@@ -143,10 +143,10 @@ class SemanticClient {
         int status = reply.status as int
         if (status == 200) return [ok: true, status: status, body: reply.body, reason: null]
         String code = ((reply.body as Map)?.error ?: '').toString()
-        String reason = [401: 'unauthorized', 404: 'model_unavailable', 409: 'contract_mismatch', 429: 'service_busy', 503: 'model_unavailable', 504: 'deadline_exceeded'][status]
+        String reason = [400: 'bad_request', 401: 'unauthorized', 404: 'model_unavailable', 409: 'contract_mismatch', 429: 'service_busy', 503: 'model_unavailable', 504: 'deadline_exceeded'][status]
         if (code == 'index_stale') reason = 'index_stale'
         reason = reason ?: 'service_down'
-        if (reason != 'service_busy') openCircuit(path)
+        if (reason != 'service_busy' && reason != 'bad_request') openCircuit(path)
         return [ok: false, status: status, body: reply.body, reason: reason, error: code]
     }
 

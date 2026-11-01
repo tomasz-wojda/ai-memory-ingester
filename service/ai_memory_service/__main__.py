@@ -4,6 +4,8 @@ import os
 import secrets
 import signal
 import socket
+import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -47,6 +49,27 @@ def is_running(config):
         return False
 
 
+def process_is_service(pid):
+    try:
+        result = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "ai_memory_service" in result.stdout
+
+
+def prepare_run_directory(run_dir, own_names):
+    run_dir.mkdir(parents=True, exist_ok=True)
+    info = os.stat(run_dir)
+    if info.st_uid != os.getuid():
+        return f"The run directory belongs to another user: {run_dir}"
+    foreign = sorted(set(os.listdir(run_dir)) - set(own_names))
+    if stat.S_IMODE(info.st_mode) & 0o077 and foreign:
+        return (f"The run directory holds other files and is open to other users: {run_dir}\n"
+                "Set AI_MEMORY_SERVICE_SOCKET to a path inside a directory that only the service uses.")
+    os.chmod(run_dir, 0o700)
+    return None
+
+
 def command_serve(args, config):
     for variable in OFFLINE_VARIABLES:
         os.environ.setdefault(variable, "1")
@@ -56,8 +79,10 @@ def command_serve(args, config):
               "Set AI_MEMORY_SERVICE_SOCKET to a shorter path.", file=sys.stderr)
         return 2
     run_dir = sock.parent
-    run_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(run_dir, 0o700)
+    problem = prepare_run_directory(run_dir, {sock.name, token_path(config).name, pid_path(config).name})
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
     if sock.exists():
         if is_running(config):
             print("The service is already running.", file=sys.stderr)
@@ -65,12 +90,16 @@ def command_serve(args, config):
         sock.unlink()
     token = secrets.token_hex(32)
     descriptor = os.open(token_path(config), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(descriptor, 0o600)
     with os.fdopen(descriptor, "w") as handle:
         handle.write(token)
     app = App(config, token, allow_stub=args.stub)
     server = UnixHTTPServer(str(sock), make_handler(app))
     os.chmod(sock, 0o600)
-    pid_path(config).write_text(str(os.getpid()))
+    pid_descriptor = os.open(pid_path(config), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(pid_descriptor, 0o600)
+    with os.fdopen(pid_descriptor, "w") as pid_handle:
+        pid_handle.write(str(os.getpid()))
 
     def shutdown(signum, frame):
         raise KeyboardInterrupt
@@ -107,13 +136,22 @@ def command_stop(args, config):
     if not path.exists():
         print("The service is not running.")
         return 0
-    pid = int(path.read_text().strip())
     try:
-        os.kill(pid, signal.SIGTERM)
+        pid = int(path.read_text().strip())
+        os.kill(pid, 0)
     except ProcessLookupError:
         path.unlink(missing_ok=True)
         print("The service is not running (removed a stale pid file).")
         return 0
+    except (ValueError, PermissionError):
+        path.unlink(missing_ok=True)
+        print("The pid file did not belong to the service; removed it and sent no signal.")
+        return 0
+    if not process_is_service(pid):
+        path.unlink(missing_ok=True)
+        print("The pid file did not belong to the service; removed it and sent no signal.")
+        return 0
+    os.kill(pid, signal.SIGTERM)
     deadline = time.time() + 5
     while time.time() < deadline:
         try:

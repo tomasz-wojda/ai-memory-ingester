@@ -87,6 +87,7 @@ class SemanticClient {
     Map call(String method, String path, Object body, int timeoutMillis) {
         if (!socketFile.exists()) return failure('service_down', 0)
         if (System.currentTimeMillis() < (CIRCUITS.get(path) ?: 0L)) return failure('service_circuit_open', 0)
+        if (!locationIsPrivate()) return failure('unsafe_socket', 0)
         String token
         try {
             token = tokenFile.getText('UTF-8').trim()
@@ -106,6 +107,23 @@ class SemanticClient {
         } catch (ExecutionException ignored) {
             openCircuit(path)
             return failure('service_down', 0)
+        }
+    }
+
+    private boolean locationIsPrivate() {
+        String user = System.getProperty('user.name')
+        try {
+            return [socketFile, socketFile.absoluteFile.parentFile].every { File file ->
+                java.nio.file.Path nio = file.toPath()
+                boolean mine = java.nio.file.Files.getOwner(nio, java.nio.file.LinkOption.NOFOLLOW_LINKS).name == user
+                Set perms = java.nio.file.Files.getPosixFilePermissions(nio, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                boolean closed = perms.every { !it.name().startsWith('GROUP_') && !it.name().startsWith('OTHERS_') }
+                return mine && closed
+            }
+        } catch (UnsupportedOperationException ignored) {
+            return true
+        } catch (IOException ignored) {
+            return false
         }
     }
 

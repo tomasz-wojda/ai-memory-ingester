@@ -34,6 +34,7 @@ class TestSemanticSuite {
             SemanticClient.resetCircuit()
             testClient()
             testClientBadRequestKeepsCircuitClosed()
+            testClientRefusesAnOpenSocketDirectory()
             testRerank()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
@@ -101,6 +102,21 @@ class TestSemanticSuite {
         List<Map> hostilePassages = PassageBuilder.split([origin_db: 'a.db', source_archive: 'chat:turns', file_path: 'x.md', content: hostile]) as List<Map>
         long elapsedMs = (System.nanoTime() - began).intdiv(1_000_000)
         verify('a hostile run of newlines is parsed in linear time', hostileSplit == null && hostileMeta.isEmpty() && elapsedMs < 3000 && hostilePassages != null)
+    }
+
+    private static void testClientRefusesAnOpenSocketDirectory() {
+        SemanticClient.resetCircuit()
+        File runDir = new File(workspace, '.ai-worklog/run')
+        java.nio.file.Path nio = runDir.toPath()
+        Set original = java.nio.file.Files.getPosixFilePermissions(nio)
+        try {
+            java.nio.file.Files.setPosixFilePermissions(nio, java.nio.file.attribute.PosixFilePermissions.fromString('rwxr-xr-x'))
+            Map refused = client().health() as Map
+            verify('the token is not sent when the socket directory is open to other users', !refused.ok && refused.reason == 'unsafe_socket')
+        } finally {
+            java.nio.file.Files.setPosixFilePermissions(nio, original)
+        }
+        verify('the client works again once the directory is private', client().health().ok as boolean)
     }
 
     private static void testClientBadRequestKeepsCircuitClosed() {

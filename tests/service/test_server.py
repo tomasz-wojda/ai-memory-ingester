@@ -388,6 +388,41 @@ class CommandLineTest(unittest.TestCase):
                 process.kill()
             shutil.rmtree(directory, ignore_errors=True)
 
+    def test_stop_never_signals_a_process_that_is_not_the_service(self):
+        directory = Path(short_temp())
+        env = {key: value for key, value in os.environ.items() if key != "AI_MEMORY_SERVICE_SOCKET"}
+        run_dir = directory / ".ai-worklog" / "run"
+        run_dir.mkdir(parents=True)
+        bystander = subprocess.Popen(["sleep", "30"])
+        try:
+            (run_dir / "memory-service.pid").write_text(str(bystander.pid))
+            stop = subprocess.run([str(ROOT / "service" / "ai-memory-service"), "--workspace-root", str(directory), "stop"], env=env, capture_output=True, text=True)
+            self.assertEqual(stop.returncode, 0, stop.stdout + stop.stderr)
+            self.assertIn("did not belong", stop.stdout)
+            self.assertIsNone(bystander.poll())
+            self.assertFalse((run_dir / "memory-service.pid").exists())
+        finally:
+            bystander.kill()
+            bystander.wait()
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def test_serve_refuses_to_change_a_shared_directory(self):
+        directory = Path(short_temp())
+        shared = directory / "shared"
+        shared.mkdir()
+        (shared / "other-file.txt").write_text("not ours")
+        os.chmod(shared, 0o755)
+        env = {**os.environ, "AI_MEMORY_SERVICE_SOCKET": str(shared / "s.sock")}
+        try:
+            result = subprocess.run([str(ROOT / "service" / "ai-memory-service"), "--workspace-root", str(directory), "--db", str(directory / "semantic.db"), "serve", "--stub"],
+                                    env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("other files", result.stderr)
+            self.assertEqual(stat.S_IMODE(os.stat(shared).st_mode), 0o755)
+            self.assertFalse((shared / "memory-service.token").exists())
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
     def test_a_too_long_socket_path_is_refused_with_a_clear_message(self):
         directory = Path(short_temp())
         try:

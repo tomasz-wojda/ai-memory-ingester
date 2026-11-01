@@ -118,7 +118,9 @@ class TestQueryPlanSuite {
 
         Map keyword = search(data, 'nginx timeout')
         Map keywordOff = search(data, 'nginx timeout', [relax_mode: 'off'])
-        verify('a keyword query that works is unchanged', ids(keyword) == ids(keywordOff) && (keyword.query_plan as Map).relaxed_used == false)
+        verify('a keyword query that works keeps its first result and every strict row', ids(keyword).take(1) == ids(keywordOff).take(1) && ids(keyword).containsAll(ids(keywordOff)))
+        Map keywordOld = search(data, 'nginx timeout', [relax_min_results: 1])
+        verify('relax_min_results 1 restores the zero-row rule exactly', ids(keywordOld) == ids(keywordOff) && (keywordOld.query_plan as Map).relaxed_used == false)
 
         Map forced = search(data, 'nginx timeout', [relax_mode: 'on'])
         verify('relax on adds the relaxed pool even when strict has rows', (forced.query_plan as Map).relaxed_used == true)
@@ -161,7 +163,7 @@ class TestQueryPlanSuite {
         verify('relaxed ndcg on questions beats baseline', (q1.ndcg_10 as double) > (q0.ndcg_10 as double) + 0.3d)
         Map k0 = (s0.by_class as Map).K as Map
         Map k1 = (s1.by_class as Map).K as Map
-        verify('keyword class does not change', k0.ndcg_10 == k1.ndcg_10 && k0.recall_50 == k1.recall_50)
+        verify('keyword class does not get worse', (k1.ndcg_10 as double) >= (k0.ndcg_10 as double) && (k1.recall_50 as double) >= (k0.recall_50 as double))
         Map x0 = (s0.by_class as Map).X as Map
         Map x1 = (s1.by_class as Map).X as Map
         verify('explicit class does not change', x0.ndcg_10 == x1.ndcg_10 && x0.zero_result == x1.zero_result)

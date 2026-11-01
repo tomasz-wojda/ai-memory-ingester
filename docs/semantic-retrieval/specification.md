@@ -142,7 +142,7 @@ Rules:
    - **relaxed**: stop words removed, remaining terms joined with `OR`, each term of five or more letters also given as a prefix term cut to `max(4, length - 3)` letters (a light stemmer that works for English and Polish forms). Terms of fewer than four letters stay whole.
 4. Stop-word lists: English and Polish, kept in `lib/StopWords.groovy`, with Polish words listed both with and without diacritics.
 5. Fold case and diacritics the same way the index does (`unicode61 remove_diacritics 2`), so a query typed without diacritics matches indexed text with them.
-6. The relaxed form is used only when the strict form returns fewer than `relax_min_results` rows or when `--relax on` is given. **The first release uses 1** (zero rows only, decision D-23), so queries that work today are unchanged; the default may widen toward 10 after the gold set shows a gain. The result records which form ran.
+6. The relaxed form is used only when the strict form returns fewer than `relax_min_results` rows or when `--relax on` is given. **The default is 10** (decision D-23, raised from 1 on the owner's instruction on 2026-11-01). Strict rows stay in the result and the first result is unchanged in the cases measured; `AI_MEMORY_RELAX_MIN=1` restores the zero-row rule. The result records which form ran.
 7. **Polish ł.** For a query guessed as Polish (a Polish letter or more Polish than English stop words), each word with one or two letters `l` also gets variants with `ł` ("bylo" gives "było"), because the index keeps ł. Decision D-24.
 8. No model is needed in this stage. It is deterministic and testable alone.
 
@@ -321,7 +321,7 @@ Differences between this specification and the build:
 1. **Passage windows** are cut in characters (900, stride 675), the character fallback of section 6.3. The model tokenizer is not used.
 2. **Which queries are re-ranked.** Only `query` with free text that is not an explicit query (D-26). Ticket-only queries and the ticket path with terms are not.
 3. **Service endpoints** added: `/v1/passages/missing` and `/v1/passages/docs` (for `reindex`), and a `docs` filter on `/v1/search/late`.
-4. **The first release trigger** of the relaxed query is zero strict rows (D-23).
+4. **The trigger** of the relaxed query is fewer than 10 strict rows (D-23); `AI_MEMORY_RELAX_MIN=1` restores zero rows.
 5. **Circuit** per endpoint (D-27); **stub** only with `--stub` (D-28); **`serve --init`** does not start (D-29); **sweep index hook** off by default (D-30).
 6. **Added after the first build:** a numpy scan for the late index (D-31) and candidate re-scoring with `--rerank late` (D-32).
 7. **Security review:** done in guidance mode; six findings fixed ([security-review.md](security-review.md)).

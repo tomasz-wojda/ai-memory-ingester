@@ -41,7 +41,7 @@ class Config {
     static final int RESUME_BUDGET_BYTES = 22000
     static final int TICKET_CONTEXT_BUDGET_BYTES = 22000
     static final int RESUME_RECENT_TURNS = 12
-    static final int RELAX_MIN_RESULTS = 1
+    static final int RELAX_MIN_RESULTS = 10
     static final int RERANK_DEPTH = 30
     static final int RERANK_BUDGET_MS = 1200
     static final int RERANK_MIN_SCORED = 10
@@ -397,6 +397,22 @@ class Config {
     static boolean relaxEnabled() {
         String value = System.getProperty('ai.memory.relax') ?: System.getenv('AI_MEMORY_RELAX')
         return value != '0'
+    }
+
+    /**
+     * The relaxed query runs when the strict query returns fewer rows than this.
+     * AI_MEMORY_RELAX_MIN overrides the default (1 or more; anything else is ignored).
+     *
+     * @return Minimum number of strict rows that keeps the relaxed query off
+     */
+    static int relaxMinResults() {
+        String value = System.getProperty('ai.memory.relax_min') ?: System.getenv('AI_MEMORY_RELAX_MIN')
+        try {
+            int parsed = Integer.parseInt(value?.trim() ?: '')
+            return parsed >= 1 ? parsed : RELAX_MIN_RESULTS
+        } catch (NumberFormatException ignored) {
+            return RELAX_MIN_RESULTS
+        }
     }
 
     /**

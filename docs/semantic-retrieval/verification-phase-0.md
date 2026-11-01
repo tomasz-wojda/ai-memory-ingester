@@ -13,7 +13,7 @@ Status: built and checked on 2026-11-01. This is an **interim** record. Gate G1 
 | T004 | `lib/GoldSet.groovy`; commands `eval --gold-candidates`, `--validate`, `--pool-export` |
 | T006 | `lib/StopWords.groovy`, `lib/TextFold.groovy` |
 | T007 | `lib/QueryPlanner.groovy` |
-| T008 | `MemoryRetrieval`: pool `bm25_relaxed`, relaxed query only when the strict query returns zero rows; the same fallback in `TicketRetrieval.semanticCandidates`; weight 2 in `SignalFusion` |
+| T008 | `MemoryRetrieval`: pool `bm25_relaxed`, relaxed query only when the strict query returns zero rows (fewer than 10 since 2026-11-01, D-23); the fallback in `TicketRetrieval.semanticCandidates` still runs only on zero rows; weight 2 in `SignalFusion` |
 | T009 | `--relax auto|on|off`, `--explain`, `AI_MEMORY_RELAX=0` |
 | T010 | `eval` command: `10_eval.groovy`, `lib/EvalRunner.groovy`, `lib/SemanticStore.groovy`, runs stored in `data/semantic.db` |
 | extra | `RESUME.md` index shows the phase (from `phase`, then verification state, then `governance_mode`) instead of "unknown" |
@@ -69,7 +69,7 @@ Command-line checks with the rebuilt jar on generated data: `sweep-memory` ends 
 
 ## 5. Differences from the specification
 
-1. **D-23.** The relaxed query runs only on zero rows (`relax_min_results` = 1), not below 10.
+1. **D-23.** Built with the relaxed query on zero rows only (`relax_min_results` = 1). Changed on 2026-11-01 on the owner's instruction to the spec value of 10; see [decision-log.md](decision-log.md).
 2. **D-24.** Polish ł variants only for queries guessed as Polish; `pod` and `go` are not stop words.
 3. **Prefix rule example.** The rule `max(4, length - 3)` gives `trae*` for "traefik" (the contract example now matches).
 4. **Five existing suites** (chatlog, query, retrieval, shadow validation, worklog) got the three new classes added to their class-loading list, because `MemoryRetrieval` now depends on them. No check was changed.

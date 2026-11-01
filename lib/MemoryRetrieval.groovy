@@ -307,7 +307,7 @@ class MemoryRetrieval {
         String mode = (options.relax_mode ?: 'auto').toString()
         if (mode == 'off' || !Config.relaxEnabled() || plan.explicit || !plan.relaxed) return false
         if (mode == 'on') return true
-        int minimum = (options.relax_min_results ?: Config.RELAX_MIN_RESULTS) as int
+        int minimum = (options.relax_min_results ?: Config.relaxMinResults()) as int
         return strictRows < minimum
     }
 

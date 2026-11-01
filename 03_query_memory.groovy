@@ -748,7 +748,7 @@ static void executeEnhancedSearch(
         List<String> planLines = explainLines(plan) + semanticLines(result)
         if (jsonOutput) planLines.each { System.err.println(it) } else planLines.each { println it }
     } else if (plan.relaxed_used && !jsonOutput) {
-        println "Relaxed query used (the strict query found no rows): ${plan.relaxed}"
+        println "Relaxed query used (the strict query found too few rows): ${plan.relaxed}"
     }
     if (jsonOutput) {
         emitJsonArray(matches.collect { Map row ->

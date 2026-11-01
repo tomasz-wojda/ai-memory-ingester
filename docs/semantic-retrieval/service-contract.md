@@ -40,7 +40,7 @@ File `.ai-worklog/memory-service.json` (created by `ai-worklog memory serve --in
   "default_deadline_ms": 1200,
   "rerank_depth": 30,
   "rerank_min_scored": 10,
-  "relax_min_results": 1,
+  "relax_min_results": 10,
   "score_cache_days": 14,
   "index_archives": ["chat:turns", "worklog:chunks", "worklog:state"]
 }

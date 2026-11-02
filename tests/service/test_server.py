@@ -291,6 +291,81 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.fx.app.db.counts()["score_cache"], 0)
         self.assertEqual(self.fx.app.purge_if_due(), 0)
 
+    def test_connections_beyond_the_cap_get_429_and_freed_slots_are_reused(self):
+        import socket as socketlib
+        fx = ServiceFixture(max_connections=2)
+        held = []
+        try:
+            for _ in range(2):
+                sock = socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM)
+                sock.connect(str(fx.sock))
+                held.append(sock)
+            time.sleep(0.3)
+            status, body = fx.request("GET", "/v1/health")
+            self.assertEqual((status, body["error"]), (429, "busy"))
+            held.pop().close()
+            time.sleep(0.5)
+            self.assertEqual(fx.request("GET", "/v1/health")[0], 200)
+        finally:
+            for sock in held:
+                sock.close()
+            fx.close()
+
+    def test_a_body_that_arrives_too_slowly_gets_408(self):
+        import socket as socketlib
+        fx = ServiceFixture(overrides={"body_deadline_s": 1})
+        try:
+            head = b"POST /v1/rerank HTTP/1.1\r\nHost: local\r\nAuthorization: Bearer test-token\r\nContent-Length: 200\r\n\r\n"
+            with socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM) as sock:
+                sock.settimeout(8)
+                sock.connect(str(fx.sock))
+                sock.sendall(head)
+                started = time.time()
+                for _ in range(6):
+                    try:
+                        sock.sendall(b"x")
+                    except OSError:
+                        break
+                    time.sleep(0.4)
+                data = b""
+                while True:
+                    try:
+                        chunk = sock.recv(65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    data += chunk
+            self.assertEqual(int(data.split(b" ", 2)[1]), 408)
+            self.assertLess(time.time() - started, 6)
+        finally:
+            fx.close()
+
+    def test_a_failed_model_load_is_remembered_for_a_short_time(self):
+        from ai_memory_service import server as server_module
+        calls = []
+
+        def failing(name, config, allow_stub):
+            calls.append(name)
+            raise backends.ModelUnavailable("the model folder is missing")
+
+        original = server_module.build_backend
+        server_module.build_backend = failing
+        try:
+            for _ in range(3):
+                status, body = self.rerank()
+                self.assertEqual((status, body["error"]), (503, "model_unavailable"))
+            self.assertEqual(len(calls), 1)
+            self.fx.app.failed_load_seconds = 0
+            self.rerank()
+            self.assertEqual(len(calls), 2)
+            self.fx.app.failed_load_seconds = 30
+            self.fx.app.reload()
+            self.rerank()
+            self.assertEqual(len(calls), 3)
+        finally:
+            server_module.build_backend = original
+
     def test_a_stale_index_is_refused(self):
         self.fx.app.db.set_manifest({"late_model_id": "another-model"})
         status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3})

@@ -71,6 +71,8 @@ class App:
         self.encoder = None
         self.lock = threading.Lock()
         self.last_purge = 0.0
+        self.failures = {}
+        self.failed_load_seconds = 30.0
         self.purge_if_due()
 
     def purge_if_due(self):
@@ -84,33 +86,46 @@ class App:
         self.worker.jobs.put(None)
         self.db.close()
 
+    def refuse_if_recently_failed(self, key):
+        failure = self.failures.get(key)
+        if failure and time.time() - failure[0] < self.failed_load_seconds:
+            raise ProtocolError(503, "model_unavailable", failure[1])
+        self.failures.pop(key, None)
+
+    def remember_failure(self, key, error):
+        self.failures[key] = (time.time(), str(error))
+        raise ProtocolError(503, "model_unavailable", str(error))
+
     def backend(self, name):
         with self.lock:
             if name in self.backends:
                 return self.backends[name]
+            self.refuse_if_recently_failed(("backend", name))
             try:
                 backend = build_backend(name, self.config, self.allow_stub)
                 backend.load()
             except KeyError:
                 raise ProtocolError(404, "unknown_model", f"model {name} is not configured")
             except ModelUnavailable as error:
-                raise ProtocolError(503, "model_unavailable", str(error))
+                self.remember_failure(("backend", name), error)
             self.backends[name] = backend
             return backend
 
     def late_encoder(self):
         with self.lock:
             if self.encoder is None:
+                self.refuse_if_recently_failed(("encoder", ""))
                 try:
                     self.encoder = build_encoder(self.config, self.allow_stub)
                 except ModelUnavailable as error:
-                    raise ProtocolError(503, "model_unavailable", str(error))
+                    self.remember_failure(("encoder", ""), error)
             return self.encoder
 
     def reload(self):
         with self.lock:
             self.backends = {}
             self.encoder = None
+            self.failures = {}
 
     def rss_mb(self):
         usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -285,9 +300,34 @@ class App:
                 "bytes_on_disk": self.db.file_size(), "late_model": encoder.model_id if encoder else None}
 
 
+BUSY_REPLY = json.dumps({"error": "busy", "message": "Too many open connections"}).encode("utf-8")
+
+
 class UnixHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     address_family = socket.AF_UNIX
     daemon_threads = True
+
+    def __init__(self, address, handler, max_connections=32):
+        super().__init__(address, handler)
+        self.connection_slots = threading.BoundedSemaphore(max_connections)
+
+    def process_request(self, request, client_address):
+        if not self.connection_slots.acquire(blocking=False):
+            try:
+                request.settimeout(1.0)
+                request.sendall(b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                                b"Content-Length: " + str(len(BUSY_REPLY)).encode() + b"\r\n\r\n" + BUSY_REPLY)
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connection_slots.release()
 
     def server_bind(self):
         socketserver.TCPServer.server_bind(self)
@@ -360,7 +400,7 @@ def make_handler(app):
                 if length > app.config["max_body_bytes"]:
                     self.close_connection = True
                     raise ProtocolError(400, "bad_request", "The body is too large")
-                raw = self.rfile.read(length) if length else b""
+                raw = self.read_body(length, app.config["body_deadline_s"]) if length else b""
                 route = ROUTES.get((self.command, self.path.split("?")[0]))
                 if route is None:
                     raise ProtocolError(404, "not_found", "Unknown endpoint")
@@ -376,6 +416,28 @@ def make_handler(app):
                 self.respond(error.status, {"error": error.code, "message": error.message}, started, error.code)
             except Exception as error:  # noqa: BLE001
                 self.respond(500, {"error": "internal_error", "message": type(error).__name__}, started, "internal_error")
+
+        def read_body(self, length, deadline_seconds):
+            deadline = time.time() + deadline_seconds
+            chunks = []
+            remaining = length
+            while remaining > 0:
+                left = deadline - time.time()
+                if left <= 0:
+                    self.close_connection = True
+                    raise ProtocolError(408, "request_timeout", "The request body arrived too slowly")
+                self.connection.settimeout(min(self.timeout, left))
+                try:
+                    chunk = self.rfile.read1(min(remaining, 65536))
+                except (socket.timeout, TimeoutError):
+                    self.close_connection = True
+                    raise ProtocolError(408, "request_timeout", "The request body arrived too slowly")
+                if not chunk:
+                    self.close_connection = True
+                    raise ProtocolError(400, "bad_request", "The request body is shorter than Content-Length")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            return b"".join(chunks)
 
         do_GET = handle_any
         do_POST = handle_any

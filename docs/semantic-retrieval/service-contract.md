@@ -42,6 +42,8 @@ File `.ai-worklog/memory-service.json` (created by `ai-worklog memory serve --in
   "rerank_min_scored": 10,
   "relax_min_results": 10,
   "score_cache_days": 14,
+  "max_connections": 32,
+  "body_deadline_s": 30,
   "index_archives": ["chat:turns", "worklog:chunks", "worklog:state"]
 }
 ```
@@ -99,8 +101,9 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 | 403 | `forbidden` | `Origin` header present |
 | 404 | `unknown_model` | Model name not configured |
 | 409 | `contract_mismatch` | `contract_version` not supported |
-| 429 | `busy` | Queue full; retry later or degrade |
-| 503 | `model_unavailable` | Model not loaded, load failed or checksum mismatch |
+| 408 | `request_timeout` | The body did not arrive within `body_deadline_s` (30 s by default); the connection is closed |
+| 429 | `busy` | Queue full, or more than `max_connections` (32) connections are open; retry later or degrade |
+| 503 | `model_unavailable` | Model not loaded, load failed or checksum mismatch; a failed load is remembered for 30 seconds, and `admin/reload` clears it |
 | 504 | `deadline_exceeded` | No passage was scored before the deadline |
 
 ## 4. Other endpoints

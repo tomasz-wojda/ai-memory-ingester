@@ -43,7 +43,7 @@ def raw_request(sock_path, method, path, body=None, token=None, headers=None, ti
 
 
 class ServiceFixture:
-    def __init__(self, allow_stub=True, overrides=None):
+    def __init__(self, allow_stub=True, overrides=None, max_connections=32):
         self.directory = Path(short_temp())
         config = load_config(self.directory, {"db_path": str(self.directory / "semantic.db"), **(overrides or {})})
         config["socket"] = "run/s.sock"
@@ -52,7 +52,7 @@ class ServiceFixture:
         self.token = "test-token"
         self.app = App(config, self.token, allow_stub=allow_stub)
         self.sock = socket_path(config)
-        self.server = UnixHTTPServer(str(self.sock), make_handler(self.app))
+        self.server = UnixHTTPServer(str(self.sock), make_handler(self.app), max_connections)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 

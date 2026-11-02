@@ -94,7 +94,7 @@ def command_serve(args, config):
     with os.fdopen(descriptor, "w") as handle:
         handle.write(token)
     app = App(config, token, allow_stub=args.stub)
-    server = UnixHTTPServer(str(sock), make_handler(app))
+    server = UnixHTTPServer(str(sock), make_handler(app), int(config["max_connections"]))
     os.chmod(sock, 0o600)
     pid_descriptor = os.open(pid_path(config), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     os.fchmod(pid_descriptor, 0o600)

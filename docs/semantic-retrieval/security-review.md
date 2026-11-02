@@ -36,7 +36,7 @@ Scope: `service/ai_memory_service/` (server, protocol, store, backends, integrit
 
 | Risk | Why it stays | Next step |
 |---|---|---|
-| One handler thread per connection, no cap | A local process that holds the token can open many connections; each lives at most 15 seconds idle | Add a connection cap if the service ever listens on TCP (it does not by default) |
+| One handler thread per connection | Fixed on 2026-11-02: at most `max_connections` (32) connections are open, extra ones get 429, and a body must arrive within `body_deadline_s` (30 s) in total. A slow client can still hold a connection for up to that deadline | None |
 | `max_rss_mb` limits the model folder size, not the process memory; the in-memory late index is about 3.2 GB for the full corpus in half precision | Process memory is only reported by `/v1/health` | Enforce a limit when the real model and index size are known (T041) |
 | The model checksum is verified at load, not on every use; a file swapped on disk while the service runs is not noticed | The model folder is owned by the user; the same user can already read the token | Re-check on `admin/reload`; `doctor` re-checks on demand |
 | The TCP option (`tcp_port`) is in the configuration but not built; only the Unix socket exists | Not needed; smaller attack surface | If built, it needs the `Origin` rule, a connection cap and its own review |
@@ -55,7 +55,8 @@ Run on 2026-11-01 with the `security-audit` skill. The run folder is outside the
 - **Rejected:** the state-capsule pin does not check `origin_db`. An archive cannot be named `worklog:state`, and archive ingestion does not reach the searched databases. Kept as hardening.
 - **Further fixes from the critic's weak checks:** a 400 no longer opens the 30 s client circuit; a malformed 200 reply degrades to the lexical order; the server closes the connection after a 401 or 403; the launchers run Python with `-P`; `stop` signals only a process whose command line is the service; `serve` refuses to change a shared directory and sets the token and pid files to 0600; the client sends the token only to a socket and directory that are private to the caller.
 - **Hardening fixes on 2026-11-02, from the run report's notes:** `purge_cache` now runs at start and at most once an hour, so cached scores expire after `score_cache_days`; the delete, missing and upsert lists are capped at 2000 per call, and reindex removes orphans in chunks of 500; the configuration limits (queue size, body size, passage counts and the like) are checked and clamped, and a bad type falls back to the default; the remaining-passages count is one SQL `count(*)`, not a fetch of up to a million texts; badly typed filters on late search and badly typed passage numbers on upsert now give 400, not 500.
-- **Not fixed, listed as hardening in the run report:** no cap on connection threads, no total body deadline, `purge_cache` has no caller, no peer-credential check, the model folder checksum skips symlinked subfolders, and others. All need the token or the owner.
+- **Also fixed on 2026-11-02:** the cap on connections and the total body deadline (above), and a failed model load is remembered for 30 seconds, so a missing model does not re-hash the model folder on every call (`admin/reload` clears it).
+- **Not fixed, listed as hardening in the run report:** no peer-credential check, the model folder checksum skips symlinked subfolders, and others. All need the token or the owner.
 
 Tests added: 6 parser, 2 client and 2 reindex cases in `tests/test_semantic_suite.groovy` (84 pass) and one connection case in `tests/service/test_server.py`, shown to fail without its fix.
 

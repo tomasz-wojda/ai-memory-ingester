@@ -24,6 +24,8 @@ DEFAULTS = {
     "max_body_bytes": 4 * 1024 * 1024,
     "max_passages": 100,
     "max_passage_chars": 4000,
+    "max_connections": 32,
+    "body_deadline_s": 30,
 }
 
 
@@ -39,6 +41,8 @@ LIMITS = {
     "max_body_bytes": (1024, 64 * 1024 * 1024),
     "max_passages": (1, 1000),
     "max_passage_chars": (100, 100000),
+    "max_connections": (1, 1024),
+    "body_deadline_s": (1, 600),
 }
 
 

@@ -84,6 +84,8 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual((config["queue_size"], config["batch_size"], config["max_body_bytes"], config["rerank_depth"], config["score_cache_days"]),
                          (1, DEFAULTS["batch_size"], 64 * 1024 * 1024, DEFAULTS["rerank_depth"], 1))
         self.assertEqual(clamp_limits(dict(DEFAULTS))["queue_size"], DEFAULTS["queue_size"])
+        limits = clamp_limits(dict(DEFAULTS, max_connections=0, body_deadline_s="x"))
+        self.assertEqual((limits["max_connections"], limits["body_deadline_s"]), (1, DEFAULTS["body_deadline_s"]))
 
 
 class TextTest(unittest.TestCase):

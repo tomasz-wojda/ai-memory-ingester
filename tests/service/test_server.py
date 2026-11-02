@@ -366,6 +366,82 @@ class ServerTest(unittest.TestCase):
         finally:
             server_module.build_backend = original
 
+    def test_late_search_and_status_report_a_partial_index(self):
+        def document(path, text):
+            return {"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": path, "content_hash": "h",
+                    "passages": [{"section": "user", "start": 0, "end": len(text), "tokens": 4, "text": text}]}
+
+        self.fx.request("POST", "/v1/passages/upsert", {"documents": [document("a.md", "the nginx timeout is raised"), document("b.md", "backup retention is thirty days")]})
+        self.fx.request("POST", "/v1/index/upsert", {"batch": 1})
+        status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx timeout", "top_k": 5})
+        self.assertEqual((status, body["complete"], body["unindexed"]), (200, False, 1))
+        status, body = self.fx.request("GET", "/v1/index/status")
+        self.assertEqual((body["complete"], body["unindexed"], body["stale"]), (False, 1, False))
+        self.fx.request("POST", "/v1/index/upsert", {"batch": 10})
+        status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx timeout", "top_k": 5})
+        self.assertEqual((body["complete"], body["unindexed"]), (True, 0))
+        self.fx.request("POST", "/v1/passages/upsert", {"documents": [document("c.md", "a new passage")]})
+        self.assertEqual(self.fx.request("GET", "/v1/index/status")[1]["complete"], False)
+
+    def test_a_very_long_late_query_is_refused(self):
+        self.fx.request("POST", "/v1/passages/upsert", {"documents": [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "a.md", "content_hash": "h",
+                                                                         "passages": [{"section": "user", "start": 0, "end": 5, "tokens": 1, "text": "hello"}]}]})
+        long_query = "word " * 1000
+        self.assertEqual(self.fx.request("POST", "/v1/search/late", {"query": long_query, "top_k": 5})[0], 400)
+        self.assertEqual(self.fx.request("POST", "/v1/encode/query", {"query": long_query})[0], 400)
+        self.assertEqual(self.fx.request("POST", "/v1/search/late", {"query": "hello", "top_k": 5})[0], 200)
+
+    def test_a_slow_model_load_does_not_block_other_models(self):
+        from ai_memory_service import server as server_module
+        release = threading.Event()
+        started = threading.Event()
+        original = server_module.build_backend
+
+        def slow(name, config, allow_stub):
+            if name == "slow":
+                started.set()
+                release.wait(10)
+            return original("stub", config, allow_stub)
+
+        server_module.build_backend = slow
+        results = {}
+        thread = threading.Thread(target=lambda: results.update(slow=self.rerank(model="slow")))
+        try:
+            thread.start()
+            self.assertTrue(started.wait(5))
+            began = time.time()
+            status, _ = self.rerank()
+            self.assertEqual(status, 200)
+            self.assertLess(time.time() - began, 3)
+        finally:
+            release.set()
+            thread.join(10)
+            server_module.build_backend = original
+        self.assertEqual(results["slow"][0], 200)
+
+    def test_calls_that_arrive_together_load_one_model_once(self):
+        from ai_memory_service import server as server_module
+        calls = []
+        original = server_module.build_backend
+
+        def counting(name, config, allow_stub):
+            calls.append(name)
+            time.sleep(0.4)
+            return original("stub", config, allow_stub)
+
+        server_module.build_backend = counting
+        statuses = []
+        threads = [threading.Thread(target=lambda: statuses.append(self.rerank(model="shared")[0])) for _ in range(4)]
+        try:
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10)
+        finally:
+            server_module.build_backend = original
+        self.assertEqual(calls.count("shared"), 1)
+        self.assertEqual(statuses, [200, 200, 200, 200])
+
     def test_a_stale_index_is_refused(self):
         self.fx.app.db.set_manifest({"late_model_id": "another-model"})
         status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3})

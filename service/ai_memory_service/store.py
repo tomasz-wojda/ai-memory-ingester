@@ -1,4 +1,5 @@
 import array
+import os
 import sqlite3
 import threading
 import time
@@ -70,11 +71,25 @@ class SemanticDb:
         self.path = Path(path)
         self.lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.generation = 0
+        os.close(os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600))
+        self.make_private()
         self.connection = sqlite3.connect(str(self.path), check_same_thread=False, isolation_level=None)
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.executescript(SCHEMA)
+        self.make_private()
+
+    def make_private(self):
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(str(self.path) + suffix)
+            if candidate.exists():
+                os.chmod(candidate, 0o600)
+
+    def commit(self):
+        self.connection.execute("COMMIT")
+        self.generation += 1
 
     def close(self):
         with self.lock:
@@ -105,7 +120,7 @@ class SemanticDb:
                             (pid, *keys, document["content_hash"], str(passage["section"]), int(passage["start"]),
                              int(passage["end"]), int(passage["tokens"]), passage["text"]))
                         stored += 1
-                self.connection.execute("COMMIT")
+                self.commit()
             except Exception:
                 self.connection.execute("ROLLBACK")
                 raise
@@ -124,7 +139,7 @@ class SemanticDb:
                         self.connection.execute("DELETE FROM vectors WHERE passage_id = ?", (pid,))
                     removed += self.connection.execute(
                         "DELETE FROM passages WHERE origin_db = ? AND source_archive = ? AND file_path = ?", keys).rowcount
-                self.connection.execute("COMMIT")
+                self.commit()
             except Exception:
                 self.connection.execute("ROLLBACK")
                 raise
@@ -182,7 +197,7 @@ class SemanticDb:
                     self.connection.execute(
                         "INSERT OR REPLACE INTO vectors VALUES (?,?,?,?,?,?,?)",
                         (pid, model_id, dimension, "int8", scale, len(matrix), blob))
-                self.connection.execute("COMMIT")
+                self.commit()
             except Exception:
                 self.connection.execute("ROLLBACK")
                 raise
@@ -190,7 +205,7 @@ class SemanticDb:
     def vector_version(self, model_id):
         with self.lock:
             row = self.connection.execute("SELECT count(*), coalesce(max(rowid), 0) FROM vectors WHERE model_id = ?", (model_id,)).fetchone()
-        return (row[0], row[1])
+            return (row[0], row[1], self.generation)
 
     def passage_texts(self, ids):
         found = {}

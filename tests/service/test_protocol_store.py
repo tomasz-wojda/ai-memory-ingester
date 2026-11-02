@@ -1,4 +1,6 @@
+import os
 import shutil
+import stat
 import sys
 import unittest
 from pathlib import Path
@@ -142,6 +144,45 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(self.db.count_passages_without_vectors("m"), 2)
         self.assertEqual(self.db.count_passages_without_vectors("other"), 3)
 
+    def test_database_files_are_private(self):
+        self.db.upsert_documents([self.document()])
+        found = 0
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(self.db.path) + suffix)
+            if path.exists():
+                found += 1
+                self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600, suffix or "main file")
+        self.assertGreaterEqual(found, 1)
+
+    def test_an_existing_database_with_open_permissions_is_made_private(self):
+        path = self.directory / "open.db"
+        path.write_bytes(b"")
+        os.chmod(path, 0o644)
+        other = SemanticDb(path)
+        try:
+            other.upsert_documents([self.document()])
+            for suffix in ("", "-wal", "-shm"):
+                candidate = Path(str(path) + suffix)
+                if candidate.exists():
+                    self.assertEqual(stat.S_IMODE(os.stat(candidate).st_mode), 0o600, suffix or "main file")
+        finally:
+            other.close()
+
+    def test_the_vector_version_changes_when_the_newest_rows_are_replaced(self):
+        self.db.upsert_documents([self.document("a.md", texts=("first",)), self.document("b.md", texts=("second",))])
+        by_text = {text: pid for pid, text in self.db.passages_without_vectors("m", 10)}
+        self.db.put_vectors("m", 2, [(by_text["first"], [[0.5, 0.5]])])
+        self.db.put_vectors("m", 2, [(by_text["second"], [[0.5, 0.5]])])
+        before = self.db.vector_version("m")
+        doc = {"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "b.md"}
+        self.db.delete_documents([doc])
+        self.db.upsert_documents([self.document("b.md", content_hash="h2", texts=("second changed",))])
+        for pid, text in self.db.passages_without_vectors("m", 10):
+            self.db.put_vectors("m", 2, [(pid, [[0.9, 0.1]])])
+        after = self.db.vector_version("m")
+        self.assertEqual(before[:2], after[:2], "count and newest row id alone cannot see this replace")
+        self.assertNotEqual(before, after)
+
     def test_orphans_are_listed(self):
         self.db.upsert_documents([self.document()])
         self.assertEqual(len(self.db.orphans([("convo.db", "chat:turns", "a.md", "h1")])), 0)
@@ -172,6 +213,26 @@ class MaxSimTest(unittest.TestCase):
                                    "passages": [{"section": "user", "start": 0, "end": len(text), "tokens": len(text.split()), "text": text}]}])
         for pid, passage in self.db.passages_without_vectors(self.encoder.model_id, 100):
             self.db.put_vectors(self.encoder.model_id, self.encoder.dimension, [(pid, self.encoder.encode_passage(passage))])
+
+    def test_query_vectors_are_capped_before_scoring(self):
+        self.assertEqual(len(maxsim_module.limit_query_vectors([[0.0]] * 500)), maxsim_module.MAX_QUERY_VECTORS)
+        self.index("a.md", "nginx timeout raised")
+
+        class Loud(StubEncoder):
+            def encode_query(self, text):
+                return super().encode_query(text) * 100
+
+        seen = []
+        original = maxsim_module.maxsim
+        maxsim_module.USE_NUMPY = False
+        maxsim_module.maxsim = lambda query_vectors, passage_vectors: (seen.append(len(query_vectors)), original(query_vectors, passage_vectors))[1]
+        try:
+            hits = search(self.db, Loud(), "nginx timeout", 5)
+        finally:
+            maxsim_module.maxsim = original
+            maxsim_module.USE_NUMPY = True
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(seen, [maxsim_module.MAX_QUERY_VECTORS])
 
     def test_maxsim_is_higher_for_shared_words(self):
         query = self.encoder.encode_query("nginx timeout")
@@ -225,6 +286,17 @@ class NumpyMaxSimTest(unittest.TestCase):
         slow = search(self.db, self.encoder, query, top_k, **filters)
         maxsim_module.USE_NUMPY = True
         return fast, slow
+
+    def test_a_passage_without_tokens_does_not_break_the_scan(self):
+        self.db.upsert_documents([{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "empty.md", "content_hash": "h",
+                                   "passages": [{"section": "user", "start": 0, "end": 1, "tokens": 0, "text": " "}]}])
+        empty = [pid for pid, _ in self.db.passages_without_vectors(self.encoder.model_id, 10)]
+        self.assertEqual(len(empty), 1)
+        self.db.put_vectors(self.encoder.model_id, self.encoder.dimension, [(empty[0], [])])
+        self.assertEqual(self.db.count_passages_without_vectors(self.encoder.model_id), 0)
+        fast, slow = self.both("nginx timeout", top_k=100)
+        self.assertNotIn(empty[0], [h["passage_id"] for h in fast])
+        self.assertEqual([h["passage_id"] for h in fast if h["score"] > 0], [h["passage_id"] for h in slow if h["score"] > 0])
 
     def test_numpy_and_plain_python_agree(self):
         for query in ("nginx timeout", "backup retention certificate", "audit trace ingress logging"):

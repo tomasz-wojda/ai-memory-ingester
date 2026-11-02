@@ -15,7 +15,7 @@ from . import maxsim
 from .backends import ModelUnavailable, build_backend
 from .config import db_path
 from .encoders import build_encoder
-from .protocol import (MAX_DOCS_PER_CALL, ProtocolError, check_version, query_hash, require_dict, text_hash, validate_delete,
+from .protocol import (MAX_DOCS_PER_CALL, MAX_QUERY_CHARS, ProtocolError, check_version, query_hash, require_dict, text_hash, validate_delete,
                        validate_rerank, validate_upsert)
 from .store import SemanticDb
 
@@ -72,6 +72,8 @@ class App:
         self.lock = threading.Lock()
         self.last_purge = 0.0
         self.failures = {}
+        self.gates = {}
+        self.generation = 0
         self.failed_load_seconds = 30.0
         self.purge_if_due()
 
@@ -97,35 +99,60 @@ class App:
         raise ProtocolError(503, "model_unavailable", str(error))
 
     def backend(self, name):
+        key = ("backend", name)
         with self.lock:
             if name in self.backends:
                 return self.backends[name]
-            self.refuse_if_recently_failed(("backend", name))
+            self.refuse_if_recently_failed(key)
+            gate = self.gates.setdefault(key, threading.Lock())
+            generation = self.generation
+        with gate:
+            with self.lock:
+                if name in self.backends:
+                    return self.backends[name]
+                self.refuse_if_recently_failed(key)
             try:
                 backend = build_backend(name, self.config, self.allow_stub)
                 backend.load()
             except KeyError:
                 raise ProtocolError(404, "unknown_model", f"model {name} is not configured")
             except ModelUnavailable as error:
-                self.remember_failure(("backend", name), error)
-            self.backends[name] = backend
+                with self.lock:
+                    self.remember_failure(key, error)
+            with self.lock:
+                if generation == self.generation:
+                    self.backends[name] = backend
             return backend
 
     def late_encoder(self):
+        key = ("encoder", "")
         with self.lock:
-            if self.encoder is None:
-                self.refuse_if_recently_failed(("encoder", ""))
-                try:
-                    self.encoder = build_encoder(self.config, self.allow_stub)
-                except ModelUnavailable as error:
-                    self.remember_failure(("encoder", ""), error)
-            return self.encoder
+            if self.encoder is not None:
+                return self.encoder
+            self.refuse_if_recently_failed(key)
+            gate = self.gates.setdefault(key, threading.Lock())
+            generation = self.generation
+        with gate:
+            with self.lock:
+                if self.encoder is not None:
+                    return self.encoder
+                self.refuse_if_recently_failed(key)
+            try:
+                encoder = build_encoder(self.config, self.allow_stub)
+            except ModelUnavailable as error:
+                with self.lock:
+                    self.remember_failure(key, error)
+            with self.lock:
+                if generation == self.generation:
+                    self.encoder = encoder
+            return encoder
 
     def reload(self):
         with self.lock:
             self.backends = {}
             self.encoder = None
             self.failures = {}
+            self.generation += 1
 
     def rss_mb(self):
         usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -228,6 +255,8 @@ class App:
         text = body.get("query")
         if not isinstance(text, str) or not text.strip():
             raise ProtocolError(400, "bad_request", "query is required")
+        if len(text) > MAX_QUERY_CHARS:
+            raise ProtocolError(400, "bad_request", f"query is longer than {MAX_QUERY_CHARS} characters")
         vectors = self.submit(lambda: encoder.encode_query(text))
         return {"contract_version": CONTRACT_VERSION, "model": encoder.model_id, "dimension": encoder.dimension, "tokens": len(vectors),
                 "vectors": [[round(v, 4) for v in row] for row in vectors]}
@@ -268,6 +297,8 @@ class App:
         text = body.get("query")
         if not isinstance(text, str) or not text.strip():
             raise ProtocolError(400, "bad_request", "query is required")
+        if len(text) > MAX_QUERY_CHARS:
+            raise ProtocolError(400, "bad_request", f"query is longer than {MAX_QUERY_CHARS} characters")
         top_k = body.get("top_k", 50)
         if not isinstance(top_k, int) or top_k < 1 or top_k > 500:
             raise ProtocolError(400, "bad_request", "top_k must be between 1 and 500")
@@ -285,7 +316,9 @@ class App:
                 raise ProtocolError(400, "bad_request", "filters.docs must be a list of at most 500 documents")
         hits = self.submit(lambda: maxsim.search(self.db, encoder, text, top_k, filters.get("source_archive") and [filters["source_archive"]],
                                                  filters.get("origin_db"), filters.get("ticket"), docs))
-        return {"contract_version": CONTRACT_VERSION, "model": encoder.model_id, "elapsed_ms": int((time.time() - started) * 1000), "results": hits}
+        unindexed = self.db.count_passages_without_vectors(encoder.model_id)
+        return {"contract_version": CONTRACT_VERSION, "model": encoder.model_id, "elapsed_ms": int((time.time() - started) * 1000), "results": hits,
+                "complete": unindexed == 0, "unindexed": unindexed}
 
     def index_status(self):
         encoder = None
@@ -296,7 +329,9 @@ class App:
         counts = self.db.counts(encoder.model_id if encoder else None)
         manifest = self.db.manifest()
         stale = bool(encoder and manifest.get("late_model_id") not in (None, encoder.model_id))
+        unindexed = self.db.count_passages_without_vectors(encoder.model_id) if encoder else None
         return {"contract_version": CONTRACT_VERSION, "counts": counts, "manifest": manifest, "stale": stale,
+                "complete": unindexed == 0 if encoder else False, "unindexed": unindexed,
                 "bytes_on_disk": self.db.file_size(), "late_model": encoder.model_id if encoder else None}
 
 

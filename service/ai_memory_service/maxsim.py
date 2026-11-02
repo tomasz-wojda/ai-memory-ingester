@@ -10,6 +10,11 @@ except Exception:  # noqa: BLE001
 
 USE_NUMPY = True
 BLOCK_TOKENS = 200_000
+MAX_QUERY_VECTORS = 64
+
+
+def limit_query_vectors(vectors):
+    return vectors[:MAX_QUERY_VECTORS]
 
 
 def maxsim(query_vectors, passage_vectors):
@@ -36,6 +41,8 @@ class VectorIndex:
         position = 0
         dimension = 0
         for row in db.iter_vectors(model_id):
+            if row["token_count"] == 0:
+                continue
             matrix = np.asarray(dequantize(row["matrix"], row["scale"], row["token_count"], row["dimension"]), dtype=np.float32)
             dimension = row["dimension"]
             meta.append((row["passage_id"], row["origin_db"], row["source_archive"], row["file_path"]))
@@ -98,7 +105,7 @@ def index_for(db, model_id):
 
 
 def search(db, encoder, query_text, top_k, archives=None, origin_db=None, path_contains=None, docs=None):
-    query_vectors = encoder.encode_query(query_text)
+    query_vectors = limit_query_vectors(encoder.encode_query(query_text))
     if not query_vectors:
         return []
     if numpy_active():

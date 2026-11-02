@@ -16,6 +16,7 @@ class ProtocolError(Exception):
 
 
 MAX_DOCS_PER_CALL = 2000
+MAX_QUERY_CHARS = 4000
 
 def normalize_query(query):
     return re.sub(r"\s+", " ", (query or "").strip().lower())

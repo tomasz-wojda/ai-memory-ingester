@@ -10,7 +10,7 @@ All JSON is UTF-8. Field names are lower snake case. New fields may be added in 
 
 | Item | Rule |
 |---|---|
-| Primary transport | Unix domain socket `.ai-worklog/run/memory-service.sock` under the workspace, file mode `0600`, directory mode `0700` |
+| Primary transport | Unix domain socket `.ai-worklog/run/memory-service.sock` under the workspace, file mode `0600`, directory mode `0700`; `semantic.db` and its `-wal` and `-shm` files are mode `0600` |
 | Optional transport | TCP `127.0.0.1:8777` (configurable). No other interface. Off by default. |
 | Protocol | HTTP/1.1 with JSON bodies |
 | Auth | A random token in `.ai-worklog/run/memory-service.token` (mode `0600`), sent as `Authorization: Bearer <token>`. The token is created at `serve` start and removed at stop. Never logged. |
@@ -116,10 +116,10 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 | `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors; at most 2000 docs per call | 1 |
 | `POST /v1/passages/missing` | `{documents:[{origin_db, source_archive, file_path, content_hash}]}` returns `{missing:[indexes]}` of documents that are new or changed; at most 2000 documents per call; used by `reindex` | 1 |
 | `GET /v1/passages/docs` | Every indexed document with its hash; used by `reindex` to find orphans | 1 |
-| `POST /v1/encode/query` | Query token vectors (debug, `--explain`) | 2 |
+| `POST /v1/encode/query` | Query token vectors (debug, `--explain`); the query is at most 4000 characters | 2 |
 | `POST /v1/index/upsert` | Encode and store vectors for stored passages: `{batch: N}`; resumable | 2 |
-| `POST /v1/search/late` | `{query, top_k, filters:{origin_db, source_archive, ticket, docs:[{origin_db, source_archive, file_path}]}}` returns passages with MaxSim scores; `docs` limits the scan to candidate documents (at most 500) | 2 |
-| `GET /v1/index/status` | Counts, model id and revision, dimension, stale count, bytes on disk | 2 |
+| `POST /v1/search/late` | `{query, top_k, filters:{origin_db, source_archive, ticket, docs:[{origin_db, source_archive, file_path}]}}` returns passages with MaxSim scores and `complete` and `unindexed` (how many passages still have no vectors, so a partial index is visible); the query is at most 4000 characters and at most 64 query vectors are scored; `docs` limits the scan to candidate documents (at most 500) | 2 |
+| `GET /v1/index/status` | Counts, model id and revision, dimension, stale count, `complete` and `unindexed`, bytes on disk | 2 |
 | `POST /v1/admin/reload` | Reload configuration and models | 1 |
 
 The service writes only to `data/semantic.db` and its own run directory.

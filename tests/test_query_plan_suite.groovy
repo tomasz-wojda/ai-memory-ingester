@@ -122,6 +122,25 @@ class TestQueryPlanSuite {
         Map keywordOld = search(data, 'nginx timeout', [relax_min_results: 1])
         verify('relax_min_results 1 restores the zero-row rule exactly', ids(keywordOld) == ids(keywordOff) && (keywordOld.query_plan as Map).relaxed_used == false)
 
+        Class ticketRetrieval = loader.loadClass('TicketRetrieval')
+        List<Map> ticketOld = ticketRetrieval.semanticCandidates(data, 'fix101', 'nginx timeout', 5, [relax_min_results: 1]) as List<Map>
+        List<Map> ticketNew = ticketRetrieval.semanticCandidates(data, 'fix101', 'nginx timeout', 5, [:]) as List<Map>
+        verify('ticket search finds strict rows to compare', !ticketOld.isEmpty())
+        verify('ticket search with the default threshold keeps every strict row first and in order', ticketNew.size() >= ticketOld.size() && ticketNew.take(ticketOld.size())*.file_path == ticketOld*.file_path)
+        verify('ticket search with threshold 1 and relax off return the same strict rows', ticketOld*.file_path == (ticketRetrieval.semanticCandidates(data, 'fix101', 'nginx timeout', 5, [relax_mode: 'off']) as List<Map>)*.file_path)
+        verify('ticket search adds relaxed rows when strict rows are few', ticketNew.size() > ticketOld.size())
+        verify('ticket search never repeats a document', ticketNew.collect { "${it.origin_db}:${it.source_archive}:${it.file_path}" }.unique().size() == ticketNew.size())
+        List<Map> ticketQuestion = ticketRetrieval.semanticCandidates(data, 'fix101', 'what did we decide about the nginx timeout', 5, [:]) as List<Map>
+        verify('ticket search relaxes a question that has no strict rows', !ticketQuestion.isEmpty())
+
+        Map onlyTurns = search(data, question, [archive_filter: 'chat:turns'])
+        verify('an archive filter still relaxes a question and keeps only that archive', !(onlyTurns.results as List).isEmpty() && (onlyTurns.query_plan as Map).relaxed_used == true && (onlyTurns.results as List<Map>).every { it.source_archive == 'chat:turns' })
+        Map partName = search(data, question, [archive_filter: 'worklog'])
+        verify('an archive filter matches by part of the name', !(partName.results as List).isEmpty() && (partName.results as List<Map>).every { it.source_archive.toString().contains('worklog') })
+        verify('an unknown archive gives no results', (search(data, question, [archive_filter: 'no-such-archive']).results as List).isEmpty())
+        verify('an extension filter keeps matching documents', !(search(data, question, [extensions: ['md']]).results as List).isEmpty())
+        verify('an extension filter drops other documents', (search(data, question, [extensions: ['txt']]).results as List).isEmpty())
+
         Map forced = search(data, 'nginx timeout', [relax_mode: 'on'])
         verify('relax on adds the relaxed pool even when strict has rows', (forced.query_plan as Map).relaxed_used == true)
 

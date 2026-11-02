@@ -15,6 +15,8 @@ class ProtocolError(Exception):
         self.message = message
 
 
+MAX_DOCS_PER_CALL = 2000
+
 def normalize_query(query):
     return re.sub(r"\s+", " ", (query or "").strip().lower())
 
@@ -81,6 +83,8 @@ def validate_upsert(body, config):
     documents = body.get("documents")
     if not isinstance(documents, list) or not documents:
         raise ProtocolError(400, "bad_request", "documents must be a non-empty list")
+    if len(documents) > MAX_DOCS_PER_CALL:
+        raise ProtocolError(400, "bad_request", f"at most {MAX_DOCS_PER_CALL} documents per call")
     total = 0
     for document in documents:
         if not isinstance(document, dict):
@@ -99,6 +103,12 @@ def validate_upsert(body, config):
             for field in ("section", "start", "end", "tokens"):
                 if field not in passage:
                     raise ProtocolError(400, "bad_request", f"passage.{field} is required")
+            if not isinstance(passage["section"], str):
+                raise ProtocolError(400, "bad_request", "passage.section must be text")
+            for field in ("start", "end", "tokens"):
+                value = passage[field]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    raise ProtocolError(400, "bad_request", f"passage.{field} must be a whole number of 0 or more")
             total += 1
     if total > 2000:
         raise ProtocolError(400, "bad_request", "at most 2000 passages per call")
@@ -111,6 +121,8 @@ def validate_delete(body, config):
     docs = body.get("docs")
     if not isinstance(docs, list) or not docs:
         raise ProtocolError(400, "bad_request", "docs must be a non-empty list")
+    if len(docs) > MAX_DOCS_PER_CALL:
+        raise ProtocolError(400, "bad_request", f"at most {MAX_DOCS_PER_CALL} docs per call")
     for doc in docs:
         if not isinstance(doc, dict) or not all(isinstance(doc.get(f), str) and doc[f] for f in ("origin_db", "source_archive", "file_path")):
             raise ProtocolError(400, "bad_request", "each doc needs origin_db, source_archive and file_path")

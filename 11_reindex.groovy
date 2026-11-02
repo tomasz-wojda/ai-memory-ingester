@@ -159,8 +159,19 @@ List<Map> orphans = listing.ok
     }
     : []
 int removed = 0
+boolean removalFailed = false
 if (!verifyOnly && orphans) {
-    removed = ((client.deletePassages(orphans.collect { [origin_db: it.origin_db, source_archive: it.source_archive, file_path: it.file_path] }).body as Map)?.removed ?: 0) as int
+    orphans.collate(500).each { List<Map> chunk ->
+        if (removalFailed) return
+        Map reply = client.deletePassages(chunk.collect { [origin_db: it.origin_db, source_archive: it.source_archive, file_path: it.file_path] })
+        if (!reply.ok) {
+            removalFailed = true
+            failed += chunk.size()
+            System.err.println("Orphan removal failed: ${reply.reason}")
+            return
+        }
+        removed += ((reply.body as Map)?.removed ?: 0) as int
+    }
 }
 int encoded = 0
 String encodeNote = 'not requested'

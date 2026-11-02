@@ -324,6 +324,11 @@ why do exports fail
         Map large = command(['reindex', '--archives', 'test:huge', '--data-dir', data.absolutePath])
         verify('reindex skips a document that cannot fit in one call and reports it', large.code == 1 && large.out.contains('oversized=1') && large.err.contains('does not fit'))
         verify('reindex still indexes the other documents after an oversized one', large.out.contains('documents=1') && large.out.contains('orphan_check=ok'))
+        List<Map> ghosts = (1..501).collect { int n -> [origin_db: 'convo.db', source_archive: 'chat:turns', file_path: "ghost501/turn-${900000 + n}.md".toString(), content_hash: 'x',
+                                                          passages: [[section: 'user', start: 0, end: 5, tokens: 1, text: 'ghost']]] }
+        verify('the service accepts 501 ghost documents in one call', client().upsertPassages(ghosts).ok as boolean)
+        Map manyOrphans = command(['reindex', '--data-dir', data.absolutePath])
+        verify('reindex removes more than one chunk of orphans', manyOrphans.code == 0 && manyOrphans.out.contains('orphans=501') && manyOrphans.out.contains('removed=501'))
     }
 
     private static void testCommandLine() {
@@ -341,6 +346,10 @@ why do exports fail
         verify('a bad depth is refused', bad.code == 2 && bad.out.contains('--rerank-depth'))
         Map json = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--json', '--limit', '2', '--data-dir', data.absolutePath])
         verify('json rows carry the rerank fields', json.code == 0 && json.out.contains('"rerank_score"') && json.out.contains('"best_passage"'))
+        Map filtered = command(['query', 'what did we decide about the nginx timeout', '-A', 'chat:turns', '--rerank', 'on', '--explain', '--limit', '3', '--data-dir', data.absolutePath])
+        verify('an archive filter keeps the relaxed query and the re-rank stage', filtered.code == 0 && filtered.out.contains('form=relaxed') && filtered.out.contains('Re-rank: model=stub') && filtered.out.contains('turn-000001.md') && !filtered.out.contains('0001-decisions.md'))
+        Map filteredJson = command(['query', 'what did we decide about the nginx timeout', '-A', 'worklog', '--json', '--limit', '5', '--data-dir', data.absolutePath])
+        verify('an archive filter matches by part of the name and returns only that archive', filteredJson.code == 0 && filteredJson.out.contains('"source_archive"') && !filteredJson.out.contains('"source_archive":"chat:turns"'))
     }
 
     private static void testEvaluation() {

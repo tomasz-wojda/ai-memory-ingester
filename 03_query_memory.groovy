@@ -703,6 +703,21 @@ static void printSets() {
     printDatasets()
 }
 
+static String filterTags(List<String> extensions, String archiveFilter) {
+    StringBuilder tags = new StringBuilder()
+    if (extensions != null && !extensions.isEmpty()) {
+        List<String> displayExts = extensions.collect { ext ->
+            String clean = ext ? ext.trim().replaceAll("^['\"]+|['\"]+\$", '') : ''
+            (clean.isEmpty() || clean == 'none' || clean == 'empty') ? '(no ext)' : clean
+        }
+        tags.append(" [ext: ").append(displayExts.join(', ')).append("]")
+    }
+    if (archiveFilter != null && !archiveFilter.isEmpty()) {
+        tags.append(" [archive: ").append(archiveFilter).append("]")
+    }
+    return tags.toString()
+}
+
 static void executeEnhancedSearch(
     String datasetName,
     String query,
@@ -725,7 +740,7 @@ static void executeEnhancedSearch(
 ) {
     if (!raw && !jsonOutput) {
         println "-" * 50
-        println "Enhanced Search [${datasetName}]: \"${query}\" (limit: ${limit})"
+        println "Enhanced Search [${datasetName}]: \"${query}\"${filterTags(extensions, archiveFilter)} (limit: ${limit})"
         println "-" * 50
     }
     Map options = [
@@ -735,7 +750,9 @@ static void executeEnhancedSearch(
         since_date: sinceDate,
         until_date: untilDate,
         show_signals: showSignals,
-        relax_mode: relaxMode
+        relax_mode: relaxMode,
+        archive_filter: archiveFilter,
+        extensions: extensions
     ] + semanticOptions
     Map result = MemoryRetrieval.searchTopic(Config.DATA_DIR, datasetName, query, limit, options)
     List<Map> matches = (result.results as List<Map>) ?: []
@@ -760,9 +777,11 @@ static void executeEnhancedSearch(
         printf "No results found in %.2f ms.%n", (result.total_duration_ms as double)
         return
     }
+    boolean filtersActive = (extensions != null && !extensions.isEmpty()) || archiveFilter?.trim()
     matches.eachWithIndex { Map doc, int idx ->
         double score = (doc.fused_score ?: doc.rrf_score ?: 0.0) as double
         printf "[%d] [%s] [%s] ID:%s  %s%n", idx + 1, doc.origin_db, doc.pool, doc.id, doc.file_path
+        if (filtersActive) printf "    Archive: %s  |  Type: %s%n", doc.source_archive, doc.extension
         if (showSignals || diagnostics) {
             printf "    Signals: %s  |  Fused: %.4f%n", (doc.signals ?: [:]).collect { k, v -> "${k}=${v}" }.join(', '), score
         } else {
@@ -826,16 +845,7 @@ static void executeFederatedSearch(
     if (!raw && !jsonOutput) {
         println "-" * 50
         StringBuilder header = new StringBuilder("Searching Dataset [${datasetName}]: \"${query}\"")
-        if (extensions != null && !extensions.isEmpty()) {
-            List<String> displayExts = extensions.collect { ext ->
-                String clean = ext ? ext.trim().replaceAll("^['\"]+|['\"]+\$", '') : ''
-                (clean.isEmpty() || clean == 'none' || clean == 'empty') ? '(no ext)' : clean
-            }
-            header.append(" [ext: ").append(displayExts.join(', ')).append("]")
-        }
-        if (archiveFilter != null && !archiveFilter.isEmpty()) {
-            header.append(" [archive: ").append(archiveFilter).append("]")
-        }
+        header.append(filterTags(extensions, archiveFilter))
         if (snippetSize != 64) {
             header.append(" (limit: ${limit}, snippet-size: ${snippetSize})")
         } else {
@@ -1460,8 +1470,6 @@ static void executeRename(MemoryEngine engine, String oldName, String newName) {
  * @return Combined FTS5 expression
  */
 static boolean shouldUseLegacySearch(String input, List<String> extensions, String archiveFilter) {
-    if (extensions && !extensions.isEmpty()) return true
-    if (archiveFilter?.trim()) return true
     String query = (input ?: '').trim()
     if (!query) return false
     if (query.contains(':') && query ==~ /(?i).*\b(?:file_path|file_name|source_archive|extension):.*/) return true

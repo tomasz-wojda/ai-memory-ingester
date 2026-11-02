@@ -107,11 +107,14 @@ class TicketRetrieval {
     static List<Map> semanticCandidates(File dataDir, String facet, String terms, int limit, Map options = [:]) {
         List<Map> strict = semanticCandidatesFor(dataDir, facet, terms, terms, limit)
         String relaxMode = (options.relax_mode ?: 'auto').toString()
-        if (strict || relaxMode == 'off' || !Config.relaxEnabled()) return strict
+        int minimum = (options.relax_min_results ?: Config.relaxMinResults()) as int
+        if (relaxMode == 'off' || !Config.relaxEnabled() || (relaxMode != 'on' && strict.size() >= minimum)) return strict
         Map plan = QueryPlanner.plan(terms)
         if (!plan.relaxed) return strict
         try {
-            return semanticCandidatesFor(dataDir, facet, plan.relaxed.toString(), (plan.terms as List<String>).join(' '), limit)
+            List<Map> relaxed = semanticCandidatesFor(dataDir, facet, plan.relaxed.toString(), (plan.terms as List<String>).join(' '), limit)
+            Set<String> seen = strict.collect { Map row -> "${row.origin_db}:${row.source_archive}:${row.file_path}".toString() } as Set<String>
+            return strict + relaxed.findAll { Map row -> !seen.contains("${row.origin_db}:${row.source_archive}:${row.file_path}".toString()) }
         } catch (Exception ignored) {
             return strict
         }

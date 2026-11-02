@@ -18,13 +18,38 @@ DEFAULTS = {
     "default_deadline_ms": 1200,
     "rerank_depth": 30,
     "rerank_min_scored": 10,
-    "relax_min_results": 1,
+    "relax_min_results": 10,
     "score_cache_days": 14,
     "index_archives": ["chat:turns", "worklog:chunks", "worklog:state"],
     "max_body_bytes": 4 * 1024 * 1024,
     "max_passages": 100,
     "max_passage_chars": 4000,
 }
+
+
+LIMITS = {
+    "max_rss_mb": (256, 1048576),
+    "queue_size": (1, 64),
+    "batch_size": (1, 256),
+    "default_deadline_ms": (50, 60000),
+    "rerank_depth": (1, 100),
+    "rerank_min_scored": (1, 100),
+    "relax_min_results": (1, 100),
+    "score_cache_days": (1, 3650),
+    "max_body_bytes": (1024, 64 * 1024 * 1024),
+    "max_passages": (1, 1000),
+    "max_passage_chars": (100, 100000),
+}
+
+
+def clamp_limits(config):
+    for key, (low, high) in LIMITS.items():
+        value = config.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            config[key] = DEFAULTS[key]
+        else:
+            config[key] = max(low, min(high, value))
+    return config
 
 
 def workspace_root(explicit=None):
@@ -53,7 +78,7 @@ def load_config(workspace, overrides=None):
     if socket_override:
         config["socket"] = socket_override
     config["workspace"] = str(workspace)
-    return config
+    return clamp_limits(config)
 
 
 def resolve(workspace, value):

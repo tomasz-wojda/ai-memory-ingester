@@ -110,8 +110,8 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 | `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, contract_version}` | 1 |
 | `GET /v1/models` | Configured models with revision, size, max tokens, licence id and checksum status | 1 |
 | `POST /v1/passages/upsert` | Store passages for documents: `{documents:[{origin_db, source_archive, file_path, content_hash, passages:[{section, start, end, tokens, text}]}]}`; replaces the old passages of each document in one transaction | 1 |
-| `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors | 1 |
-| `POST /v1/passages/missing` | `{documents:[{origin_db, source_archive, file_path, content_hash}]}` returns `{missing:[indexes]}` of documents that are new or changed; used by `reindex` | 1 |
+| `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors; at most 2000 docs per call | 1 |
+| `POST /v1/passages/missing` | `{documents:[{origin_db, source_archive, file_path, content_hash}]}` returns `{missing:[indexes]}` of documents that are new or changed; at most 2000 documents per call; used by `reindex` | 1 |
 | `GET /v1/passages/docs` | Every indexed document with its hash; used by `reindex` to find orphans | 1 |
 | `POST /v1/encode/query` | Query token vectors (debug, `--explain`) | 2 |
 | `POST /v1/index/upsert` | Encode and store vectors for stored passages: `{batch: N}`; resumable | 2 |

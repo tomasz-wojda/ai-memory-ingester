@@ -58,12 +58,41 @@ class ProtocolTest(unittest.TestCase):
             protocol.validate_upsert({"documents": [{"origin_db": "x"}]}, self.config())
 
 
+    def test_upsert_rejects_badly_typed_passage_fields(self):
+        def document(**fields):
+            passage = {"section": "user", "start": 0, "end": 5, "tokens": 2, "text": "hello"}
+            passage.update(fields)
+            return {"documents": [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "x.md", "content_hash": "h", "passages": [passage]}]}
+
+        for bad in ({"section": 5}, {"start": "0"}, {"end": 1.5}, {"tokens": -1}, {"start": True}):
+            with self.assertRaises(protocol.ProtocolError, msg=str(bad)) as caught:
+                protocol.validate_upsert(document(**bad), self.config())
+            self.assertEqual(caught.exception.status, 400)
+
+    def test_lists_are_capped(self):
+        many = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": f"{i}.md"} for i in range(protocol.MAX_DOCS_PER_CALL + 1)]
+        with self.assertRaises(protocol.ProtocolError):
+            protocol.validate_delete({"docs": many}, self.config())
+        self.assertEqual(len(protocol.validate_delete({"docs": many[:protocol.MAX_DOCS_PER_CALL]}, self.config())), protocol.MAX_DOCS_PER_CALL)
+        documents = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": f"{i}.md", "content_hash": "h", "passages": []} for i in range(protocol.MAX_DOCS_PER_CALL + 1)]
+        with self.assertRaises(protocol.ProtocolError):
+            protocol.validate_upsert({"documents": documents}, self.config())
+
+    def test_config_limits_are_clamped_and_bad_types_fall_back(self):
+        from ai_memory_service.config import clamp_limits
+        config = clamp_limits(dict(DEFAULTS, queue_size=0, batch_size="x", max_body_bytes=10 ** 12, rerank_depth=True, score_cache_days=-5))
+        self.assertEqual((config["queue_size"], config["batch_size"], config["max_body_bytes"], config["rerank_depth"], config["score_cache_days"]),
+                         (1, DEFAULTS["batch_size"], 64 * 1024 * 1024, DEFAULTS["rerank_depth"], 1))
+        self.assertEqual(clamp_limits(dict(DEFAULTS))["queue_size"], DEFAULTS["queue_size"])
+
+
 class TextTest(unittest.TestCase):
     def test_fold_matches_the_index_and_the_stub_scores_overlap(self):
         self.assertEqual(fold("Użytkowników Łódź"), "uzytkownikow lodz")
         self.assertEqual(words("It's the nginx timeout, 120s"), ["it", "s", "the", "nginx", "timeout", "120s"])
         scores = StubBackend().score("nginx timeout", ["nginx timeout is 120 seconds", "unrelated words", "nginx only"])
         self.assertEqual(scores, [1.0, 0.0, 0.5])
+
 
 
 class StoreTest(unittest.TestCase):
@@ -102,6 +131,14 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(self.db.cache_get("other", "q", ["h1"]), {})
         self.assertEqual(self.db.purge_cache(14), 0)
         self.assertEqual(self.db.purge_cache(-1), 2)
+
+    def test_remaining_passages_are_counted_in_sql(self):
+        self.db.upsert_documents([self.document("a.md"), self.document("b.md", texts=("only",))])
+        self.assertEqual(self.db.count_passages_without_vectors("m"), 3)
+        rows = self.db.passages_without_vectors("m", 1)
+        self.db.put_vectors("m", 2, [(rows[0][0], [[0.5, 0.5]])])
+        self.assertEqual(self.db.count_passages_without_vectors("m"), 2)
+        self.assertEqual(self.db.count_passages_without_vectors("other"), 3)
 
     def test_orphans_are_listed(self):
         self.db.upsert_documents([self.document()])

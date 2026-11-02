@@ -167,6 +167,12 @@ class SemanticDb:
                 "SELECT p.passage_id, p.text FROM passages p LEFT JOIN vectors v ON v.passage_id = p.passage_id AND v.model_id = ? "
                 "WHERE v.passage_id IS NULL ORDER BY p.passage_id LIMIT ?", (model_id, limit)).fetchall()
 
+    def count_passages_without_vectors(self, model_id):
+        with self.lock:
+            return self.connection.execute(
+                "SELECT count(*) FROM passages p LEFT JOIN vectors v ON v.passage_id = p.passage_id AND v.model_id = ? "
+                "WHERE v.passage_id IS NULL", (model_id,)).fetchone()[0]
+
     def put_vectors(self, model_id, dimension, items):
         with self.lock:
             self.connection.execute("BEGIN IMMEDIATE")

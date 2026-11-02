@@ -265,6 +265,32 @@ class ServerTest(unittest.TestCase):
         status, body = self.fx.request("POST", "/v1/encode/query", {"query": "nginx timeout"})
         self.assertEqual((status, body["tokens"]), (200, 2))
 
+    def test_late_search_rejects_badly_typed_filters(self):
+        for filters in ("x", {"source_archive": 5}, {"origin_db": ["a"]}, {"ticket": 7}):
+            status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3, "filters": filters})
+            self.assertEqual((status, body["error"]), (400, "bad_request"), str(filters))
+
+    def test_upsert_with_a_bad_number_is_a_400_not_a_500(self):
+        document = {"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": "a.md", "content_hash": "h",
+                    "passages": [{"section": "user", "start": "zero", "end": 5, "tokens": 1, "text": "hello"}]}
+        self.assertEqual(self.fx.request("POST", "/v1/passages/upsert", {"documents": [document]})[0], 400)
+
+    def test_delete_and_missing_lists_are_capped(self):
+        from ai_memory_service.protocol import MAX_DOCS_PER_CALL
+        docs = [{"origin_db": "convo.db", "source_archive": "chat:turns", "file_path": f"{i}.md"} for i in range(MAX_DOCS_PER_CALL + 1)]
+        self.assertEqual(self.fx.request("POST", "/v1/passages/delete", {"docs": docs})[0], 400)
+        documents = [dict(doc, content_hash="h") for doc in docs]
+        self.assertEqual(self.fx.request("POST", "/v1/passages/missing", {"documents": documents})[0], 400)
+
+    def test_old_cached_scores_are_purged_when_due(self):
+        self.assertEqual(self.rerank()[0], 200)
+        self.assertEqual(self.fx.app.db.counts()["score_cache"], 3)
+        self.fx.app.db.connection.execute("UPDATE score_cache SET created_at = 0")
+        self.fx.app.last_purge = 0.0
+        self.assertEqual(self.fx.app.purge_if_due(), 3)
+        self.assertEqual(self.fx.app.db.counts()["score_cache"], 0)
+        self.assertEqual(self.fx.app.purge_if_due(), 0)
+
     def test_a_stale_index_is_refused(self):
         self.fx.app.db.set_manifest({"late_model_id": "another-model"})
         status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3})

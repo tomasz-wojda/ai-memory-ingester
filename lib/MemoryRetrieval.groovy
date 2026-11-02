@@ -23,14 +23,14 @@ class MemoryRetrieval {
         }
         Map<String, List<Map>> pools = [:]
         Map plan = QueryPlanner.plan(parsed.terms)
-        pools.exact = exactFacetPool(databases, parsed, POOL_LIMIT)
-        pools.bm25 = bodyPool(databases, parsed, POOL_LIMIT)
+        pools.exact = applyFilters(exactFacetPool(databases, parsed, POOL_LIMIT), options)
+        pools.bm25 = bodyPool(databases, parsed, POOL_LIMIT, options)
         List<Map> lexical = pools.bm25
         boolean relaxedUsed = false
         String relaxError = null
         if (shouldRelax(plan, options, pools.bm25.size())) {
             try {
-                List<Map> relaxedRows = bodyPoolExpression(databases, plan.relaxed.toString(), POOL_LIMIT, 'bm25_relaxed')
+                List<Map> relaxedRows = bodyPoolExpression(databases, plan.relaxed.toString(), POOL_LIMIT, 'bm25_relaxed', options)
                 if (relaxedRows) {
                     pools.bm25_relaxed = relaxedRows
                     lexical = mergeLexical(pools.bm25, relaxedRows)
@@ -41,9 +41,9 @@ class MemoryRetrieval {
             }
         }
         if (parsed.hasFacet()) {
-            pools.recency = recencyPool(databases, parsed, POOL_LIMIT)
-            pools.authority = authorityPool(databases, parsed, POOL_LIMIT)
-            pools.impact = impactPool(databases, parsed, POOL_LIMIT)
+            pools.recency = applyFilters(recencyPool(databases, parsed, POOL_LIMIT), options)
+            pools.authority = applyFilters(authorityPool(databases, parsed, POOL_LIMIT), options)
+            pools.impact = applyFilters(impactPool(databases, parsed, POOL_LIMIT), options)
         } else {
             pools.recency = lexical.toSorted { Map left, Map right ->
                 (right.sequence as long) <=> (left.sequence as long)
@@ -64,7 +64,7 @@ class MemoryRetrieval {
             client = (options.semantic_client ?: SemanticClient.discover()) as SemanticClient
             Map late = lateStage(dataDir, databases, parsed.terms, client, parsed)
             lateInfo = late.info as Map
-            if (late.rows) pools.late = late.rows as List<Map>
+            if (late.rows) pools.late = applyFilters(late.rows as List<Map>, options)
         } else if (semanticQuery) {
             lateInfo = [used: false, degraded: true, reason: 'rerank_off']
         }
@@ -86,7 +86,7 @@ class MemoryRetrieval {
         }
         boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
         fused = NeighborExpansion.expand(fused, dataDir, allowMeta, 1)
-        fused = fused.findAll { !it.excluded_reason }.take(Math.max(limit * 2, limit))
+        fused = applyFilters(fused, options).findAll { !it.excluded_reason }.take(Math.max(limit * 2, limit))
         fused = hydrateDocuments(fused, dataDir)
         fused = applyFreshnessLabels(fused, dataDir, parsed.ticket)
         String previewTerms = relaxedUsed ? (plan.terms as List<String>).join(' ') : parsed.terms
@@ -114,6 +114,32 @@ class MemoryRetrieval {
             pools: options.show_signals ? pools.collectEntries { k, v -> [k, v.size()] } : null,
             total_duration_ms: elapsedMs
         ]
+    }
+
+    private static List<Map> applyFilters(List<Map> rows, Map options) {
+        String archive = options.archive_filter?.toString()?.trim()
+        List<String> extensions = normalizedExtensions(options.extensions as List<String>)
+        if (!archive && extensions.isEmpty()) return rows
+        return rows.findAll { Map row ->
+            if (archive) {
+                String actual = row.source_archive?.toString()?.toLowerCase() ?: ''
+                if (actual != archive.toLowerCase() && !actual.contains(archive.toLowerCase())) return false
+            }
+            if (!extensions.isEmpty()) {
+                String name = row.file_name?.toString() ?: ''
+                String actual = (row.extension?.toString() ?: (name.contains('.') ? name.substring(name.lastIndexOf('.')) : '')).toLowerCase()
+                if (!extensions.contains(actual)) return false
+            }
+            return true
+        }
+    }
+
+    private static List<String> normalizedExtensions(List<String> extensions) {
+        return (extensions ?: []).collect { String ext ->
+            String clean = (ext ?: '').trim().replaceAll(/^['"]+|['"]+$/, '').toLowerCase()
+            if (clean.isEmpty() || clean in ['none', 'empty', 'noext']) return ''
+            return clean.startsWith('.') ? clean : '.' + clean
+        }.unique()
     }
 
     private static boolean rerankAllowed(Map options) {
@@ -282,17 +308,17 @@ class MemoryRetrieval {
         return rows.take(limit)
     }
 
-    private static List<Map> bodyPool(List<File> databases, ParsedQuery parsed, int limit) {
+    private static List<Map> bodyPool(List<File> databases, ParsedQuery parsed, int limit, Map options = [:]) {
         if (!parsed.terms?.trim()) return []
-        return bodyPoolExpression(databases, parsed.terms, limit, 'bm25')
+        return bodyPoolExpression(databases, parsed.terms, limit, 'bm25', options)
     }
 
-    private static List<Map> bodyPoolExpression(List<File> databases, String expression, int limit, String pool) {
+    private static List<Map> bodyPoolExpression(List<File> databases, String expression, int limit, String pool, Map options = [:]) {
         List<Map> rows = []
         databases.each { File database ->
             MemoryEngine engine = new MemoryEngine(database.absolutePath)
             try {
-                engine.searchBody(expression, limit).each { Map result ->
+                engine.searchBody(expression, limit, 64, options.extensions as List<String>, options.archive_filter?.toString()).each { Map result ->
                     rows << enrichSearchRow(result, database.name, pool)
                 }
             } finally {

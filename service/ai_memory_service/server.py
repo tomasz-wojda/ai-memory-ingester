@@ -15,7 +15,7 @@ from . import maxsim
 from .backends import ModelUnavailable, build_backend
 from .config import db_path
 from .encoders import build_encoder
-from .protocol import (ProtocolError, check_version, query_hash, require_dict, text_hash, validate_delete,
+from .protocol import (MAX_DOCS_PER_CALL, ProtocolError, check_version, query_hash, require_dict, text_hash, validate_delete,
                        validate_rerank, validate_upsert)
 from .store import SemanticDb
 
@@ -70,6 +70,15 @@ class App:
         self.backends = {}
         self.encoder = None
         self.lock = threading.Lock()
+        self.last_purge = 0.0
+        self.purge_if_due()
+
+    def purge_if_due(self):
+        now = time.time()
+        if now - self.last_purge < 3600:
+            return 0
+        self.last_purge = now
+        return self.db.purge_cache(self.config["score_cache_days"])
 
     def close(self):
         self.worker.jobs.put(None)
@@ -123,6 +132,7 @@ class App:
         return {"contract_version": CONTRACT_VERSION, "models": result}
 
     def rerank(self, body):
+        self.purge_if_due()
         request = validate_rerank(body, self.config)
         backend = self.backend(request["model"])
         info = backend.info()
@@ -182,6 +192,8 @@ class App:
         documents = body.get("documents")
         if not isinstance(documents, list):
             raise ProtocolError(400, "bad_request", "documents must be a list")
+        if len(documents) > MAX_DOCS_PER_CALL:
+            raise ProtocolError(400, "bad_request", f"at most {MAX_DOCS_PER_CALL} documents per call")
         for document in documents:
             if not isinstance(document, dict) or not all(isinstance(document.get(f), str) for f in ("origin_db", "source_archive", "file_path", "content_hash")):
                 raise ProtocolError(400, "bad_request", "each document needs origin_db, source_archive, file_path and content_hash")
@@ -227,7 +239,7 @@ class App:
             return len(items)
 
         encoded = self.submit(work)
-        remaining = len(self.db.passages_without_vectors(encoder.model_id, 1000000))
+        remaining = self.db.count_passages_without_vectors(encoder.model_id)
         self.db.set_manifest({"late_model_id": encoder.model_id, "dimension": encoder.dimension, "contract_version": CONTRACT_VERSION})
         return {"contract_version": CONTRACT_VERSION, "encoded": encoded, "remaining": remaining, "model": encoder.model_id}
 
@@ -245,6 +257,11 @@ class App:
         if not isinstance(top_k, int) or top_k < 1 or top_k > 500:
             raise ProtocolError(400, "bad_request", "top_k must be between 1 and 500")
         filters = body.get("filters") or {}
+        if not isinstance(filters, dict):
+            raise ProtocolError(400, "bad_request", "filters must be an object")
+        for name in ("source_archive", "origin_db", "ticket"):
+            if filters.get(name) is not None and not isinstance(filters[name], str):
+                raise ProtocolError(400, "bad_request", f"filters.{name} must be text")
         started = time.time()
         docs = filters.get("docs")
         if docs is not None:

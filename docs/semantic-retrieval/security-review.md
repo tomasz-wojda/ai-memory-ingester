@@ -36,7 +36,7 @@ Scope: `service/ai_memory_service/` (server, protocol, store, backends, integrit
 
 | Risk | Why it stays | Next step |
 |---|---|---|
-| One handler thread per connection | Fixed on 2026-11-02: at most `max_connections` (32) connections are open, extra ones get 429, and a body must arrive within `body_deadline_s` (30 s) in total. A slow client can still hold a connection for up to that deadline | None |
+| One handler thread per connection | Fixed on 2026-11-02: at most `max_connections` (32) connections are open, extra ones get 429, and a body must arrive within `body_deadline_s` (30 s) in total. A slow client can still hold a connection for up to that deadline. A refused connection gets its 429 reliably: the server half-closes and waits up to 1 second for the client to finish writing before it closes (at most 8 such waits at once) | None |
 | `max_rss_mb` limits the model folder size, not the process memory; the in-memory late index is about 3.2 GB for the full corpus in half precision | Process memory is only reported by `/v1/health` | Enforce a limit when the real model and index size are known (T041) |
 | The model checksum is verified at load, not on every use; a file swapped on disk while the service runs is not noticed | The model folder is owned by the user; the same user can already read the token | Re-check on `admin/reload`; `doctor` re-checks on demand |
 | The TCP option (`tcp_port`) is in the configuration but not built; only the Unix socket exists | Not needed; smaller attack surface | If built, it needs the `Origin` rule, a connection cap and its own review |

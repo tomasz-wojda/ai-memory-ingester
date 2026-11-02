@@ -9,6 +9,10 @@ List<String> systems = ['S0', 'S1']
 long asOfSequence = 0L
 int depth = 20
 boolean jsonOutput = false
+List<String> importFiles = []
+boolean replace = false
+String restoreName = null
+String exportFile = null
 
 int argumentIndex = 0
 while (argumentIndex < args.length) {
@@ -21,6 +25,25 @@ while (argumentIndex < args.length) {
         mode = 'pool'
     } else if (argument == '--run') {
         mode = 'run'
+    } else if (argument == '--gold-status') {
+        mode = 'gold-status'
+    } else if (argument == '--gold-enable') {
+        mode = 'gold-enable'
+    } else if (argument == '--gold-disable') {
+        mode = 'gold-disable'
+    } else if (argument == '--gold-history') {
+        mode = 'gold-history'
+    } else if (argument == '--gold-import' && argumentIndex + 1 < args.length) {
+        mode = 'gold-import'
+        importFiles << args[++argumentIndex]
+    } else if (argument == '--gold-restore' && argumentIndex + 1 < args.length) {
+        mode = 'gold-restore'
+        restoreName = args[++argumentIndex]
+    } else if (argument == '--gold-export' && argumentIndex + 1 < args.length) {
+        mode = 'gold-export'
+        exportFile = args[++argumentIndex]
+    } else if (argument == '--replace') {
+        replace = true
     } else if (argument == '--json') {
         jsonOutput = true
     } else if (argument == '--set' && argumentIndex + 1 < args.length) {
@@ -63,6 +86,52 @@ if (mode == 'candidates') {
     GoldSet.write(candidates, target)
     println "GOLD_CANDIDATES\tqueries=${candidates.size()}\tout=${target.path}\tstate_dir=${states.path}"
     return
+}
+if (mode.startsWith('gold-')) {
+    if (mode == 'gold-status') {
+        Map status = GoldSet.status(gold)
+        println "GOLD_STATUS\tenabled=${GoldSet.enabled(evalDir)}\tsource=${GoldSet.enabledSource(evalDir)}\tquestions=${status.questions}\tlabelled=${status.labelled}\tgrades=${(status.grades as Map).collect { k, v -> "${k}:${v}" }.join(',')}\tfile=${gold.path}"
+        (status.warnings as List<String>).each { println "GOLD_WARNING\t${it}" }
+    } else if (mode == 'gold-enable' || mode == 'gold-disable') {
+        GoldSet.setEnabled(evalDir, mode == 'gold-enable')
+        println "GOLD_FLAG\tenabled=${mode == 'gold-enable'}\tstate_file=${GoldSet.stateFile(evalDir).path}"
+    } else if (mode == 'gold-import') {
+        try {
+            Map result = GoldSet.importFiles(evalDir, gold, importFiles.collect { new File(it) }, replace)
+            println "GOLD_IMPORT\tadded=${result.added}\tupdated=${result.updated}\tunchanged=${result.unchanged}\tkept=${result.kept}\tremoved=${result.removed}\tsnapshot=${result.snapshot ?: 'none (no change)'}\tfile=${gold.path}"
+            if (!GoldSet.enabled(evalDir)) println "GOLD_NOTE\tThe gold set is switched off. It is not used until you run: eval --gold-enable"
+        } catch (IllegalArgumentException error) {
+            System.err.println("Import refused: ${error.message}")
+            System.exit(2)
+        }
+    } else if (mode == 'gold-history') {
+        List<String> names = GoldSet.history(evalDir)
+        names.each { println "GOLD_SNAPSHOT\t${it}" }
+        println "GOLD_HISTORY\tsnapshots=${names.size()}\tfolder=${GoldSet.historyDir(evalDir).path}"
+    } else if (mode == 'gold-restore') {
+        try {
+            String replaced = GoldSet.restore(evalDir, gold, restoreName)
+            println "GOLD_RESTORE\trestored=${restoreName}\tprevious_version_kept_as=${replaced ?: 'none (same content)'}"
+        } catch (IllegalArgumentException error) {
+            System.err.println("Restore refused: ${error.message}")
+            System.exit(2)
+        }
+    } else if (mode == 'gold-export') {
+        if (!gold.isFile()) {
+            System.err.println("Gold set not found: ${gold.path}")
+            System.exit(2)
+        }
+        File target = new File(exportFile)
+        target.parentFile?.mkdirs()
+        target.setText(gold.getText('UTF-8'), 'UTF-8')
+        println "GOLD_EXPORT\tout=${target.path}"
+    }
+    return
+}
+if ((mode == 'pool' || mode == 'run') && setFile == null && !GoldSet.enabled(evalDir)) {
+    System.err.println("The gold set is switched off (feature flag), so it is not used.")
+    System.err.println("Switch it on with: eval --gold-enable   (or set AI_MEMORY_GOLD=1). A set given with --set is always used.")
+    System.exit(4)
 }
 if (!gold.isFile()) {
     System.err.println("Gold set not found: ${gold.path}")
@@ -142,6 +211,12 @@ static void printUsage() {
     println "  --dataset NAME              Dataset (default: the active dataset)"
     println "  --json                      JSON output"
     println "  --validate                  Check the gold set file"
+    println "  --gold-status               Show the feature flag, the counts and the grades of the gold set, with warnings"
+    println "  --gold-enable | --gold-disable   Switch the default gold set on or off (default: off; AI_MEMORY_GOLD=1 or 0 overrides)"
+    println "  --gold-import FILE          Merge a file in the gold set format (repeat for more files; --replace drops other queries)"
+    println "  --gold-history              List the snapshots kept before each change"
+    println "  --gold-restore NAME         Put a snapshot back (the current version is kept first)"
+    println "  --gold-export FILE          Copy the gold set to FILE, to edit it and import it again"
     println "  --gold-candidates           Create unlabelled queries from ticket state files"
     println "      --state-dir DIR         State folder (default .ai-worklog/state)"
     println "      --out FILE              Output (default data/eval/candidates.jsonl)"

@@ -222,6 +222,56 @@ class TestQueryPlanSuite {
         File out = new File(root, 'eval/candidates.jsonl')
         GoldSet.write(candidates, out)
         verify('written candidates can be loaded again', GoldSet.load(out).size() == candidates.size())
+
+        System.clearProperty('ai.memory.gold')
+        File evalDir = new File(root, 'gold-store')
+        File goldFile = new File(evalDir, 'gold.jsonl')
+        List<Map> firstBatch = [
+            [qid: 'q-1', 'class': 'Q', lang: 'en', query: 'where is the thing', ticket: null, synthetic: false, labels: [[doc: 'd1', rel: 3], [doc: 'd2', rel: 0]], split: 'dev'],
+            [qid: 'q-2', 'class': 'K', lang: 'pl-ascii', query: 'cos tam', ticket: null, synthetic: false, labels: [], split: 'dev']
+        ]
+        File first = new File(root, 'incoming-1.jsonl')
+        GoldSet.write(firstBatch, first)
+        verify('the gold set is off by default', !GoldSet.enabled(evalDir) && GoldSet.enabledSource(evalDir) == 'default')
+        Map imported = GoldSet.importFiles(evalDir, goldFile, [first])
+        verify('the first import adds every query and needs no snapshot', imported.added == 2 && imported.updated == 0 && imported.snapshot == null && GoldSet.load(goldFile).size() == 2)
+        Map again = GoldSet.importFiles(evalDir, goldFile, [first])
+        verify('importing the same file changes nothing and keeps no snapshot', again.unchanged == 2 && again.added == 0 && again.updated == 0 && again.snapshot == null && GoldSet.history(evalDir).isEmpty())
+        List<Map> edited = [new LinkedHashMap(firstBatch[0]) + [labels: [[doc: 'd1', rel: 2], [doc: 'd2', rel: 0]]], [qid: 'q-3', 'class': 'T', lang: 'en', query: 'KD-1 status', ticket: 'KD-1', synthetic: false, labels: [], split: 'test']]
+        File second = new File(root, 'incoming-2.jsonl')
+        GoldSet.write(edited, second)
+        Map merged = GoldSet.importFiles(evalDir, goldFile, [second])
+        verify('a later import updates a query by qid, adds new ones and keeps the rest', merged.updated == 1 && merged.added == 1 && merged.kept == 1 && merged.snapshot != null)
+        List<Map> after = GoldSet.load(goldFile)
+        verify('the edited grades are stored', after.find { it.qid == 'q-1' }.labels.find { it.doc == 'd1' }.rel == 2 && after.size() == 3)
+        verify('the snapshot holds the version before the change', GoldSet.load(new File(GoldSet.historyDir(evalDir), merged.snapshot.toString())).find { it.qid == 'q-1' }.labels.find { it.doc == 'd1' }.rel == 3)
+        verify('history lists the snapshot', GoldSet.history(evalDir) == [merged.snapshot])
+        String replaced = GoldSet.restore(evalDir, goldFile, merged.snapshot.toString())
+        verify('restore puts the old version back and keeps the one it replaced', replaced != null && GoldSet.load(goldFile).size() == 2 && GoldSet.load(goldFile).find { it.qid == 'q-1' }.labels.find { it.doc == 'd1' }.rel == 3 && GoldSet.history(evalDir).size() == 2)
+        Map replacedAll = GoldSet.importFiles(evalDir, goldFile, [second], true)
+        verify('replace drops the queries that are not in the incoming files', replacedAll.removed == 1 && GoldSet.load(goldFile)*.qid == ['q-1', 'q-3'])
+        boolean refusedImport = false
+        File bad = new File(root, 'incoming-bad.jsonl')
+        bad.setText('{"qid":"x"}\n', 'UTF-8')
+        try { GoldSet.importFiles(evalDir, goldFile, [bad]) } catch (IllegalArgumentException ignored) { refusedImport = true }
+        verify('an invalid file is refused and the gold set stays as it was', refusedImport && GoldSet.load(goldFile)*.qid == ['q-1', 'q-3'])
+        boolean refusedRestore = false
+        try { GoldSet.restore(evalDir, goldFile, '../../etc/passwd') } catch (IllegalArgumentException ignored) { refusedRestore = true }
+        verify('restore refuses a name that is not a snapshot', refusedRestore)
+        Map status = GoldSet.status(goldFile)
+        verify('status counts questions and grades', status.questions == 2 && status.labelled == 1 && (status.grades as Map)[2] == 1 && (status.grades as Map)[3] == 0)
+        verify('status warns about missing grades and a small set', (status.warnings as List<String>).any { it.contains('no grades') } && (status.warnings as List<String>).any { it.contains('150') })
+        File onlyOnes = new File(root, 'only-ones.jsonl')
+        GoldSet.write([[qid: 'q-9', 'class': 'Q', lang: 'en', query: 'related only', ticket: null, synthetic: false, labels: [[doc: 'd1', rel: 1], [doc: 'd2', rel: 0]], split: 'dev']], onlyOnes)
+        verify('status warns when nothing is graded 2 or 3', (GoldSet.status(onlyOnes).warnings as List<String>).any { it.contains('graded 2 or 3') })
+        verify('status does not warn about grades when a 3 exists', !(GoldSet.status(first).warnings as List<String>).any { it.contains('graded 2 or 3') })
+        GoldSet.setEnabled(evalDir, true)
+        verify('the flag can be switched on and reads from the state file', GoldSet.enabled(evalDir) && GoldSet.enabledSource(evalDir) == 'state file')
+        System.setProperty('ai.memory.gold', '0')
+        verify('the environment switch overrides the state file', !GoldSet.enabled(evalDir) && GoldSet.enabledSource(evalDir) == 'environment')
+        System.clearProperty('ai.memory.gold')
+        GoldSet.setEnabled(evalDir, false)
+        verify('the flag can be switched off again', !GoldSet.enabled(evalDir))
     }
 
     private static void testSemanticStore(File root) {
@@ -258,6 +308,26 @@ class TestQueryPlanSuite {
         Map run = command(['eval', '--set', gold, '--systems', 'S0,S1', '--data-dir', data.absolutePath])
         verify('eval run prints both systems and a comparison', run.code == 0 && run.out.contains('SYSTEM\tS0') && run.out.contains('SYSTEM\tS1') && run.out.contains('COMPARE\tS1 against S0'))
         verify('eval run stores the run in semantic.db', SemanticStore.path(data).isFile())
+
+        Map goldOff = command(['eval', '--run', '--systems', 'S0', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --run refuses the default gold set while it is switched off', goldOff.code == 4 && goldOff.err.contains('switched off'))
+        Map offPool = command(['eval', '--pool-export', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --pool-export is gated the same way', offPool.code == 4)
+        Map imported = command(['eval', '--gold-import', gold, '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --gold-import stores the queries and says the set is off', imported.code == 0 && imported.out.contains('GOLD_IMPORT\tadded=24') && imported.out.contains('switched off'))
+        Map statusOff = command(['eval', '--gold-status', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --gold-status shows the flag and the counts', statusOff.code == 0 && statusOff.out.contains('enabled=false') && statusOff.out.contains('questions=24'))
+        Map stillOff = command(['eval', '--run', '--systems', 'S0', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('an imported gold set is still not used while the flag is off', stillOff.code == 4)
+        Map validateOff = command(['eval', '--validate', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --validate works while the flag is off', validateOff.code == 0 && validateOff.out.contains('GOLD_VALID'))
+        Map enable = command(['eval', '--gold-enable', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('eval --gold-enable switches the flag on', enable.code == 0 && enable.out.contains('enabled=true'))
+        Map usedOn = command(['eval', '--run', '--systems', 'S0', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
+        verify('with the flag on, eval --run uses the default gold set', usedOn.code == 0 && usedOn.out.contains('SYSTEM\tS0'))
+        Map envOff = command(['eval', '--run', '--systems', 'S0', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: '0'])
+        verify('AI_MEMORY_GOLD=0 switches it off even when the flag is on', envOff.code == 4)
+        command(['eval', '--gold-disable', '--data-dir', data.absolutePath], [AI_MEMORY_GOLD: ''])
 
         Map explain = command(['query', 'what did we decide about the nginx timeout', '--explain', '--limit', '3', '--data-dir', data.absolutePath])
         verify('query --explain prints the plan and finds results', explain.code == 0 && explain.out.contains('Query plan: form=relaxed') && explain.out.contains('bm25_relaxed'))

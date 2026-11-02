@@ -311,6 +311,20 @@ class ServerTest(unittest.TestCase):
                 sock.close()
             fx.close()
 
+    def test_every_refused_connection_gets_the_429_reply(self):
+        import socket as socketlib
+        fx = ServiceFixture(max_connections=1)
+        held = socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM)
+        try:
+            held.connect(str(fx.sock))
+            time.sleep(0.3)
+            replies = [fx.request("GET", "/v1/health") for _ in range(30)]
+            self.assertEqual([status for status, _ in replies], [429] * 30)
+            self.assertTrue(all(body["error"] == "busy" for _, body in replies))
+        finally:
+            held.close()
+            fx.close()
+
     def test_a_body_that_arrives_too_slowly_gets_408(self):
         import socket as socketlib
         fx = ServiceFixture(overrides={"body_deadline_s": 1})

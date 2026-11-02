@@ -69,6 +69,22 @@ The gold set stays out of git because the memory holds internal and personal dat
 
 About 150 queries need roughly 6 to 8 hours of labelling in total when state-derived items are generated automatically and only the pools are reviewed. The owner's own part is the 30 written queries and the 20% review (about 2 hours). The remaining time can be done by an assistant session and then reviewed. Question Q4 in the [decision log](decision-log.md) asks the owner to decide.
 
+### 3.6 Storing, switching and editing the gold set
+
+The gold set lives in `data/eval/gold.jsonl` (ignored by git). The `eval` command manages it:
+
+| Command | What it does |
+|---|---|
+| `eval --gold-import FILE` | Merges a file in the gold set format (for example the export of the labelling page). A query with the same `qid` replaces the old one. Repeat the flag for more files; `--replace` drops every query that is not in the files. An invalid file is refused and the gold set stays as it was. |
+| `eval --gold-status` | Shows the flag, the number of questions, the grades given and warnings (questions without grades, no grade 2 or 3, fewer than 150 questions) |
+| `eval --gold-enable` / `--gold-disable` | Switches the default gold set on or off. **It is off by default.** `AI_MEMORY_GOLD=1` or `0` overrides the state file `data/eval/gold.state.json`. |
+| `eval --gold-history` / `--gold-restore NAME` | Lists the snapshots kept before each change and puts one back (the version it replaces is kept first) |
+| `eval --gold-export FILE` | Copies the gold set to a file, to edit it by hand and import it again |
+
+- **While the flag is off,** `eval --run` and `eval --pool-export` refuse to use the default gold set (exit code 4). A set given with `--set FILE` is always used, and `--validate` and the commands above always work.
+- **Editing later.** Change a grade or a question in the labelling page (it opens with the stored answers pre-filled), export, and import the file. Each import that changes the set first saves the old version in `data/eval/gold-history/`, with a log of the changes (counts only, no text).
+- **The first answers (2026-11-02).** 18 questions are stored: 16 generated from ticket notes, of which 3 have grades (3 times grade 0 and 21 times grade 1, none 2 or 3), and 2 questions the owner wrote with a note on the expected answer (no grades yet). The set is switched off. It is too small and has no grade 2 or 3, so it cannot support a measurement yet.
+
 ## 4. Metrics
 
 Computed per query, then averaged per class, per language and overall.

@@ -345,16 +345,30 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     def __init__(self, address, handler, max_connections=32):
         super().__init__(address, handler)
         self.connection_slots = threading.BoundedSemaphore(max_connections)
+        self.refusal_slots = threading.BoundedSemaphore(8)
+
+    def refuse(self, request):
+        try:
+            request.settimeout(1.0)
+            request.sendall(b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                            b"Content-Length: " + str(len(BUSY_REPLY)).encode() + b"\r\n\r\n" + BUSY_REPLY)
+            request.shutdown(socket.SHUT_WR)
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                if not request.recv(65536):
+                    break
+        except OSError:
+            pass
+        finally:
+            self.shutdown_request(request)
+            self.refusal_slots.release()
 
     def process_request(self, request, client_address):
         if not self.connection_slots.acquire(blocking=False):
-            try:
-                request.settimeout(1.0)
-                request.sendall(b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nConnection: close\r\n"
-                                b"Content-Length: " + str(len(BUSY_REPLY)).encode() + b"\r\n\r\n" + BUSY_REPLY)
-            except OSError:
-                pass
-            self.shutdown_request(request)
+            if self.refusal_slots.acquire(blocking=False):
+                threading.Thread(target=self.refuse, args=(request,), daemon=True).start()
+            else:
+                self.shutdown_request(request)
             return
         super().process_request(request, client_address)
 

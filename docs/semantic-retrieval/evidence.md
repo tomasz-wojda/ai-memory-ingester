@@ -137,6 +137,52 @@ Assumptions: `FLOPs ≈ 2 × parameters × tokens`; an Apple M4 sustains an unme
 | Offline encoding of 12.4 million tokens | 568 million | 12.4 million | about 14 PFLOP | about 2 to 4 hours, one time |
 | Offline encoding of 12.4 million tokens | 33 million (class "small ColBERT", English) | 12.4 million | about 0.8 PFLOP | about 7 to 14 minutes, one time |
 
+### Measured on 2026-11-03 (task T022)
+
+The benchmark (`service/benchmark.py`) ran on this machine (Apple M4, 24 GB), batch 16, medians of 5 to 12 runs. The limit of the engine is 1.2 s for 30 passages.
+
+**Correction (2026-11-03).** The benchmark parameter `--tokens` counts words, not model tokens. An earlier run used 256 words, which is about twice the real engine load. The engine sends windows of about 1000 characters: about 246 model tokens for `mmarco` and about 308 for `polish-reranker-roberta-v3`. The table below uses 128 words, close to that load. The earlier 256-word table was replaced.
+
+Median time in ms at depth 10 / 30 / 50:
+
+| Model (weights) | MPS | CPU | Per passage (MPS / CPU) | Peak memory (MPS / CPU) |
+|---|---|---|---|---|
+| `ms-marco-MiniLM-L-6-v2` (91 MB, English) | 24 / 70 / 120 | 71 / 226 / 377 | 2.3 / 7.5 ms | 582 / 679 MB |
+| `ms-marco-MiniLM-L-12-v2` (133 MB, English) | 44 / 131 / 222 | 142 / 434 / 738 | 4.4 / 14.5 ms | 579 / 708 MB |
+| `mmarco-mMiniLMv2-L12-H384-v1` (471 MB, multilingual) | 58 / 171 / 287 | 190 / 597 / 1002 | 5.7 / 19.9 ms | 1142 / 1300 MB |
+| `BAAI/bge-reranker-v2-m3` (2.27 GB, multilingual) | 584 / 1816 / 3113 | 1486 / 4467 / 7497 | 60.5 / 149 ms | 1024 / 2454 MB |
+| `sdadas/polish-reranker-roberta-v3` (1.77 GB, Polish only) | 776 / 2356 / 3949 | 1911 / 5589 / 9343 | 78.5 / 187 ms | 710 / 2153 MB |
+
+- Inside the 1.2 s limit at depth 30: the three small models on MPS, and on the CPU the two English models and `mmarco` (597 ms). `mmarco` does not need MPS.
+- The two large models do not fit at depth 30. At 60 to 80 ms per passage on MPS they fit about 15 to 20 passages; on the CPU they fit about 6 to 8.
+- The estimate above (15 to 29 s for 50 pairs of 512 tokens) was not tested at that length. At 128 words the large model needs 3.1 s on MPS and 7.5 s on the CPU for 50 passages.
+**Load time (2026-11-03).** Measured with `CrossEncoderBackend` (`verify`, `load`, then one dummy score), one run per cell, files in the OS cache. A first run after a restart reads the disk and is slower. Times in seconds.
+
+| Model | Folder size | Checksum | Load (MPS / CPU) | First score (MPS / CPU) | Total (MPS / CPU) |
+|---|---|---|---|---|---|
+| `ms-marco-MiniLM-L-6-v2` | 88 MB | 0.04 | 3.2 / 2.1 | 0.81 / 0.01 | 4.0 / 2.2 |
+| `ms-marco-MiniLM-L-12-v2` | 129 MB | 0.05 | 2.2 / 2.2 | 0.09 / 0.02 | 2.4 / 2.2 |
+| `mmarco-mMiniLMv2-L12-H384-v1` | 486 MB | 0.19 | 3.3 / 3.2 | 0.09 / 0.02 | 3.6 / 3.4 |
+| `BAAI/bge-reranker-v2-m3` | 2.1 GB | 0.87 | 4.9 / 3.6 | 0.34 / 0.13 | 6.1 / 4.7 |
+| `sdadas/polish-reranker-roberta-v3` | 1.7 GB | 0.67 | 3.5 / 2.9 | 0.18 / 0.13 | 4.4 / 3.7 |
+
+- Load time depends little on size: 2 to 5 s for all five. The fixed cost of importing the libraries is a large part of it. The checksum check takes under 1 s.
+- The first score of the first model in a process includes the GPU set-up, which explains the 0.81 s of L-6 on MPS.
+- The service loads the default model at start, so a query does not pay this cost. A model that is not the default loads on its first use. That takes 3 to 6 s, above the 1.2 s budget, so that first query degrades to `deadline_exceeded`.
+
+- **Sanity probe** (not a quality measurement: 8 made-up paraphrase items per set, so one item is 0.125; a random order gives MRR 0.52). The right passage shares almost no words with the question, and each distractor shares a key word:
+
+| Model | English | Polish | Polish, ASCII question and passages with diacritics | All ASCII |
+|---|---|---|---|---|
+| `ms-marco-MiniLM-L-6-v2` | 0.46 | 0.51 | 0.57 | 0.51 |
+| `ms-marco-MiniLM-L-12-v2` | 0.40 | 0.53 | not run | 0.59 |
+| `mmarco-mMiniLMv2-L12-H384-v1` | 0.82 | 0.84 | 0.73 | 0.50 |
+| `BAAI/bge-reranker-v2-m3` | 0.81 | 0.84 | 0.82 | 0.64 |
+| `sdadas/polish-reranker-roberta-v3` | 0.69 | 0.91 | 0.91 | 0.91 |
+
+  The English-only models are near random on the harder probe. The two multilingual models handle Polish with diacritics as well as English. Text typed without diacritics on both sides hurts the small model most. So the passages must keep their diacritics when they go to the re-ranker. A first, easier probe was discarded because even the English-only model scored 10 of 10 on Polish.
+- **Real inference through the service and the engine** (task T025): the real-model test passes for all five models. In an end-to-end run, `ai-memory-ingester query ... --rerank on` scored 32 passages with `mmarco` in 223 ms. The first run showed a cold-start fault: the model loaded on the first request, which exceeded the 1.2 s deadline. The service now loads the default re-rank model when it starts.
+
 Multi-vector storage is `tokens × dimension × bytes per value`:
 
 | Variant | Size for 12.4 million token vectors |

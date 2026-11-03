@@ -947,3 +947,308 @@ context-expansion defect rather than absent source memory.
 | Strongest use | Architecture, safety constraints, and ticket scope | Fast operational evidence discovery | Latest broad narrative from complete raw entries |
 | Primary weakness | Stale state and truncated ranked snippets | BM25 and conjunction query omit decisive repair | Slow startup and entry-level conjunction misses adjacent evidence |
 | Confidence | High for measured input; medium for operational truth | High for measured ranking; medium for latest-state answer | High for selected entries; medium for latest-state answer |
+
+## Trace in Konto benchmark (Task C, re-ranker variant)
+
+This section adds a third task and a different set of branches. It compares
+direct `prompt.log`, plain FTS5, and FTS5 followed by the cross-encoder
+re-ranker described in `semantic-retrieval/`. It has no worklog branch and no
+manual adjudication. The result is automated fact coverage only. The seven
+dimension score defined above was not computed.
+
+### Frozen inputs
+
+Snapshot: `2026-11-03`
+
+| Item | Frozen value |
+|---|---|
+| Query | `Trace in Konto`, run verbatim |
+| Ticket mapping | KD-6945 (request tracing and trace correlation across Konto frontend and backend). Chosen from the memory search by the benchmark author |
+| Ledger source | `ticket-state/kd6945.md`, authoritative through `2026-10-30T20:08Z` |
+| FTS5 turn cutoff | Turn number 9979 or lower (`2026-10-30T20:10Z`) |
+| Journal cutoff | Entries before `2026-10-30 22:10` local time; `Z` timestamps shifted by 2 hours |
+| Journal selection | Entries whose parsed ticket keys contain `KD-6945`: 545 eligible |
+| Journal parser | `lib/ChatLogParser.groovy` (6,111 entries in the full journal) |
+| Branch budget | 22,000 UTF-8 bytes |
+| FTS5 snippet size | 1,050 characters, 20 results, archive filter `chat:turns` |
+| Re-ranker | `mmarco-mMiniLMv2-L12-H384-v1` on MPS, depth 30, budget 1,200 ms, no degraded runs |
+| Journal order | Timestamp descending, then byte offset descending |
+
+`prompt.log` is no longer in the September line order, so line-number cutoffs
+are invalid. Task C, and the re-runs of tasks A and B in the same session,
+use timestamp cutoffs. Tasks A and B reproduced their earlier automated
+results exactly on a second run.
+
+The journal branch is reported with two packing rules:
+
+- **strict:** add complete entries newest first and stop at the first entry that
+  would exceed the budget;
+- **greedy fill:** skip an entry that does not fit and continue. On the MongoDB
+  task this rule reproduces the September byte count exactly (20 entries,
+  21,772 bytes), so it is probably the original rule.
+
+### Fact ledger
+
+Weights follow the definition above (3, 2 or 1). All 20 facts were drafted from
+one source document. The strict set holds 17 facts and 39 weight. A fact counts
+as recovered when its strict anchor patterns all match the selected text.
+
+| ID | Weight | Fact | Strict anchor |
+|---|---:|---|---|
+| C01 | 3 | Goal: trace requests and correlate Traefik, application error logs and datalog across frontend and microservices | Not in strict set |
+| C02 | 3 | Backend decision: PULS, with Grafana Tempo for traces and Loki via OTLP for logs (D2, 2026-10-24) | `tempo`, `loki` |
+| C03 | 3 | PULS is the target platform; Konto is leaving Datadog and New Relic (D9, 2026-10-30) | `datadog`, `new relic` |
+| C04 | 3 | Sampling is 1.0 (100%) in all environments for now, replacing the 20% start (D3, 2026-10-27) | `1.0` or `100%`, `sampl` |
+| C05 | 3 | 97.3% of player `traceparent` headers carry flag 00 and are not recorded; 0 of 15 such IDs exist in Tempo | `flag 00` |
+| C06 | 3 | PROD auto-instrumentation was delivered by KD-6540 (26 apps) | `kd-6540` |
+| C07 | 3 | Konto traces are in Tempo for 24 services, but none from Traefik; no Konto application logs in Loki (2026-10-27) | `24 services` |
+| C08 | 2 | D1 open: log field names `trace.id` and `span.id` against `trace_id` and `span_id` | `trace.id` |
+| C09 | 2 | D4 open: reuse `sso_device_id` or introduce `konto_device_id` | `konto_device_id` |
+| C10 | 2 | D8 resolved: browser tracing through PULS; browser intake (OTLP/HTTP with CORS) still open | `cors` |
+| C11 | 2 | KD-7159: Traefik logs go to a separate Kinesis stream on UAT only; not live on kontoprod | `kd-7159` |
+| C12 | 2 | KD-7531: `social.provider` attribute is present on PROD spans in PULS Tempo | `social.provider` |
+| C13 | 2 | Web `device_id` is live end to end (KD-6195, webcomponent #278) | `#278` or `kd-6195` |
+| C14 | 2 | Quick-win plan (bunyan trace fields, Rollouts `OTEL_SERVICE_NAME`, Traefik tracing); rollout STAGE, UAT, PROD; not approved | `otel_service_name` |
+| C15 | 2 | Design direction: W3C `trace_id`, business IDs as separate fields | `w3c` |
+| C16 | 2 | D6 open: meaning of "datalog"; Datadog browser-logs ship in PROD frontends | `browser-logs` |
+| C17 | 1 | Ticket metadata: Jira status "Do podjęcia", 7 hours logged | Not in strict set |
+| C18 | 3 | Current phase is RESEARCH; Traefik tracing, log and trace correlation, error logs and frontend tracing remain open | Not in strict set |
+| C19 | 2 | D7 open: GDPR and consent sign-off for `device_id` | `gdpr` |
+| C20 | 1 | PULS documents recommend 5-20% PROD sampling | `5-20%` |
+
+Anchor check, run before scoring: all 20 fact patterns match the capsule, and
+the 17 strict anchors match at most 1.5% of a random sample of 3,000 unrelated
+turns. C07 appears only in the capsule and in none of the 501 KD-6945 turns,
+so no turn-based or journal branch can recover it. The best possible turn-based
+coverage on this ledger is about 92%.
+
+### Retrieval measurements
+
+| Branch | Selected | Selected bytes | Wall time |
+|---|---|---:|---:|
+| Direct `prompt.log`, strict packing | 3 entries of 545 eligible | 16,830 | 4.7 s |
+| Direct `prompt.log`, greedy fill | 7 entries | 21,933 | 4.7 s |
+| FTS5 | 20 snippets | 10,787 | 1.1 s |
+| FTS5 + re-ranker, engine order | 20 snippets | 17,252 | 1.7 s |
+| FTS5 + re-ranker, model-only order | 20 snippets | 15,071 | 1.7 s |
+
+Wall time includes runtime start-up: about 1 s of Java start-up for the FTS5
+queries, and the Groovy parse of the 8 MB journal for `prompt.log`. The
+re-ranker adds about 0.6 s with the service already warm. The September
+timings in this document came from the `sqlite3` command line and are not
+comparable with the FTS5 times here.
+
+### Weighted coverage
+
+| Branch | cov@5 | cov@10 | cov@all | Facts recovered |
+|---|---:|---:|---:|---|
+| `prompt.log`, strict packing | 0.0 | 0.0 | **0.0** | none |
+| `prompt.log`, greedy fill | 12.8 | 12.8 | **12.8** | C03, C16 |
+| FTS5 | 0.0 | 0.0 | **5.1** | C14 |
+| FTS5 + re-ranker, engine order | 7.7 | 12.8 | **33.3** | C02, C04, C05, C14, C15 |
+| FTS5 + re-ranker, model-only order | 20.5 | 20.5 | **20.5** | C02, C05, C15 |
+
+Coverage uses `100 × recovered strict weight / 39`. `cov@k` counts only the
+first `k` selected items in each branch's own order.
+
+### Findings
+
+- **Re-ranking changes the selected set for this query.** On tasks A and B the
+  20 FTS5 results already fit the budget, so re-ranking only reordered them.
+  Here plain FTS5 fills the top 20 with short administrative turns, for example
+  turns that only say the agent is waiting for a Tempo lookup. The re-ranker
+  pulls substantive turns into the top 20 and raises coverage from 5.1 to 33.3.
+  Part of the gain is more text: the re-ranked set holds 17,252 bytes against
+  10,787.
+- **The short query is the main weakness of plain FTS5.** Three words match
+  many low-information turns, and BM25 length normalization favors them.
+- **Recency packing fails on a long ticket.** KD-6945 has 545 eligible entries,
+  and the newest are large (the largest is 17 KB). A 22,000-byte newest-first
+  window holds 3 to 7 entries, all from the last two days before the freeze,
+  and they do not contain the decision facts. This suits a short ticket and
+  fails a ticket with a long tail of status updates.
+- **The two journal packing rules differ by 12.8 points** on this task and by
+  zero on tasks A and B. The choice of rule matters when entries are large.
+- **Model-only order is not better than the engine order** here (20.5 against
+  33.3 at all selected), because the set differs. The blend with recency,
+  authority and impact signals kept two extra facts in the set.
+
+### Failure-layer classification
+
+| Finding | Failure layer |
+|---|---|
+| Plain FTS5 top 20 is dominated by short administrative turns | Ranking |
+| Three-word query matches many low-information turns | Query formulation |
+| Large newest entries consume the journal budget | Context assembly |
+| Journal order by recency selects the last days of the ticket only | Context ordering |
+| C07 exists only in the state capsule | Source coverage |
+
+### Limits
+
+- One query and one ticket. A difference of one fact is worth 5 to 8 points.
+- The ledger was drafted by the benchmark author from one source and has not
+  been adjudicated by the owner. The ticket mapping of the query is also the
+  author's choice.
+- Anchors are regular expressions, not human grading. Facts C01, C17 and C18
+  are in the full ledger but not in the strict set.
+- The re-ranked and plain FTS5 sets differ in size, so coverage per byte was
+  not compared.
+- The harness lives in `data/eval/ledger-run/` (`three_way.py`, `task_c.py`,
+  `model_bench.py`, `dump_journal.groovy`), which is git-ignored. Results are in
+  `three-way-run4.json` in the same folder.
+
+Created using Anthropic Claude. Keep this internal until a person has reviewed
+and verified it.
+
+## Summary of KD-8130 benchmark (Task D, re-ranker variant)
+
+This section adds a fourth task with the same branches and method as the
+Trace in Konto section: direct `prompt.log`, plain FTS5, and FTS5 followed by
+the cross-encoder re-ranker. The result is automated fact coverage only. The
+query is a ticket-key question, which is the most common way a person asks for
+the state of a ticket.
+
+### Frozen inputs
+
+Snapshot: `2026-11-03`
+
+| Item | Frozen value |
+|---|---|
+| Query | `summary of KD-8130`, run verbatim |
+| Ledger sources | `worklog/2026-10-30_KD-8130.log` (ACTION LOG through `2026-11-03 12:50` CET) and `ticket-state/kd8130.md` |
+| FTS5 turn cutoff | Turn number 10467 or lower (all indexed turns at the snapshot; none concern this benchmark) |
+| Journal cutoff | Entries before `2026-11-03T11:50Z` (the Jira comment 2105960 entry itself is excluded) |
+| Journal parser | `lib/ChatLogParser.groovy` |
+| Branch budget | 22,000 UTF-8 bytes |
+| FTS5 snippet size | 1,050 characters, 20 results, archive filter `chat:turns` |
+| Re-ranker | `mmarco-mMiniLMv2-L12-H384-v1` on MPS, depth 30, budget 1,200 ms, no degraded runs |
+
+Time handling: the harness shifts `Z` timestamps by a fixed 2 hours and
+compares them with a cutoff in the same frame. Poland has used CET (UTC+1)
+since `2026-10-25`, so cutoffs for tasks C and D are accurate to about one
+hour for entries without a `Z` suffix.
+
+The journal branch is reported with three selection rules:
+
+- **strict:** entries whose parsed ticket keys contain `KD-8130`, newest first,
+  stop at the first entry that would exceed the budget (25 eligible entries);
+- **greedy fill:** the same entries, skipping an entry that does not fit;
+- **text match, greedy:** any entry whose text mentions `KD-8130` or `KD8130`
+  (42 eligible entries). Seventeen entries mention the ticket without carrying
+  the parsed ticket key.
+
+### Fact ledger
+
+All 20 facts were drafted by the benchmark author from the worklog. The strict
+set holds 17 facts and 40 weight. A fact counts as recovered when its strict
+anchor patterns all match the selected text.
+
+| ID | Weight | Fact | Strict anchor |
+|---|---:|---|---|
+| D01 | 3 | Goal: prepare the environment to run `deleteInactiveUsersFromEmailList.js` (aaa-api, KD-7033), which deletes users listed in a CSV and writes a result report | script name |
+| D02 | 3 | Scale: 425,539 hard-bounced accounts first, then 1,117,120 dropped | `425 539` |
+| D03 | 3 | Acceptance criteria: runs in aaa-api, is not interrupted, result saved on the share and passed on, audit line in the infosec Kibana | Not in strict set |
+| D04 | 3 | D1 resolved: option A, detached exec in the existing eap pod, flagged `karpenter.sh/do-not-disrupt` | `do-not-disrupt` |
+| D05 | 3 | KD-7033 PR #732 blocks the run; prod release 2026-11-03; no script run on release day | `#732` |
+| D06 | 3 | UAT dry-run (G1) over 3,949,912 lines: 3,939,946 would be deleted, 6,959 recent logins, 3,007 recent creations, 0 errors | `3 939 946` |
+| D07 | 3 | G1 needed four attempts: query timeout, two OOMKills, then resume with `--skipLines`; result split over three files | `skiplines` |
+| D08 | 3 | OOM cause: about 20 CronJobs exec into the same eap pod, bursts on even minutes against a 1 Gi limit | `even minute` |
+| D09 | 3 | UAT force run (G2) completed on 2026-11-03 after five attempts: 3,939,947 deleted, 0 errors | `3 939 947` |
+| D10 | 2 | First force attempt failed with `Timeout - table: aaa_users_bylaws - method: del` at batch size 3000; batch size 500 used afterwards | `aaa_users_bylaws` |
+| D11 | 2 | UAT eap resources aligned with PROD through GitOps (limits 1536Mi, commit `10a6c0cd1`) | `10a6c0cd1` or `1536mi` |
+| D12 | 2 | Audit lines (`userAudit`) go through fluent-bit to Firehose; they are emitted before commit, so they do not prove a deletion | `useraudit` |
+| D13 | 2 | The result file goes to Bartkowiak, Andrzej, who notifies the other teams; transfer channel (D4) open | `bartkowiak` |
+| D14 | 2 | D6 resolved: PROD starts on a PO request and is scheduled then | Not in strict set |
+| D15 | 2 | Rerun semantics: resume with `--skipLines`, idempotent; SIGTERM is ignored, so stopping needs SIGKILL | `sigterm` |
+| D16 | 2 | Input path `/net/rodo/rc/kontotvn/exported`; never place the input in `new_to_import` | `new_to_import` |
+| D17 | 1 | Jira comment 2105960 posted with the UAT summary | `2105960` |
+| D18 | 2 | ArgoCD application is auto-synced from an ApplicationSet, so a manual pause is reverted; freeze means no commits to the overlay | `applicationset` |
+| D19 | 1 | Monitoring uses a local script `tmp/kd8130-monitor.sh`; no dedicated alert exists | `kd8130-monitor` |
+| D20 | 3 | Current state: UAT G0 to G2 complete; PROD run (G3) waits for a date and a PO request | Not in strict set |
+
+Anchor check, run before scoring: all 20 fact patterns match the worklog, and
+the strict anchors match at most 0.3% of a random sample of 3,000 unrelated
+turns. D02 appears in no turn, so no turn-based branch can recover it. The best
+possible turn-based coverage is about 92.5%.
+
+The state capsule `ticket-state/kd8130.md` matches only 8 of the 20 fact
+patterns. It still describes the ticket as in PLAN with G1 and G2 pending and
+has none of the UAT results (D06 to D12 and later). The capsule is stale
+relative to the ACTION LOG in the same worklog.
+
+### Retrieval measurements
+
+| Branch | Selected | Selected bytes | Wall time |
+|---|---|---:|---:|
+| Direct `prompt.log`, strict packing | 6 entries of 25 eligible | 19,813 | 4.6 s |
+| Direct `prompt.log`, greedy fill | 8 entries | 21,426 | 4.6 s |
+| Direct `prompt.log`, text match, greedy | 8 entries of 42 eligible | 21,486 | 4.6 s |
+| FTS5 | 20 snippets | 16,850 | 1.3 s |
+| FTS5 + re-ranker, engine order | 20 snippets | 16,563 | 2.1 s |
+| FTS5 + re-ranker, model-only order | 20 snippets | 16,152 | 2.1 s |
+
+Timings follow the same caveats as in the Trace in Konto section.
+
+### Weighted coverage
+
+| Branch | cov@5 | cov@10 | cov@all | Facts recovered |
+|---|---:|---:|---:|---|
+| `prompt.log`, strict packing | 5.0 | 5.0 | **5.0** | D16 |
+| `prompt.log`, greedy fill | 5.0 | 5.0 | **5.0** | D16 |
+| `prompt.log`, text match, greedy | 42.5 | 47.5 | **47.5** | D01, D04, D07, D08, D10, D11, D12, D19 |
+| FTS5 | 17.5 | 17.5 | **50.0** | D01, D04, D06, D07, D09, D10, D11, D17 |
+| FTS5 + re-ranker, engine order | 17.5 | 32.5 | **57.5** | D01, D04, D06, D07, D08, D09, D10, D11, D17 |
+| FTS5 + re-ranker, model-only order | 10.0 | 40.0 | **55.0** | D01, D06, D07, D08, D09, D10, D11, D12, D17 |
+
+Coverage uses `100 × recovered strict weight / 40`.
+
+### Findings
+
+- **The parsed ticket key is a poor selector for the journal branch.** Matching
+  only entries with a parsed `KD-8130` key gives 5.0. Matching entries that
+  mention the ticket gives 47.5. Seventeen entries mention the ticket without
+  a parsed key, including entries from 2026-11-03, and the text-match variant
+  recovers the UAT run facts that the keyed selection misses. The same
+  text-match variant gives the same result on tasks A and C, so only this task
+  is affected.
+- **Plain FTS5 does well on a ticket-key question.** It recovers 8 of 17 facts
+  (50.0). I did not test why; the ticket key may match the turn paths and text
+  of this ticket well.
+- **The re-ranker adds 7.5 points and moves useful turns up.** The engine order
+  gives 57.5 against 50.0, and cov@10 rises from 17.5 to 32.5. The model-only
+  order reaches 40.0 at the top 10 but 55.0 over all 20. This is smaller than
+  the gain on Trace in Konto because plain FTS5 already starts well.
+- **The three best branches are close.** FTS5 + re-ranker (57.5), FTS5 (50.0)
+  and the journal with text matching (47.5) differ by about one to two facts.
+  They recover different facts: the journal recovers the audit and monitoring
+  facts (D12, D19), FTS5 the totals (D06, D09, D17).
+- **No branch recovers D02, D05, D13, D15 or D18**, and D16 and D19 are
+  recovered only by one journal variant each. Several of these are decision and
+  hand-over facts. I did not check where they sit in the turns.
+- **The capsule is stale for a live ticket.** A branch that reads only the
+  state capsule would recover 8 of 20 facts and report the ticket as pending.
+
+### Failure-layer classification
+
+| Finding | Failure layer |
+|---|---|
+| Some journal entries that mention the ticket carry no parsed ticket key | Parsing and ingestion |
+| Ticket-key selection misses entries that only mention the ticket | Retrieval orchestration |
+| State capsule lags the ACTION LOG | Source and state freshness |
+| 20 snippets of 1,050 characters cannot hold decisions and hand-over | Context assembly |
+| Plain FTS5 reaches the first facts at top 20 but not top 10 | Ranking |
+
+### Limits
+
+- One query and one ticket. A difference of one fact is worth 2.5 to 7.5 points.
+- The ledger was drafted by the benchmark author from one worklog and has not
+  been adjudicated by the owner. The facts and weights are the author's choice.
+- Anchors are regular expressions, not human grading. Facts D03, D14 and D20
+  are in the full ledger but not in the strict set.
+- The FTS5 branch filters to `chat:turns`. A real ticket question also reaches
+  worklog and capsule documents, which this task did not measure.
+- Results are in `three-way-run6.json` in `data/eval/ledger-run/` (git-ignored),
+  with `task_d.py` and the harness files named in the Trace in Konto section.
+
+Created using Anthropic Claude. Keep this internal until a person has reviewed
+and verified it.

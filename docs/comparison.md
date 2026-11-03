@@ -1252,3 +1252,99 @@ Coverage uses `100 × recovered strict weight / 40`.
 
 Created using Anthropic Claude. Keep this internal until a person has reviewed
 and verified it.
+
+## Score summary for tasks C and D
+
+This section gives the timing-and-score summary for the Trace in Konto and
+Summary of KD-8130 benchmarks in the format of the MongoDB metrics comparison,
+with four branches: direct `prompt.log`, FTS5 top 20 over chat turns, indexed
+worklogs, and FTS5 over all sources followed by the `mmarco` re-ranker.
+
+Dimensions that need written answers and manual adjudication (freshness,
+temporal correctness, contradictions, claim precision) were not measured and are
+reported as `Not measured`. The overall weighted score defined above is
+therefore not computed. A partial score is given instead.
+
+### Method for the measured dimensions
+
+- **Factual coverage:** weighted strict-fact coverage over all selected items:
+  `100 × recovered strict weight / strict weight` (39 for task C, 40 for task D).
+  Facts outside the strict set are not counted.
+- **Precision:** retrieval precision only: useful items divided by selected
+  items. An item is useful when it satisfies the anchors of at least one ledger
+  fact. Claim precision needs written answers and was not measured.
+- **Authority:** the tier scale defined above: 80 for structured worklog
+  evidence and 70 for turn or journal evidence. The mixed all-source branch uses
+  the mean over its items, with model-reasoning artifacts at 50.
+- **Traceability:** 100 at item level, because every selected item carries a
+  document path or journal line range. Claim-level provenance was not measured.
+- **Partial score:**
+  `(0.25 × coverage + 0.20 × precision + 0.10 × authority + 0.10 × traceability) / 0.65`.
+  This renormalizes the four measured weights. It is not comparable with the
+  overall scores of the SCTASK1544083 and MongoDB sections.
+- **Journal variant:** task C uses greedy fill. Task D uses text matching with
+  greedy fill. The parsed-ticket-key selection scores 5.0 on task D.
+- **Indexed worklogs:** the engine restricted to `worklog:chunks`, top 20,
+  1,050-character snippets, no re-ranker. The state capsule is not included.
+- **FTS5 all + re-ranker:** no archive filter, `mmarco` on MPS, depth 30,
+  budget 1,200 ms, no degraded runs; first 20 results. Chat turns obey the turn
+  cutoff. Worklog and artifact documents have no time cutoff.
+
+### Trace in Konto comparison (task C)
+
+| Dimension | Direct prompt.log | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco |
+|---|---|---|---|---|
+| Result/selected count | 545 eligible / 7 complete entries | 20 snippets | 20 snippets | 20 snippets: 9 turns, 9 artifacts, 2 chunks |
+| Selected bytes | 21,933 | 10,787 | 21,038 | 21,022 |
+| Retrieval time | **4.7 s** including Groovy start-up and parsing | **1.1 s** including Java start-up | **0.9 s** including Java start-up | **1.7 s** including Java start-up and re-ranking |
+| Factual coverage | **13/100**, no decision facts in the newest entries | **5/100**, short administrative turns dominate | **82/100**, the ledger was drafted from this source | **46/100**, nine artifacts take half the window |
+| Precision (retrieval only) | **14/100**, 1 of 7 useful | **5/100**, 1 of 20 useful | **60/100**, 12 of 20 useful | **30/100**, 6 of 20 useful |
+| Freshness | Not measured | Not measured | Not measured | Not measured |
+| Temporal correctness | Not measured | Not measured | Not measured | Not measured |
+| Authority | **70** | **70** | **80** | **62**, item mean |
+| Traceability | **100** at item level | **100** at item level | **100** at item level | **100** at item level |
+| Contradictions | Not measured | Not measured | Not measured | Not measured |
+| Overall weighted score | Not computed | Not computed | Not computed | Not computed |
+| Partial score (4 of 7 dimensions) | **35.5** | **29.7** | **77.7** | **51.9** |
+| Strongest use | Not a fit for this query | None measured | Facts from a curated ticket record | Broad discovery across sources |
+| Primary weakness | Large recent entries fill the budget | Short administrative turns win the ranking | Built from the same source as the ledger | Model-reasoning artifacts consume rank |
+| Confidence | Medium: one query, one ledger | Medium: one query, one ledger | Low: ledger bias toward this source | Medium: one query, mixed sources |
+
+### Summary of KD-8130 comparison (task D)
+
+| Dimension | Direct prompt.log (text match) | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco |
+|---|---|---|---|---|
+| Result/selected count | 42 eligible / 8 complete entries | 20 snippets | 20 snippets | 20 snippets: 15 turns, 5 chunks |
+| Selected bytes | 21,486 | 16,850 | 17,967 | 15,125 |
+| Retrieval time | **4.8 s** including Groovy start-up and parsing | **1.4 s** including Java start-up | **1.2 s** including Java start-up | **1.5 s** including Java start-up and re-ranking |
+| Factual coverage | **48/100**, audit and monitoring facts; misses totals | **50/100**, totals found; misses decisions | **48/100**, decisions and plan sections | **65/100**, turns plus chunks |
+| Precision (retrieval only) | **75/100**, 6 of 8 useful | **55/100**, 11 of 20 useful | **40/100**, 8 of 20 useful | **50/100**, 10 of 20 useful |
+| Freshness | Not measured | Not measured | Not measured | Not measured |
+| Temporal correctness | Not measured | Not measured | Not measured | Not measured |
+| Authority | **70** | **70** | **80** | **72.5**, item mean |
+| Traceability | **100** at item level | **100** at item level | **100** at item level | **100** at item level |
+| Contradictions | Not measured | Not measured | Not measured | Not measured |
+| Overall weighted score | Not computed | Not computed | Not computed | Not computed |
+| Partial score (4 of 7 dimensions) | **67.5** | **62.3** | **58.3** | **66.9** |
+| Strongest use | Audit and monitoring facts from raw entries | Totals and ticket scope | Decisions and plan sections | Best coverage by combining turns and chunks |
+| Primary weakness | The parsed ticket key misses 17 entries | Misses decisions and hand-over | Static sections, not the latest results | Half of the 20 results are not useful |
+| Confidence | Medium: depends on the selection rule | Medium: one query, one ledger | Low: ledger drafted from this worklog | Medium: one query, mixed sources |
+
+### Reading the two tables
+
+- The indexed worklog branch leads on task C and trails on task D. Both
+  ledgers were drafted from the worklog or capsule, so this branch has a
+  built-in advantage that the table does not remove.
+- FTS5 over all sources with the re-ranker has the highest coverage on task D
+  (65) and a middle result on task C (46). On task C, nine of its 20 results
+  are model-reasoning artifacts. The source mix matters more than the model on
+  that task.
+- The earlier chat-turn-only re-ranker run scored 33.3 on task C and 57.5 on
+  task D, so removing the archive filter lowers task C and raises task D.
+- The direct journal branch is the slowest on both tasks and depends on how
+  entries are selected.
+- Results are in `three-way-run8.json` in `data/eval/ledger-run/`
+  (git-ignored).
+
+Created using Anthropic Claude. Keep this internal until a person has reviewed
+and verified it.

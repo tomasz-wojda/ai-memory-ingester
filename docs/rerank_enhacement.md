@@ -1,0 +1,279 @@
+# Re-rank Retrieval Enhancement: Findings and Checklist
+
+Status: proposal. No step in the checklist is started. The findings come from the tests of 2026-11-03. Related documents: [comparison.md](comparison.md) (task results), [semantic-retrieval/evidence.md](semantic-retrieval/evidence.md) section 7 (model speed and load time), [semantic-retrieval/decision-log.md](semantic-retrieval/decision-log.md) (D-04), [semantic-retrieval/tasks.md](semantic-retrieval/tasks.md).
+
+Legend: `OWNER` marks a step that needs the owner. `[ING]` means the work is in `repos/ai-memory-ingester`. Every item states the evidence behind it, how to measure it, and the acceptance rule. A hypothesis is marked as such. Nothing in this document is proven on real, graded data: the gold set has no grade 2 or 3 labels, and the ledger benchmarks hold four tasks.
+
+---
+
+## 1. Purpose and scope
+
+Goal: raise the quality of the context an agent gets from memory by improving the re-rank stage, without breaking the time budget (1.2 s for 30 passages by default).
+
+What "perfect" can mean here: no retrieval system is perfect, so this document defines it as measurable gates (section 6). A step is kept only when it passes its gate on the benchmark in section 5, with no regression on any task.
+
+---
+
+## 2. How the re-rank stage works today
+
+Facts read from the code on 2026-11-03.
+
+| Part | Behavior | Source |
+|---|---|---|
+| First stage | Strict FTS5 AND query, then a relaxed OR and prefix query when the strict query returns fewer than 10 rows. Strict rows stay first | `lib/MemoryRetrieval.groovy`, `lib/Config.groovy` |
+| Candidates | The fused first-stage list. Depth 30 by default, 1 to 100 allowed (`--rerank-depth`) | `03_query_memory.groovy` |
+| Passage split | Structure first, then windows of 900 characters with a stride of 675 | `lib/PassageBuilder.groovy` |
+| Passage choice | At most 3 passages per document. When a document has more than 3, the 3 with the most query words in common are kept (ASCII-folded word overlap). If none share a word, the first passage is kept | `PassageBuilder.select` |
+| Passage cap | At most 100 passages per request | `lib/RerankStage.groovy` |
+| Scoring | The service scores each (query, passage) pair with the cross-encoder. A document keeps its best passage score (MaxP) | `lib/RerankStage.groovy` |
+| Model input limit | `max_tokens` is 256 unless the model entry sets another value | `service/ai_memory_service/backends.py` |
+| Fusion | The re-rank signal is added to the other signals by weighted reciprocal rank fusion: `weight / (60 + rank)`. Weights: exact 4, bm25 3, bm25_relaxed 2, recency 2, authority 2, impact 1, rerank 5, late 3 | `lib/SignalFusion.groovy` |
+| Degraded mode | Fewer than 10 passages scored, a down service, or a missed deadline keeps the lexical order and reports a reason | `lib/RerankStage.groovy` |
+| Default model | `mmarco-mMiniLMv2-L12-H384-v1` on MPS at depth 30 (D-04, confirmed 2026-11-03, for now) | `decision-log.md` |
+
+Consequences of these facts that matter for the checklist:
+
+- The final order is not the model order. A document that is first for the model gets at most `5 / 61` from the re-rank signal, while the other signals can add up to 8 to 12 weight units together.
+- A lexical word-overlap filter picks the passages the model sees. The neural model never sees a passage that shares no word with the query, unless it is the first passage.
+- With 3 passages per document and a cap of 100 passages, only about 33 documents are scored, however large the depth is.
+- The evidence that the engine prints (snippet) is the head of the document. The best passage that the model chose is stored in `best_passage`, but the benchmark scored the head, not that passage.
+
+---
+
+## 3. Findings
+
+### 3.1 Model speed, load time and memory
+
+Apple M4, 128 words per passage, medians (evidence.md section 7). The engine limit is 1.2 s for 30 passages.
+
+| Model | 30 passages on MPS | 30 passages on CPU | Per passage (MPS / CPU) | Load (MPS / CPU) | Peak memory |
+|---|---:|---:|---|---|---|
+| ms-marco L-6 (English) | 70 ms | 226 ms | 2.3 / 7.5 ms | 4.0 / 2.2 s | 0.6 GB |
+| ms-marco L-12 (English) | 131 ms | 434 ms | 4.4 / 14.5 ms | 2.4 / 2.2 s | 0.6 GB |
+| **mmarco (multilingual, small)** | **171 ms** | **597 ms** | 5.7 / 19.9 ms | 3.6 / 3.4 s | 1.1 to 1.3 GB |
+| bge-reranker-v2-m3 (large) | 1,816 ms | 4,467 ms | 60.5 / 149 ms | 6.1 / 4.7 s | 1.0 to 2.5 GB |
+| polish-reranker-roberta-v3 | 2,356 ms | 5,589 ms | 78.5 / 187 ms | 4.4 / 3.7 s | 0.7 to 2.2 GB |
+
+- Load time depends little on model size (2 to 6 s). The service loads the default model at start, so a query does not pay it. A model that is not the default loads on first use and misses the 1.2 s budget.
+- Only the three small models fit the budget at depth 30 on MPS. mmarco and the two English models also fit on the CPU.
+- A first benchmark counted words as tokens and overstated the load about twice. The corrected table above replaced it.
+- polish-reranker-roberta-v3 has Gemma terms and is excluded by the model policy unless IP Legal approves.
+
+### 3.2 Sanity probe (a failure detector, not a ranking)
+
+Eight made-up paraphrase items per set. A random order scores about 0.52 (MRR).
+
+| Model | English | Polish | ASCII question, diacritics in passages | All ASCII |
+|---|---:|---:|---:|---:|
+| ms-marco L-6 | 0.46 | 0.51 | 0.57 | 0.51 |
+| ms-marco L-12 | 0.40 | 0.53 | not run | 0.59 |
+| mmarco | 0.82 | 0.84 | 0.73 | 0.50 |
+| bge-reranker-v2-m3 | 0.81 | 0.84 | 0.82 | 0.64 |
+| polish-reranker-roberta-v3 | 0.69 | 0.91 | 0.91 | 0.91 |
+
+- English-only models are near random on this probe. They are no candidates for a bilingual memory.
+- mmarco falls to random when both the question and the passages lose their diacritics. Passages must keep their diacritics.
+- With 8 items per set, a difference of 0.1 is noise.
+
+### 3.3 Ledger benchmark of the models (8 queries, chat turns only)
+
+Two tasks (SCTASK1544083 and MongoDB metrics), four phrasings each. Weighted fact coverage (%) at the top 5, 10 and 20 chat turns. The time budget was set to 10 s so that all models could finish.
+
+| System @ depth | Engine order (5 / 10 / 20) | Model-only order (5 / 10 / 20) |
+|---|---|---|
+| lexical (no re-rank) | 25.6 / 39.3 / 58.8 | same |
+| ms-marco L-6 @30 | 27.4 / 40.2 / 62.9 | 36.5 / 46.1 / 65.0 |
+| ms-marco L-12 @30 | 24.5 / 45.3 / 62.9 | 38.5 / 46.1 / 66.0 |
+| mmarco @30 | 28.9 / 44.7 / 65.3 | 39.9 / 51.6 / 64.2 |
+| bge-m3 @30 | 25.2 / 32.0 / 62.4 | 31.1 / 52.3 / 62.7 |
+| polish-roberta @30 | 32.4 / 38.5 / 66.0 | 42.4 / 52.3 / 63.7 |
+| mmarco @100 | 30.3 / 37.1 / 61.9 | 36.0 / 55.9 / 60.8 |
+
+- Every model beats lexical order in the model-only order at the top 10 (46 to 56 against 39.3).
+- The models cannot be separated on 8 queries. One query is worth about 12% of a cell.
+- **The engine order loses most of the gain.** mmarco @100 scores 55.9 in model-only order at the top 10 and 37.1 in engine order, below lexical (39.3). The cause is the fusion with the other signals.
+- Without an archive filter, the re-ranker scored about 30 documents, mostly worklogs and artifacts, and the chat-turn order never changed. The benchmark used `-A chat:turns` for this reason.
+- Depth 100 scores only about 33 documents (the 100-passage cap with up to 3 passages per document).
+- On the Polish ArgoCD queries (task A) every model scored 27.8 and 19.4 at the top 10 in model-only order, against 41.7 and 33.3 for lexical. All four models gave identical numbers. This is **unexplained**.
+
+### 3.4 Four-task comparison (comparison.md)
+
+Weighted strict-fact coverage over all selected items (%). One query per task. The ledgers for tasks C and D were drafted by the benchmark author from the worklog or capsule, so the indexed worklog branch has a built-in advantage on them.
+
+| Task | Direct prompt.log | FTS5 top 20 (chat turns) | FTS5 + mmarco (chat turns) | Indexed worklogs | FTS5 all sources + mmarco |
+|---|---:|---:|---:|---:|---:|
+| A: SCTASK1544083 | 63.9 | 61.1 | 61.1 | 86.1 | **94.4** |
+| B: MongoDB metrics | **93.8** | 77.1 | 77.1 | 66.7 | 56.2 |
+| C: Trace in Konto (KD-6945) | 12.8 | 5.1 | 33.3 | **82.1** | 46.2 |
+| D: Summary of KD-8130 | 47.5 | 50.0 | 57.5 | 47.5 | **65.0** |
+
+Task A and B values for the worklog and all-source columns come from `three-way-run8.json`. They are not in comparison.md.
+
+- **No branch wins on every task.** The all-source re-rank is best on A and D, worst on B, and middle on C.
+- **Re-ranking changes the selected set only when the first 20 do not already fit.** On A and B, the chat-turn re-rank changed only the order inside the same 20 results. On C and D, it pulled different turns into the top 20 (C: 5.1 to 33.3, D: 50.0 to 57.5).
+- **Short or vague queries are the weak spot of plain FTS5.** For "Trace in Konto", the top 20 holds short administrative turns ("still waiting on your Tempo lookup") and scores 5.1.
+- **The source mix decides the all-source result.** On C, 9 of the 20 results were model-reasoning artifacts. On B, only 9 of 20 were useful. The mix of archives mattered more than the model.
+- **Direct prompt.log is slow (4.7 s) and fragile.** On C, the newest entries are large (up to 17 KB), so a 22,000-byte newest-first window holds 3 to 7 entries and none holds a decision fact. On D, selecting by the parsed ticket key gives 5.0, while selecting by ticket text gives 47.5, because 17 entries mention the ticket without a parsed key.
+- **The state capsule is stale for a live ticket.** For KD-8130 it matched 8 of 20 fact patterns and still said PLAN with G1 and G2 pending.
+
+### 3.5 Limits of the evidence
+
+- Four tasks, one query each (eight queries for tasks A and B in the model benchmark). A one-fact difference is worth 2.5 to 12 points.
+- Ledgers C and D were drafted by the benchmark author and not adjudicated by the owner. Anchors are regular expressions, not human grading.
+- Only coverage, a retrieval-precision proxy, authority and traceability were measured. Freshness, temporal correctness, contradictions and claim precision were not measured.
+- Snippets of 1,050 characters from the head of each document were scored, not the best passage chosen by the model.
+- No time cutoff applies to worklog and artifact documents in the all-source branch.
+- Unexplained: the Polish ArgoCD regression, the identical results across four models, and why depth 100 ran faster than depth 30 in the model benchmark.
+
+---
+
+## 4. Hypotheses to test (not findings)
+
+| ID | Hypothesis | Basis |
+|---|---|---|
+| H1 | A larger weight for the re-rank signal, or ordering by the model score, recovers most of the model-only gain | 3.3: model-only 55.9 against engine 37.1 at the top 10 |
+| H2 | Scoring the evidence with the best passage instead of the head of the document raises coverage under a fixed byte budget | 3.5: the benchmark scored the head, the model chose a passage |
+| H3 | Scoring more passages per document and more documents raises recall at the top | 2: lexical filter, 3 passages, 100 cap |
+| H4 | Bigger windows help questions whose answer spans several sentences, and hurt when the window exceeds `max_tokens` | 2: windows of about 1,000 characters with the prefix give about 246 tokens for mmarco against a limit of 256 |
+| H5 | Dropping or capping low-information turns and model-reasoning artifacts before re-ranking raises precision | 3.4: tasks B and C |
+| H6 | Routing a ticket-key query to the ticket facet and the capsule first raises the result on ticket questions | 3.4: task D |
+| H7 | A cascade (mmarco on 50, a large model on the top 10) beats mmarco alone within budget | 3.1: about 0.3 s plus 0.6 s on MPS, an estimate |
+
+---
+
+## 5. Measurement foundation (needed before tuning)
+
+The tuning steps below are only safe when the measurement is sound. These steps come first.
+
+- [ ] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
+- [ ] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`.
+- [ ] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less.
+- [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks.
+- [ ] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
+- [ ] **R06 [ING] Add paired statistics.** Report per-query differences against the lexical baseline, a bootstrap interval, and a win/loss count. Accept: a change counts as an improvement only when the interval excludes zero or it wins on a clear majority without any large loss.
+- [ ] **R07 [ING] Add a cutoff for worklog and artifact documents** in the all-source branch (by document date, or a frozen database copy). Accept: no document newer than the freeze point enters the scored set.
+- [ ] **R08 [ING] Freeze and version the databases per run.** Record the file sizes, hashes and sweep time of `convo.db`, `worklogs.db` and `artifacts.db` in every report. Accept: a rerun on the same snapshot gives identical numbers.
+- [ ] **R09 [ING] Explain the three open anomalies**: the Polish ArgoCD regression (all models identical), the depth 100 speed, and the identical results of different models on some queries. Accept: each has a documented cause or a reproduction.
+- [ ] **R10 OWNER Decide the target and the budget.** Confirm the time budget (1.2 s at depth 30), whether CPU-only machines must also meet it, and the accepted regression per task.
+
+---
+
+## 6. Gates (proposed values, to be confirmed by the owner)
+
+A change passes when all of the following hold on the full benchmark:
+
+1. Mean weighted coverage at the top 10 rises by at least 5 points against the lexical baseline, and does not fall on any task by more than 3 points against the current engine.
+2. Retrieval precision does not fall on any task by more than 5 points.
+3. The p95 retrieval time with the re-ranker stays within the budget (default 1.2 s for the re-rank call) on MPS, and the degraded rate stays below 2% of queries in the benchmark.
+4. The result is reproducible on the frozen snapshot.
+5. The paired interval of R06 excludes zero, or the change wins on at least 75% of queries with no loss above 10 points.
+
+---
+
+## 7. Improvement checklist
+
+Order: measure first (section 5), then fusion, then recall, then chunking, then query side, then source mix, then evidence assembly, then model choice, then operations. Each step is tested alone and behind a flag, so a failed step is undone before the next one (one change at a time).
+
+### Phase A: fusion (highest evidence)
+
+- [ ] **R11 [ING] Make the signal weights configurable** (`AI_MEMORY_RERANK_WEIGHT` and a config key) without changing the default. Accept: the default order is byte-identical to today.
+- [ ] **R12 [ING] Sweep the re-rank weight** over 5, 8, 12, 20 and a model-order-only mode. Measure the engine-order coverage against the model-only coverage from R04. Evidence: 3.3. Accept: the gap between engine order and model-only order at the top 10 falls below 5 points, with the gates passed.
+- [ ] **R13 [ING] Test score-based fusion.** Replace the rank-based re-rank signal with a normalized model score (for example a logistic or z-score of the cross-encoder score) added to the other signals. Reason: rank fusion discards how far apart two scores are. Accept: gates pass and it beats the best weight of R12.
+- [ ] **R14 [ING] Test "re-rank, then cut"** for the final list: when the re-rank is not degraded, order the scored documents by model score and keep the other signals only as tie-breakers and for unscored documents. Accept: gates pass.
+- [ ] **R15 [ING] Keep the guarantees.** The strict rows stay first, the ticket capsule pin still works, and the rank of an exact match is not lowered below a defined floor. Accept: the existing retrieval suites (query plan, semantic) pass without edits to their expected values, or each changed value is justified.
+
+### Phase B: candidate recall and depth
+
+- [ ] **R16 [ING] Measure recall of the first stage.** For each ledger fact, find the rank of the first passage that carries it in the first-stage list. Accept: a table of recall@10, 30, 50, 100 per task. Evidence: facts that never enter the first 30 cannot be repaired by re-ranking.
+- [ ] **R17 [ING] Make the passage cap depend on the time budget.** Today the cap is a fixed 100 passages and 3 per document. On MPS, mmarco needs about 5.7 ms per passage (measured up to depth 50), so 200 passages is about 1.1 s (an estimate, to be measured). Choose the number of passages from a measured cost per passage and the remaining budget. Accept: p95 stays inside the budget on MPS and on CPU, and the degraded rate stays below 2%.
+- [ ] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30.
+- [ ] **R19 [ING] Use a partial result when the deadline is near.** Score the highest-ranked passages first, and use the scored subset instead of dropping the whole re-rank when the time runs out. Accept: the degraded rate falls without a quality loss.
+- [ ] **R20 [ING] Test a cheap first re-rank stage.** English-only models are not suitable as a cheap first stage. Test mmarco at depth 100 followed by a second model on the top 10 (see R42). Accept: gates pass within budget.
+
+### Phase C: chunking (bigger chunks and alternatives)
+
+- [ ] **R21 [ING] Measure truncation.** Count how many passages exceed `max_tokens` (256 by default) for each model tokenizer, and the effect on the score. Evidence: an engine window of about 1,000 characters (900 plus the prefix) is 246 tokens for mmarco and 308 for polish-roberta, so a larger window is truncated unless `max_tokens` rises. Accept: a table of truncated passages per model and window size.
+- [ ] **R22 [ING] Test window sizes.** Windows of 600, 900 (current), 1,500 and 2,400 characters, with `max_tokens` set to fit (256 to 512), stride at 75% of the window. Report coverage, time per passage and truncation. Evidence for the cost: time rises with the number of tokens. Accept: the best size wins on the gates, or the current size is kept with evidence.
+- [ ] **R23 [ING] Test passages per document.** Test 1, 3 and 5 per document, with the selection by word overlap, and with all passages scored when the budget allows. Accept: gates pass.
+- [ ] **R24 [ING] Replace the word-overlap passage filter.** Candidates for the filter: BM25 score of the passage inside the document, or scoring every passage of the top documents. Reason: a passage with no shared word, for example a Polish inflection or a paraphrase, is invisible to the model today. Accept: coverage rises on paraphrase and Polish queries without a time loss.
+- [ ] **R25 [ING] Test structure-aware chunking.** Cut at sections, headings, turn boundaries and sentences instead of fixed windows. Keep the document title, ticket key and section name as a prefix (a prefix exists today). Accept: gates pass.
+- [ ] **R26 [ING] Test a two-level chunk (small to find, large to read).** Score small windows, then return or score the larger parent window. Accept: coverage under the byte budget rises (links with R32).
+- [ ] **R27 [ING] Rebuild or invalidate the stored passages when the chunking changes.** The late-interaction index and `semantic.db` depend on the passage split. Accept: a documented migration and a test.
+
+### Phase D: query side
+
+- [ ] **R28 [ING] Route ticket-key queries.** When the query holds a ticket key, restrict or boost that ticket's documents and keep its capsule first (the pin exists for facets). Evidence: task D. Accept: ticket-key tasks improve without a loss on others.
+- [ ] **R29 [ING] Handle short and vague queries.** Add query expansion from the ticket vocabulary, or a minimum information rule that sends such a query to the relaxed path and the re-ranker with a larger depth. Evidence: "Trace in Konto" scored 5.1 with plain FTS5. Accept: short-query tasks improve.
+- [ ] **R30 [ING] Keep the diacritics path.** Check that the passages and the query keep their diacritics up to the model, and measure the ASCII-only case (3.2). Accept: a test that fails if diacritics are stripped before scoring.
+- [ ] **R31 [ING] Test language-aware handling.** Detect Polish and English queries, and test a model or setting per language only if the benchmark shows a gain. Accept: documented result, no change without a gain.
+
+### Phase E: source mix and noise
+
+- [ ] **R32 [ING] Down-weight or exclude model-reasoning artifacts** (`chat:artifacts`) in the default all-source search, or cap each archive's share of the top 20. Evidence: task C (9 of 20) and task B. Accept: tasks B and C improve, and task A does not fall.
+- [ ] **R33 [ING] Filter low-information turns before re-ranking.** Candidates: very short turns, turns that only wait for the user, repeated status lines. Accept: precision rises without losing facts (checked against all ledgers).
+- [ ] **R34 [ING] Remove near-duplicates and neighbor turns** from the scored set. Accept: precision rises and no fact is lost.
+- [ ] **R35 [ING] Add a freshness rule for stale capsules.** When the capsule's content is older than newer worklog action entries, rank the newer entries higher or mark the capsule stale (the freshness metadata exists). Evidence: the KD-8130 capsule matched 8 of 20 facts. Accept: ticket tasks improve on freshness.
+- [ ] **R36 [ING] Fix the journal selector for the direct branch.** Match entries that mention the ticket even without a parsed key, and cap the size of a single entry in the packed window. Evidence: task D (5.0 to 47.5) and task C. Accept: the direct branch improves on D and C without a loss on A and B.
+
+### Phase F: evidence assembly
+
+- [ ] **R37 [ING] Use the best passage as the snippet** in the engine output and in the packed context, with a link to the full document. Hypothesis H2. Accept: coverage under a fixed budget rises (R05).
+- [ ] **R38 [ING] Pack the context by gain, not by rank.** Choose items by new facts per byte (a diversity rule such as MMR) and skip items that repeat content. Accept: coverage per byte rises.
+- [ ] **R39 [ING] Expand neighbors only after the packed set is chosen**, and measure whether the expansion adds facts or noise. Accept: gates pass.
+
+### Phase G: model choice
+
+- [ ] **R40 OWNER Keep mmarco as the default** until the larger benchmark of R03 to R04 exists. The current evidence cannot separate the models.
+- [ ] **R41 [ING] Run the model bake-off on the larger benchmark** (mmarco, bge-reranker-v2-m3, and any new Apache-2.0 or MIT candidate). Accept: a model replaces the default only when it wins on the gates and fits the budget.
+- [ ] **R42 [ING] Test a cascade**: mmarco on 50 passages, then bge-reranker-v2-m3 on the top 10 (about 0.3 s plus 0.6 s on MPS, an estimate). Accept: gates pass within budget on MPS, and a documented CPU fallback.
+- [ ] **R43 OWNER Decide on fine-tuning only after labels exist.** At least a few hundred graded pairs from the owner's real questions, split into dev and test, are needed. Accept: a written decision.
+- [ ] **R44 OWNER IP Legal confirms Apache-2.0** for the chosen models and the 41 packages (`tqdm` is MPL-2.0 AND MIT). No model changes before this.
+- [ ] **R45 [ING] Implement the model fallback queue** if wanted (see the earlier design): ordered models, a fallback on load failure, a cost-based passage cut on slowness, and a lexical end of the queue for Polish queries. Accept: tests for each failure case.
+
+### Phase H: operation and speed
+
+- [ ] **R46 [ING] Cache scores** by hash of (model revision, query, passage). Accept: a repeated query is served from the cache with identical results.
+- [ ] **R47 [ING] Tune the batch size and threading** for MPS and CPU, and report the effect. Accept: lower latency at the same scores.
+- [ ] **R48 [ING] Report latency percentiles in the service** (p50, p95, degraded rate, reason counts) so the gates can be watched in daily use.
+- [ ] **R49 OWNER Decide how the service starts.** Today the engine does not start it, so `--rerank auto` does nothing unless it runs. Options: a launcher, a login item, or a documented manual start.
+- [ ] **R50 [ING] Write the default model into the service config** (`.ai-worklog/memory-service.json`) with the folder checksum, after R40 and R44.
+
+### Phase I: rollout
+
+- [ ] **R51 [ING] Ship each accepted change behind a flag, off by default.** Run it in shadow mode (compute, log, do not use) for a period, and compare the logged order against the live order.
+- [ ] **R52 [ING] Keep a regression run in the routine.** The full benchmark runs before each change is turned on. A change that fails a gate is not turned on.
+- [ ] **R53 [ING] Update the documents.** Record each accepted change in `decision-log.md`, the numbers in `evidence.md`, the task state in `tasks.md`, and the contract in `service-contract.md`.
+
+---
+
+## 8. Priority and expected value
+
+| Priority | Steps | Why first |
+|---|---|---|
+| 1 | R01 to R09 | Without a larger and sound benchmark, any gain below about 5 points is noise |
+| 2 | R11 to R15 | The largest measured gap (model-only against engine order) |
+| 3 | R37, R05 | Cheap, and it may change what the benchmark rewards |
+| 4 | R16 to R19 | Recall and the passage cap limit what the model can fix |
+| 5 | R21 to R26 | Bigger chunks and a better passage filter (the owner's question) |
+| 6 | R28, R29, R32, R33, R35, R36 | Query and source problems seen on tasks B, C and D |
+| 7 | R38 to R45 | Packing, model choice and fallback |
+| 8 | R46 to R53 | Operation and rollout |
+
+The expected size of each gain is unknown until the steps run. The only measured upper bound is the gap between the model-only order and the engine order (about 19 points at the top 10 for mmarco @100 on the 8-query set).
+
+---
+
+## 9. Owner decisions
+
+| ID | Question | Needed for |
+|---|---|---|
+| R02 | Are the ledgers for tasks C and D correct? | R03, R04 |
+| R10 | What are the budget, the CPU requirement and the accepted regression? | The gates in section 6 |
+| R40 | Keep mmarco until a larger benchmark exists? | Phase G |
+| R43 | Collect labels for fine-tuning, and when? | Phase G |
+| R44 | Ask IP Legal to confirm Apache-2.0 | Any model change |
+| R49 | How should the service start? | Phase H |
+
+---
+
+Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tasks and results refer to internal tickets and memory content: share this document only with people allowed to see them.

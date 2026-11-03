@@ -7,6 +7,7 @@ import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -106,6 +107,7 @@ def command_serve(args, config):
 
     signal.signal(signal.SIGTERM, shutdown)
     print(f"ai-memory-service {CONTRACT_VERSION} listening on {sock}", file=sys.stderr, flush=True)
+    threading.Thread(target=app.warm, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

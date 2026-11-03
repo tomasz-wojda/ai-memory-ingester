@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from helpers import ROOT, ServiceFixture, raw_request, short_temp
@@ -456,6 +457,46 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(calls.count("shared"), 1)
         self.assertEqual(statuses, [200, 200, 200, 200])
 
+    def test_the_default_model_loads_at_start_and_the_first_request_does_not_pay_for_it(self):
+        from ai_memory_service import server as server_module
+        fx = ServiceFixture(overrides={"rerank_model": "warm-me", "models": {"warm-me": {}}})
+        calls = []
+        original = server_module.build_backend
+
+        def counting(name, config, allow_stub):
+            calls.append(name)
+            time.sleep(0.5)
+            return original("stub", config, allow_stub)
+
+        server_module.build_backend = counting
+        try:
+            self.assertTrue(fx.app.warm())
+            self.assertEqual(calls, ["warm-me"])
+            began = time.time()
+            status, _ = fx.request("POST", "/v1/rerank", {"query": "nginx timeout", "model": "warm-me", "passages": PASSAGES})
+            self.assertEqual(status, 200)
+            self.assertLess(time.time() - began, 0.4)
+            self.assertEqual(calls, ["warm-me"])
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
+    def test_warming_never_raises_when_the_model_cannot_load(self):
+        from ai_memory_service import server as server_module
+        fx = ServiceFixture(overrides={"rerank_model": "broken", "models": {"broken": {}}})
+        original = server_module.build_backend
+
+        def failing(name, config, allow_stub):
+            raise backends.ModelUnavailable("the model folder is missing")
+
+        server_module.build_backend = failing
+        try:
+            self.assertFalse(fx.app.warm())
+            self.assertFalse(ServiceFixture(overrides={"rerank_model": "not-configured"}).app.warm())
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
     def test_a_stale_index_is_refused(self):
         self.fx.app.db.set_manifest({"late_model_id": "another-model"})
         status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3})
@@ -514,13 +555,9 @@ class BackendTest(unittest.TestCase):
         try:
             (directory / "model.safetensors").write_bytes(b"w")
             entry = {"path": str(directory), "sha256": tree_sha256(directory)}
-            try:
-                import sentence_transformers  # noqa: F401
-                self.skipTest("sentence_transformers is installed here")
-            except Exception:
-                pass
-            with self.assertRaises(backends.ModelUnavailable) as caught:
-                backends.CrossEncoderBackend("m", entry, directory).load()
+            with unittest.mock.patch.dict(sys.modules, {"sentence_transformers": None}):
+                with self.assertRaises(backends.ModelUnavailable) as caught:
+                    backends.CrossEncoderBackend("m", entry, directory).load()
             self.assertIn("sentence_transformers", str(caught.exception))
         finally:
             shutil.rmtree(directory, ignore_errors=True)

@@ -32,10 +32,23 @@ class RequirementsTest(unittest.TestCase):
                 for item in hashes:
                     self.assertRegex(item, r"^--hash=sha256:[0-9a-f]{64}$")
 
-    def test_no_machine_learning_package_is_listed_before_the_decisions(self):
+    def test_the_model_packages_are_in_their_own_file_and_the_numpy_file_stays_small(self):
+        models = (REQUIREMENTS / "models.txt").read_text(encoding="utf-8").lower()
+        for name in ("torch", "sentence-transformers", "transformers", "safetensors", "tokenizers", "huggingface-hub", "numpy"):
+            self.assertRegex(models, rf"(?m)^{re.escape(name)}==", name)
+        numpy_only = (REQUIREMENTS / "numpy.txt").read_text(encoding="utf-8").lower()
+        self.assertNotRegex(numpy_only, r"(?m)^torch==")
+        self.assertEqual(len(self.requirement_blocks(REQUIREMENTS / "numpy.txt")), 1)
+
+    def test_no_unreviewed_machine_learning_framework_is_listed(self):
         text = "\n".join(p.read_text(encoding="utf-8") for p in REQUIREMENTS.glob("*.txt")).lower()
-        for name in ("torch", "sentence-transformers", "transformers", "onnxruntime", "ragatouille", "pylate"):
-            self.assertNotRegex(text, rf"^{re.escape(name)}==", name)
+        for name in ("onnxruntime", "ragatouille", "pylate", "flagembedding"):
+            self.assertNotRegex(text, rf"(?m)^{re.escape(name)}==", name)
+
+    def test_the_model_requirements_match_the_wheels_of_one_platform(self):
+        text = (REQUIREMENTS / "models.txt").read_text(encoding="utf-8")
+        self.assertIn("macOS arm64", text)
+        self.assertEqual(len(re.findall(r"(?m)^[a-z0-9-]+==", text)), len(re.findall(r"--hash=sha256:", text)))
 
 
 class SetupScriptTest(unittest.TestCase):
@@ -44,6 +57,7 @@ class SetupScriptTest(unittest.TestCase):
         result = subprocess.run([str(SETUP), "--help"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
         self.assertIn("--no-numpy", result.stdout)
+        self.assertIn("--models", result.stdout)
 
     def test_the_script_refuses_an_old_python_and_unknown_options(self):
         old = subprocess.run([str(SETUP), "--python", "/usr/bin/python3", "--venv", "/tmp/ams-never-created"], capture_output=True, text=True)

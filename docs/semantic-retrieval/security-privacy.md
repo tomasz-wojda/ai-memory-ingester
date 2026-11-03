@@ -71,7 +71,7 @@ Reasons: the machine is a company laptop and the memory holds internal business 
 
 ### 5.3 Table of items
 
-Model weights and packages are third-party material. Open licences usually allow internal use, but the licence of each file must be read and recorded. **All model licences below are unverified**, because the fetch of every model card timed out on 2026-10-31. Package licences are from package pages fetched the same day.
+Model weights and packages are third-party material. Open licences usually allow internal use, but the licence of each file must be read and recorded. **Five model licences were read from the model cards on 2026-11-03** (the owner cloned four repositories into `models/`; each card is a real text file in the clone; the fifth, `ms-marco-MiniLM-L-6-v2`, comes from the official API of the same host). They are marked *Read from the card*. IP Legal has not yet confirmed them. The other models are still unverified, because the model host did not answer on 2026-10-31. Package licences are from package pages fetched on 2026-10-31, and PyPI was checked again on 2026-11-03.
 
 | Item | Licence | Status |
 |---|---|---|
@@ -82,10 +82,13 @@ Model weights and packages are third-party material. Open licences usually allow
 | PyLate | MIT | Verified (GitHub page); version unverified |
 | RAGatouille 0.0.9 | Apache-2.0 | Verified (GitHub page); lists Python up to 3.11 |
 | sqlite-vec 0.1.9 | MIT or Apache-2.0 | Verified |
-| `BAAI/bge-reranker-v2-m3` | not checked (my memory says Apache-2.0: do not rely on it) | **Unverified: check** |
+| `BAAI/bge-reranker-v2-m3` | Apache-2.0. Multilingual. XLM-RoBERTa large (24 layers, hidden size 1024). Weights 2,271,071,852 bytes (SHA-256 `d9e3e081…`). No custom code. Commit `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e` (2024-06-24) | *Read from the card* (2026-11-03). Acceptable after IP Legal confirms Apache-2.0 |
 | `BAAI/bge-m3` | not checked (my memory says MIT: do not rely on it) | **Unverified: check** |
 | `cross-encoder/ms-marco-MiniLM-L-6-v2` | not checked | **Unverified: check** |
-| `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | not checked | **Unverified: check** |
+| `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Apache-2.0. Languages on the card: en, ar, zh, nl, fr, de, hi, id (listed as `in`), it, ja, pt, ru, es, vi. **Polish is not on the list.** XLM-RoBERTa base (12 layers, hidden size 384). Weights 470,592,698 bytes (SHA-256 `5daeca24…`). No custom code (one `train_script.py` that is not loaded). Commit `1427fd652930e4ba29e8149678df786c240d8825` (2025-04-15) | *Read from the card* (2026-11-03). Acceptable after IP Legal confirms Apache-2.0. Polish quality must be measured |
+| `cross-encoder/ms-marco-MiniLM-L-12-v2` | Apache-2.0. **English only** (BERT uncased vocabulary). 12 layers, hidden size 384. Weights 133,469,020 bytes (SHA-256 `1ed84b90…`). No custom code. Commit `7b0235231ca2674cb8ca8f022859a6eba2b1c968` (2025-08-29) | *Read from the card* (2026-11-03). English-only reference; not a default for a bilingual memory |
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | Apache-2.0 (card metadata from the official API). English only. 6 layers. Weights 90,870,598 bytes (SHA-256 `821d1aa6…`). Commit `233902d25c440f23af6f7d6e94d2946bac0bee0a` | *Read from the card* (2026-11-03). Speed reference for system S3 |
+| `sdadas/polish-reranker-roberta-v3` | **Gemma** terms (custom licence). Trained by distillation from `BAAI/bge-reranker-v2.5-gemma2-lightweight`. Polish only. RoBERTa large (24 layers, hidden size 1024). Weights 1,771,613,516 bytes. Commit `8943df3d4ffa6b829bd80acf3a9aca17c553da4e` (2026-09-22) | *Read from the card* (2026-11-03). **Excluded** by the policy in 5.1 (custom licence with use limits). Weights were fetched on 2026-11-03 **for a benchmark only** (the owner asked for it), kept outside the repository, and wired into no configuration. IP Legal has not approved any use |
 | `jinaai/jina-colbert-v2`, `jinaai/jina-reranker-v2-base-multilingual` | not checked; may be non-commercial | **Unverified: do not use before checking; exclude if non-commercial** |
 | `colbert-ir/colbertv2.0`, `answerdotai/answerai-colbert-small-v1` | not checked (my memory says MIT and Apache-2.0: do not rely on it) | **Unverified: check** |
 | `BAAI/bge-reranker-base`, `BAAI/bge-reranker-large` | not checked (my memory says MIT, and Chinese and English only: do not rely on it) | **Unverified: check licence and languages** |

@@ -77,6 +77,17 @@ class App:
         self.failed_load_seconds = 30.0
         self.purge_if_due()
 
+    def warm(self):
+        name = self.config.get("rerank_model")
+        models = self.config.get("models", {})
+        if not name or not (name in models or (name == "stub" and self.allow_stub)):
+            return False
+        try:
+            self.backend(name).score("warm up", ["warm up"])
+        except (ProtocolError, Exception):  # noqa: BLE001
+            return False
+        return True
+
     def purge_if_due(self):
         now = time.time()
         if now - self.last_purge < 3600:

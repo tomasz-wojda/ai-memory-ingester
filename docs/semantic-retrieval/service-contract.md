@@ -110,7 +110,7 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 
 | Method and path | Purpose | Phase |
 |---|---|---|
-| `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, contract_version}` | 1 |
+| `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, contract_version}`. The model named in `rerank_model` is loaded in a background thread when the service starts and appears in `models` once it is loaded; a rerank request that arrives before then waits for the load | 1 |
 | `GET /v1/models` | Configured models with revision, size, max tokens, licence id and checksum status | 1 |
 | `POST /v1/passages/upsert` | Store passages for documents: `{documents:[{origin_db, source_archive, file_path, content_hash, passages:[{section, start, end, tokens, text}]}]}`; replaces the old passages of each document in one transaction | 1 |
 | `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors; at most 2000 docs per call | 1 |

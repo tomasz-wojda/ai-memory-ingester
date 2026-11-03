@@ -4,15 +4,17 @@ ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_BIN=""
 VENV="${HOME}/.local/share/ai-memory-service/venv"
 WITH_NUMPY=1
+WITH_MODELS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --python) PYTHON_BIN="$2"; shift 2 ;;
     --venv) VENV="$2"; shift 2 ;;
     --no-numpy) WITH_NUMPY=0; shift ;;
+    --models) WITH_MODELS=1; shift ;;
     -h|--help)
-      echo "Usage: setup-venv.sh [--python PATH] [--venv DIR] [--no-numpy]"
+      echo "Usage: setup-venv.sh [--python PATH] [--venv DIR] [--no-numpy] [--models]"
       echo "Creates a virtual environment from a final Python 3.11 or newer and installs the hashed requirements."
-      echo "Machine-learning packages are not installed here: they wait for the model decisions."
+      echo "With --models it also installs the hashed model packages (torch, sentence-transformers and the rest, about 200 MB of wheels)."
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -29,6 +31,9 @@ fi
 "$PYTHON_BIN" -m venv "$VENV"
 if [ "$WITH_NUMPY" = "1" ]; then
   "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r "$ROOT/requirements/numpy.txt"
+fi
+if [ "$WITH_MODELS" = "1" ]; then
+  "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r "$ROOT/requirements/models.txt"
 fi
 echo "Virtual environment ready: $VENV"
 echo "Use it with: export AI_MEMORY_SERVICE_PYTHON=$VENV/bin/python"

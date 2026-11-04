@@ -232,7 +232,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 ### Phase H: operation and speed
 
-- [ ] **R46 [ING] Cache scores** by hash of (model revision, query, passage). Accept: a repeated query is served from the cache with identical results.
+- [x] **R46 [ING] Cache scores** by hash of (model revision, query, passage). Accept: a repeated query is served from the cache with identical results.
 - [ ] **R47 [ING] Tune the batch size and threading** for MPS and CPU, and report the effect. Accept: lower latency at the same scores.
 - [ ] **R48 [ING] Report latency percentiles in the service** (p50, p95, degraded rate, reason counts) so the gates can be watched in daily use.
 - [ ] **R49 OWNER Decide how the service starts.** Today the engine does not start it, so `--rerank auto` does nothing unless it runs. Options: a launcher, a login item, or a documented manual start.
@@ -419,6 +419,92 @@ On 2026-11-04 the owner approved rrf weight 12 at depth 30 as the default. `Conf
 Deviations from the plan, all small: the snapshot has a content fingerprint in addition to the byte hash (section 10.2); the explain-field tests are in `test_semantic_suite.groovy` because that suite has the service fixture, and only the option and help tests are in `test_query_suite.groovy`; the benchmark CSV has a precision@10 column, added for gate 2; a tie rule was applied for the decision (section 10.5).
 
 Test results: semantic suite 125 tests (was 90), query suite 74 (was 68), all other suites unchanged, Python service tests 78 under three interpreters. Of 12 golden outputs, 11 are byte-identical and the twelfth differs only by the new `fusion=rrf weight=5` fields.
+
+## 11. Tranche 2 results (plan: [rerank_enhacement_plan_tranche2.md](rerank_enhacement_plan_tranche2.md))
+
+Status on 2026-11-04.
+
+### 11.1 Baseline on a frozen snapshot
+
+The full tables are in [comparison.md](comparison.md), section "Re-measurement on a frozen snapshot (2026-11-04)". Two findings change how the earlier results must be read:
+- **The numbers moved because the corpus moved.** Each archive is replaced as a whole on ingest, so document IDs change, and `chat:turns` grew from 10,159 to 12,630 documents in one day.
+- **Candidate crowding.** Turns after a task's freeze point occupy the 30-document re-rank window and are removed only at the end. Tasks C and D had 3 and 1 such turns in the morning run and 17 and 16 on the snapshot (this session's own discussion of those topics). Tasks A and B have 11 to 27 of 30 in both runs. Coverage therefore falls as the corpus grows.
+- **The weight-12 gain did not reproduce.** On the snapshot, chat turns, 10 queries: weight 12 36.5, weight 5 36.4, lexical 33.7 at the top 10 (this morning 44.0, 40.3 and 33.2). On the all-source branch weight 12 is lower than weight 5 at the top 10 on tasks B, C and D. This is recorded as D-35 (proposed): re-decide D-34 after a frozen, per-task benchmark.
+
+### 11.2 Neighbor modes (H8, plan steps 22 to 35), provisional
+
+Setting `--neighbors adjacent|after|scored|off` (`AI_MEMORY_NEIGHBORS`, default `adjacent`, unchanged). Snapshot, mmarco, depth 30, 10 queries, chat turns, engine order. Two sweeps gave identical results.
+
+| Mode | cov@5 | cov@10 | cov@20 | Precision@10 | Model-only cov@10 |
+|---|---:|---:|---:|---:|---:|
+| lexical (no re-rank) | 18.4 | 33.7 | 53.3 | 63.0 | 33.7 |
+| **adjacent (default, today)** | 21.2 | 36.5 | 56.0 | 57.0 | 42.1 |
+| after | 28.3 | 43.5 | 53.0 | 65.0 | 43.5 |
+| scored | 29.0 | 43.3 | 55.0 | 65.0 | 43.7 |
+| off | 29.0 | 41.8 | 54.5 | 64.0 | 41.8 |
+
+Paired statistics for cov@10 against `adjacent`:
+
+| Mode | Mean difference | Interval | Wins / losses / ties | Worst loss | Per task (A, B, C, D) | Precision@10 difference |
+|---|---:|---|---|---:|---|---|
+| after | +7.04 | [-2.79, 19.39] | 5 / 5 / 0 | -13.9 | +9.0, +9.9, -7.7, +2.5 | +8.0 (A 0, B +17.5, C -10, D +20) |
+| scored | +6.79 | [-3.07, 19.17] | 4 / 5 / 1 | -13.9 | +9.0, +9.9, -7.7, 0.0 | +8.0 |
+| off | +5.29 | [-5.24, 18.31] | 4 / 6 / 0 | -15.0 | +9.0, +9.9, -7.7, -15.0 | +7.0 |
+
+**Decision under the rule of the plan: no mode wins.** Task C falls by 7.7 points and its precision by 10 (the gates allow 3 and 5), every interval includes zero, and wins are at most 5 of 10. `adjacent` stays the default.
+
+What the sweep shows, with the caveat that the corpus is crowded and the sample small:
+- With `after`, the engine order equals the model-only order (43.5). This supports H8: neighbors placed next to their anchors cost coverage at the top 10.
+- Scoring the neighbors (`scored`) adds nothing over placing them after the anchors (43.3 against 43.5), and costs an extra service load.
+- `off` is lower than `after` (41.8 against 43.5), so the neighbors do add facts when they come after the anchors.
+- The mean gain of about 7 points is about as large as the one measured for weight 12, and equally unsupported by an interval that excludes zero. It needs the frozen, per-task benchmark (A1) before a default changes.
+
+### 11.3 Warm-up (plan steps 36 to 42)
+
+New: `warm_shapes` (default word counts 80, 160, 200) and `warm_batch` (16) in the service config, a multi-shape warm-up in `App.warm`, and `warmed` and `warm_ms` in `/v1/health` (the service contract is updated). `warm_ms` was 4,540 ms in one check and includes the model load. 83 Python tests pass under three interpreters (78 before).
+
+Cold-start measurement (`bench/cold_start.py`, mmarco on MPS, budget 1.2 s, a never-seen query per call, fresh service per start):
+
+| Wait after start | Before: first calls inside budget | First-call service time | After: first calls inside budget | First-call service time |
+|---|---|---|---|---|
+| 15 s (10 starts) | 10 of 10 | 759 to 792 ms | 10 of 10 | 754 to 929 ms |
+| 5 s (5 starts) | 5 of 5 | 756 to 772 ms | 5 of 5 | 770 to 802 ms |
+| 0 s (5 starts) | 0 of 5 | degraded | 0 of 5 | degraded |
+
+Later calls took a median of 731 ms (before) and 751 ms (after).
+
+- **The acceptance rule is met (10 of 10), but it was already met before the change.** The multi-shape warm-up gives no measurable gain.
+- **The 2.9 to 5.5 s first call seen in tranche 1 did not reproduce.** I did not find its cause. It happened while other jobs were running, which is a likely but unproven explanation.
+- **The real gap is the first 4 to 5 seconds after a start,** while the model loads. A request in that window degrades. The `warmed` flag lets a caller wait for readiness, which matters for R49.
+- The default `warm_shapes` follows the plan. The start-up time without the shapes was not measured. If you prefer minimal start-up work, setting `warm_shapes` to `[]` restores the single pair.
+
+### 11.4 Owner inputs
+
+Delivered, waiting for replies (plan steps 15, 17 to 21):
+- Review packs for ledgers C and D (`data/eval/ledger-run/review/task_c.md` and `task_d.md`, git-ignored) from `bench/ledger_review.py`. Pack C has 2 flagged lines and pack D has 14 (facts whose anchors are only in the worklog, because the state capsule lags).
+- The candidate table (`review/candidates.md`, 20 tickets with turns, worklog chunks and a state capsule) from `bench/candidates.py`, and the proposed list of 11 tickets in the plan.
+- The R10 questions and the R49 decision memo (tranche 2 plan, section 1.2).
+
+### 11.5 Amendment proposal A1: a frozen corpus per task
+
+Needed to make the benchmark reproducible and to remove candidate crowding. Not built: it is outside the approved plan.
+- New `bench/task_corpus.py`: for each task, a copy of the snapshot's `convo.db` with the chat turns after the task's cutoff (and the excluded turns) deleted (the index triggers keep the full-text index consistent), stored under `data/eval/snapshots/<name>/tasks/<key>/`, with a content fingerprint. Tasks with the same cutoff share one copy.
+- The harness points the engine and the evidence lookups at the per-task folder (`--data-dir`) for that task's queries. Worklog and artifact documents stay unfiltered, because they carry no per-document date. The report counts them.
+- Verification: the golden queries on a per-task copy, determinism on two runs, and the crowding counter (post-freeze turns in the window) must be 0 for chat turns.
+- Then re-run the baseline, the weight sweep and the neighbor sweep, and decide D-35 and the neighbor default.
+- Cost: about 108 MB per distinct cutoff. Four tasks need up to 430 MB.
+
+### 11.6 Status of the checklist items
+
+| Item | Status |
+|---|---|
+| H8 neighbors | Built behind a flag; evaluated provisionally; no mode adopted |
+| Warm-up | Built; no measurable gain; `warmed` flag added |
+| R46 score cache | Already built in the service (14 days, per model, query and passage) |
+| R48 latency metrics | Partly: `warmed` and `warm_ms` in the health reply |
+| R02, R03, R10, R49 | Delivered, waiting for the owner |
+
+Test results: semantic suite 157 tests (was 125), query suite 80 (was 74), Python service tests 83 under three interpreters (was 78); the other suites are unchanged (see the close-out of the plan). Of 12 golden queries, 11 are identical between the saved jar and the new jar, and the twelfth differs only by the new `Neighbors:` explain line.
 
 ---
 

@@ -74,9 +74,17 @@ class MemoryRetrieval {
         List<Map> fused = SignalFusion.fuse(pools, fuseLimit)
         Map rerankInfo = [degraded: !semanticQuery ? false : true, reason: semanticQuery ? 'rerank_off' : null, depth: 0]
         if (rerankWanted && !fused) rerankInfo = [degraded: false, reason: null, depth: 0]
+        boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
+        String neighborMode = (options.neighbors ?: Config.neighborMode()).toString().trim().toLowerCase()
+        if (!(neighborMode in Config.NEIGHBOR_MODES)) neighborMode = Config.NEIGHBOR_MODE_DEFAULT
+        boolean neighborsScored = false
         if (rerankWanted && fused) {
             client = client ?: ((options.semantic_client ?: SemanticClient.discover()) as SemanticClient)
-            List<Map> head = hydrateDocuments(fused.take(depth), dataDir)
+            List<Map> plainHead = fused.take(depth)
+            List<Map> preNeighbors = (neighborMode == 'scored' && options.rerank_mode?.toString() != 'late')
+                ? NeighborExpansion.expand(plainHead, dataDir, allowMeta, 1, Config.neighborAnchors(), true)
+                : []
+            List<Map> head = hydrateDocuments(plainHead + preNeighbors, dataDir)
             List<String> words = (plan.terms ?: parsed.terms.tokenize(' ')) as List<String>
             Map rerankOptions = new LinkedHashMap(options)
             rerankOptions.rerank_fusion = options.rerank_fusion ?: Config.rerankFusion()
@@ -85,10 +93,19 @@ class MemoryRetrieval {
                 ? RerankStage.applyLate(head, parsed.terms, client, parsed.ticket, rerankOptions)
                 : RerankStage.apply(head, parsed.terms, words, rerankOptions, client, parsed.ticket)
             rerankInfo = outcome.info as Map
-            fused = (outcome.rows as List<Map>) + fused.drop(depth)
+            if (preNeighbors && rerankInfo.degraded == true) {
+                fused = head.take(plainHead.size()) + fused.drop(depth)
+            } else {
+                fused = (outcome.rows as List<Map>) + fused.drop(depth)
+                neighborsScored = !preNeighbors.isEmpty()
+            }
         }
-        boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
-        fused = NeighborExpansion.expand(fused, dataDir, allowMeta, 1)
+        if (neighborMode != 'off' && !neighborsScored) {
+            fused = NeighborExpansion.expand(fused, dataDir, allowMeta, 1)
+            if (neighborMode == 'after') {
+                fused = fused.findAll { it.pool != 'neighbor' } + fused.findAll { it.pool == 'neighbor' }
+            }
+        }
         fused = applyFilters(fused, options).findAll { !it.excluded_reason }.take(Math.max(limit * 2, limit))
         fused = hydrateDocuments(fused, dataDir)
         fused = applyFreshnessLabels(fused, dataDir, parsed.ticket)
@@ -110,6 +127,7 @@ class MemoryRetrieval {
                 relax_error: relaxError
             ],
             rerank: rerankInfo,
+            neighbors: [mode: neighborMode, added: fused.count { it.pool == 'neighbor' }, scored: fused.count { it.pool == 'neighbor' && it.rerank_score != null }],
             late: lateInfo,
             degraded: rerankInfo.degraded == true,
             degraded_reason: rerankInfo.reason,

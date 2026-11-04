@@ -10,7 +10,7 @@ from pathlib import Path
 import common
 import snapshot
 
-CSV_FIELDS = ['task', 'branch', 'cov@5', 'cov@10', 'cov@all', 'useful_items', 'items', 'bytes', 'selected', 'time_p50', 'time_p95',
+CSV_FIELDS = ['task', 'branch', 'cov@5', 'cov@10', 'cov@all', 'useful_items', 'items', 'bytes', 'selected', 'time_p50', 'time_p95', 'cold_s', 'cached_p50', 'cached_p95',
               'degraded_runs', 'evidence_fallbacks']
 
 
@@ -37,7 +37,7 @@ def chat_branch(task, run, mode, rerank, depth, order='engine'):
     rows = run['rows'] if order == 'engine' else common.model_only_order(run['rows'])
     top = common.frozen_top(task, common.chat_rows(rows))
     texts, size, fallbacks = common.turn_texts(top, mode)
-    return {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'selected': len(top), 'bytes': size,
+    return {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'cold_s': run['cold_wall'], 'cached_p50': run['cached_p50'], 'cached_p95': run['cached_p95'], 'selected': len(top), 'bytes': size,
             'scored': sum(1 for r in run['rows'][:depth] if r.get('rerank_score') is not None),
             'degraded': rerank and not any(r.get('rerank_score') is not None for r in run['rows']),
             'degraded_runs': run['degraded_runs'], 'evidence_fallbacks': fallbacks, **common.coverage_for(task, texts)}
@@ -46,7 +46,7 @@ def chat_branch(task, run, mode, rerank, depth, order='engine'):
 def multi_branch(task, run, mode, depth, with_mix):
     top = common.top_rows(task, run['rows'])
     texts, size, fallbacks = common.multi_texts(top, mode)
-    out = {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'selected': len(top), 'bytes': size,
+    out = {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'cold_s': run['cold_wall'], 'cached_p50': run['cached_p50'], 'cached_p95': run['cached_p95'], 'selected': len(top), 'bytes': size,
            'degraded_runs': run['degraded_runs'], 'evidence_fallbacks': fallbacks,
            'undated': sum(1 for r in top if r.get('source_archive') != 'chat:turns' and not r.get('event_time')),
            'files': [r['file_path'] for r in top], **common.coverage_for(task, texts)}
@@ -80,7 +80,7 @@ def main():
     process, socket_path = common.start_service(work)
     report = {'model': args.model, 'depth': args.depth, 'budget_ms': args.budget_ms, 'repeats': args.repeats, 'evidence': args.evidence,
               'engine_args': args.engine_args, 'journal_entries': len(entries), 'journal_parse_s': round(parse_s, 2),
-              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'snapshot': snapshot.manifest(), 'tasks': {}}
+              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'tasks': {}}
     rows_csv = []
     try:
         report['service_warm'] = common.warm_up(socket_path, next(iter(tasks.values()))['forms']['question'])

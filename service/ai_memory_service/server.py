@@ -59,6 +59,15 @@ class ModelWorker(threading.Thread):
         return box["value"]
 
 
+WARM_WORDS = ("service", "memory", "ticket", "deploy", "cluster", "config", "release", "pipeline", "metric", "token", "session",
+              "worklog", "manifest", "rollout", "traefik", "kibana", "alert", "storage", "network", "secret", "account", "policy",
+              "backup", "gateway", "certificate", "namespace", "controller", "dashboard", "retention", "latency")
+
+
+def synthetic_passage(words, seed):
+    return " ".join(WARM_WORDS[(seed + index) % len(WARM_WORDS)] for index in range(words))
+
+
 class App:
     def __init__(self, config, token, allow_stub=False):
         self.config = config
@@ -75,6 +84,8 @@ class App:
         self.gates = {}
         self.generation = 0
         self.failed_load_seconds = 30.0
+        self.warmed = False
+        self.warm_ms = None
         self.purge_if_due()
 
     def warm(self):
@@ -82,10 +93,16 @@ class App:
         models = self.config.get("models", {})
         if not name or not (name in models or (name == "stub" and self.allow_stub)):
             return False
+        started = time.time()
         try:
-            self.backend(name).score("warm up", ["warm up"])
+            backend = self.backend(name)
+            backend.score("warm up", ["warm up"])
+            for words in self.config["warm_shapes"]:
+                backend.score("warm up", [synthetic_passage(words, seed) for seed in range(self.config["warm_batch"])])
         except (ProtocolError, Exception):  # noqa: BLE001
             return False
+        self.warm_ms = int((time.time() - started) * 1000)
+        self.warmed = True
         return True
 
     def purge_if_due(self):
@@ -172,6 +189,7 @@ class App:
     def health(self):
         return {"status": "ok", "contract_version": CONTRACT_VERSION, "uptime_s": int(time.time() - self.started),
                 "rss_mb": self.rss_mb(), "queue": {"size": self.config["queue_size"], "waiting": self.worker.jobs.qsize()},
+                "warmed": self.warmed, "warm_ms": self.warm_ms,
                 "models": [{"name": name, "loaded": True, "device": backend.info()["device"]} for name, backend in self.backends.items()]}
 
     def models(self):

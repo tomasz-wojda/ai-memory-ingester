@@ -20,7 +20,7 @@ class RerankStage {
         List<Map> passages = []
         Map<String, String> docOfPassage = [:]
         rows.each { Map row ->
-            List<Map> chosen = PassageBuilder.select(PassageBuilder.split(row), queryWords)
+            List<Map> chosen = PassageBuilder.select(PassageBuilder.split(row), queryWords, row.pool == 'neighbor' ? 1 : PassageBuilder.MAX_PER_DOCUMENT)
             chosen.each { Map passage ->
                 if (passages.size() < 100) {
                     passages << passage
@@ -53,7 +53,9 @@ class RerankStage {
                 }
             }
             info << [fusion: fusionMode(options), weight: fusionWeight(options)]
-            return [rows: fuse(rows, best, body.model, pinTicket, options), info: info]
+            List<Map> fusedRows = fuse(rows, best, body.model, pinTicket, options)
+            info.neighbors_scored = fusedRows.count { it.pool == 'neighbor' && it.rerank_score != null }
+            return [rows: fusedRows, info: info]
         } catch (RuntimeException ignored) {
             return degraded(rows, info, 'service_down')
         }

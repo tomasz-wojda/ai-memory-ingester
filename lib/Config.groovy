@@ -48,6 +48,9 @@ class Config {
     static final int RERANK_WEIGHT_DEFAULT = 12
     static final String RERANK_FUSION_DEFAULT = 'rrf'
     static final List<String> RERANK_FUSION_MODES = ['rrf', 'score', 'cut'].asImmutable()
+    static final String NEIGHBOR_MODE_DEFAULT = 'adjacent'
+    static final List<String> NEIGHBOR_MODES = ['adjacent', 'after', 'scored', 'off'].asImmutable()
+    static final int NEIGHBOR_ANCHORS_DEFAULT = 10
     static final int LATE_TOP_K = 50
     static final String SERVICE_SOCKET_RELATIVE = '.ai-worklog/run/memory-service.sock'
     static final String SERVICE_TOKEN_RELATIVE = '.ai-worklog/run/memory-service.token'
@@ -453,6 +456,34 @@ class Config {
     static String rerankFusion() {
         String value = (System.getProperty('ai.memory.rerank_fusion') ?: System.getenv('AI_MEMORY_RERANK_FUSION') ?: '').trim().toLowerCase()
         return value in RERANK_FUSION_MODES ? value : RERANK_FUSION_DEFAULT
+    }
+
+    /**
+     * Where neighbor turns go in the result. AI_MEMORY_NEIGHBORS selects adjacent (next to their anchor, the default),
+     * after (behind all other rows), scored (scored by the re-ranker together with the head) or off (none);
+     * anything else is ignored.
+     *
+     * @return Neighbor mode name
+     */
+    static String neighborMode() {
+        String value = (System.getProperty('ai.memory.neighbors') ?: System.getenv('AI_MEMORY_NEIGHBORS') ?: '').trim().toLowerCase()
+        return value in NEIGHBOR_MODES ? value : NEIGHBOR_MODE_DEFAULT
+    }
+
+    /**
+     * How many chat-turn anchors of the re-rank head get scored neighbors in scored mode.
+     * AI_MEMORY_NEIGHBOR_ANCHORS overrides the default (a whole number from 1 to 30; anything else is ignored).
+     *
+     * @return Number of anchors
+     */
+    static int neighborAnchors() {
+        String value = System.getProperty('ai.memory.neighbor_anchors') ?: System.getenv('AI_MEMORY_NEIGHBOR_ANCHORS')
+        try {
+            int parsed = Integer.parseInt(value?.trim() ?: '')
+            return (parsed >= 1 && parsed <= 30) ? parsed : NEIGHBOR_ANCHORS_DEFAULT
+        } catch (NumberFormatException ignored) {
+            return NEIGHBOR_ANCHORS_DEFAULT
+        }
     }
 
     /**

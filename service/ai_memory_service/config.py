@@ -20,6 +20,8 @@ DEFAULTS = {
     "rerank_min_scored": 10,
     "relax_min_results": 10,
     "score_cache_days": 14,
+    "warm_shapes": [80, 160, 200],
+    "warm_batch": 16,
     "index_archives": ["chat:turns", "worklog:chunks", "worklog:state"],
     "max_body_bytes": 4 * 1024 * 1024,
     "max_passages": 100,
@@ -43,7 +45,11 @@ LIMITS = {
     "max_passage_chars": (100, 100000),
     "max_connections": (1, 1024),
     "body_deadline_s": (1, 600),
+    "warm_batch": (1, 256),
 }
+
+WARM_SHAPE_LIMITS = (1, 400)
+WARM_SHAPE_COUNT = 5
 
 
 def clamp_limits(config):
@@ -53,6 +59,12 @@ def clamp_limits(config):
             config[key] = DEFAULTS[key]
         else:
             config[key] = max(low, min(high, value))
+    shapes = config.get("warm_shapes")
+    if not isinstance(shapes, list) or any(isinstance(item, bool) or not isinstance(item, int) for item in shapes):
+        config["warm_shapes"] = list(DEFAULTS["warm_shapes"])
+    else:
+        low, high = WARM_SHAPE_LIMITS
+        config["warm_shapes"] = [max(low, min(high, item)) for item in shapes][:WARM_SHAPE_COUNT]
     return config
 
 

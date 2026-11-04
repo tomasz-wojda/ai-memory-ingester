@@ -118,63 +118,76 @@ Golden outputs: 12 queries run through the previous jar and the new jar back to 
 ## IMPLEMENTATION CHECKLIST
 
 **Phase 0: baseline on a frozen snapshot (step 1 of the request)**
-1. [ ] Run every Groovy suite and the Python service tests and save the pass counts. Stop if any suite fails.
-2. [ ] Save the current jar (`git show HEAD:dist/ai-memory-ingester.jar`) outside the repository for the later golden comparison.
-3. [ ] Create `bench/snapshot_copy.py` as in section 1.1.
-4. [ ] Add the `BENCH_DATA_DIR` switch to `run_engine` and `connection()` in `bench/common.py`, and record the data folder in every report.
-5. [ ] Take the snapshot. Run the 12 golden queries against the live data and the snapshot: identical output.
-6. [ ] Change `run_repeated` for the cold and cached split and update the CSV and JSON output.
-7. [ ] Run `three_way.py` on the snapshot for weight 12 and for weight 5 (repeats 5, budget 1200).
-8. [ ] Run `model_bench.py` on the snapshot (lexical, mmarco, settings `default,rrf:5`, depth 30).
-9. [ ] Repeat steps 7 and 8 once and confirm identical coverage fields.
-10. [ ] Run the read-only drift check and state the cause or "cause not determined".
-11. [ ] Add the re-measurement section to `docs/comparison.md` without changing earlier sections.
-12. [ ] Update `docs/rerank_enhacement.md` section 10 with the new baseline and the corrections of section 0.
+1. [x] Run every Groovy suite and the Python service tests and save the pass counts. Stop if any suite fails.
+2. [x] Save the current jar (`git show HEAD:dist/ai-memory-ingester.jar`) outside the repository for the later golden comparison.
+3. [x] Create `bench/snapshot_copy.py` as in section 1.1.
+4. [x] Add the `BENCH_DATA_DIR` switch to `run_engine` and `connection()` in `bench/common.py`, and record the data folder in every report.
+5. [x] Take the snapshot. Run the 12 golden queries against the live data and the snapshot: identical output.
+6. [x] Change `run_repeated` for the cold and cached split and update the CSV and JSON output.
+7. [x] Run `three_way.py` on the snapshot for weight 12 and for weight 5 (repeats 5, budget 1200).
+8. [x] Run `model_bench.py` on the snapshot (lexical, mmarco, settings `default,rrf:5`, depth 30).
+9. [x] Repeat steps 7 and 8 once and confirm identical coverage fields.
+10. [x] Run the read-only drift check and state the cause or "cause not determined". _Cause: archives are replaced as a whole on ingest and the corpus grew (see comparison.md)._
+11. [x] Add the re-measurement section to `docs/comparison.md` without changing earlier sections.
+12. [x] Update `docs/rerank_enhacement.md` section 10 with the new baseline and the corrections of section 0.
 
 **Phase 1: owner inputs (step 2 of the request; can run in parallel with phase 2)**
-13. [ ] Create `bench/ledger_review.py` and add `review_sources` to `task_c.py` and `task_d.py`.
-14. [ ] Generate the review packs for C and D and check that every fact has a source match or is flagged.
-15. [ ] Hand the packs to the owner (R02). Record the owner's changes in the task files.
-16. [ ] Create `bench/candidates.py` and refresh the candidate table.
-17. [ ] The owner approves or edits the list of new tasks (R03).
-18. [ ] For each approved task: freeze point, cutoffs, 16 to 20 facts, strict anchors, anchor validation, 3 queries, task file, review pack.
-19. [ ] The owner reviews the new packs. Mark each task adjudicated or unadjudicated.
-20. [ ] Send the R10 questions to the owner. If there is no answer, record that the defaults apply.
-21. [ ] Deliver the R49 memo (section 1.2) to the owner. Record the choice. Write no code for it in this tranche.
+13. [x] Create `bench/ledger_review.py` and add `review_sources` to `task_c.py` and `task_d.py`.
+14. [x] Generate the review packs for C and D and check that every fact has a source match or is flagged.
+15. [ ] Hand the packs to the owner (R02). Record the owner's changes in the task files. _Delivered 2026-11-04; waiting for the owner's changes._
+16. [x] Create `bench/candidates.py` and refresh the candidate table.
+17. [ ] The owner approves or edits the list of new tasks (R03). _Waiting for the owner._
+18. [ ] For each approved task: freeze point, cutoffs, 16 to 20 facts, strict anchors, anchor validation, 3 queries, task file, review pack. _Waiting for the owner's list._
+19. [ ] The owner reviews the new packs. Mark each task adjudicated or unadjudicated. _Waiting for the owner._
+20. [ ] Send the R10 questions to the owner. If there is no answer, record that the defaults apply. _Delivered 2026-11-04; waiting for the owner's answers (the defaults apply meanwhile)._
+21. [ ] Deliver the R49 memo (section 1.2) to the owner. Record the choice. Write no code for it in this tranche. _Memo delivered (section 1.2); waiting for the owner's choice._
 
 **Phase 2: neighbor turns (step 3 of the request)**
-22. [ ] Add the neighbor settings to `lib/Config.groovy` (section 1.3).
-23. [ ] Add `maxAnchors` and `neighborsOnly` to `NeighborExpansion.expand` with defaults that keep today's behavior.
-24. [ ] Implement the four modes in `lib/MemoryRetrieval.groovy`, including the fallback of `scored` to `adjacent` when the re-rank is degraded or not wanted.
-25. [ ] Change `RerankStage.apply` for neighbor rows (1 passage each, after the head rows) and add `neighbors_scored` to the info map.
-26. [ ] Add `--neighbors`, the help line and the `Neighbors:` explain line to `03_query_memory.groovy`.
-27. [ ] Check that `tests/SemanticFixtureBuilder.groovy` has consecutive chat turns. Add them if it has none.
-28. [ ] Add tests to `tests/test_semantic_suite.groovy`: `adjacent` equals the previous order; `after` puts every neighbor row behind every other row and keeps each group's order; `off` has no neighbor rows; `scored` gives neighbor rows a model score and respects the passage cap; degraded re-rank in `scored` mode equals `adjacent`; unknown mode falls back to `adjacent`; settings and options precedence.
-29. [ ] Add option parsing and help tests to `tests/test_query_suite.groovy`.
-30. [ ] Add `neighbors=<mode>` settings to `bench/model_bench.py`.
-31. [ ] Rebuild the jar with `build-precompiled.sh`.
-32. [ ] Run every suite and compare the counts with step 1. Run the 12 golden queries through the previous and the new jar: identical except for the new explain line.
-33. [ ] Run the neighbor sweep (`after`, `scored`, `off` against `adjacent`) on the snapshot and compute the paired statistics.
-34. [ ] Apply the decision rule and write the table and the decision into `docs/rerank_enhacement.md`.
-35. [ ] If a mode wins, ask the owner to approve it as the default. Change no default before the approval.
+22. [x] Add the neighbor settings to `lib/Config.groovy` (section 1.3).
+23. [x] Add `maxAnchors` and `neighborsOnly` to `NeighborExpansion.expand` with defaults that keep today's behavior.
+24. [x] Implement the four modes in `lib/MemoryRetrieval.groovy`, including the fallback of `scored` to `adjacent` when the re-rank is degraded or not wanted.
+25. [x] Change `RerankStage.apply` for neighbor rows (1 passage each, after the head rows) and add `neighbors_scored` to the info map.
+26. [x] Add `--neighbors`, the help line and the `Neighbors:` explain line to `03_query_memory.groovy`.
+27. [x] Check that `tests/SemanticFixtureBuilder.groovy` has consecutive chat turns. Add them if it has none.
+28. [x] Add tests to `tests/test_semantic_suite.groovy`: `adjacent` equals the previous order; `after` puts every neighbor row behind every other row and keeps each group's order; `off` has no neighbor rows; `scored` gives neighbor rows a model score and respects the passage cap; degraded re-rank in `scored` mode equals `adjacent`; unknown mode falls back to `adjacent`; settings and options precedence.
+29. [x] Add option parsing and help tests to `tests/test_query_suite.groovy`.
+30. [x] Add `neighbors=<mode>` settings to `bench/model_bench.py`.
+31. [x] Rebuild the jar with `build-precompiled.sh`.
+32. [x] Run every suite and compare the counts with step 1. Run the 12 golden queries through the previous and the new jar: identical except for the new explain line.
+33. [x] Run the neighbor sweep (`after`, `scored`, `off` against `adjacent`) on the snapshot and compute the paired statistics.
+34. [x] Apply the decision rule and write the table and the decision into `docs/rerank_enhacement.md`.
+35. [x] If a mode wins, ask the owner to approve it as the default. Change no default before the approval. _No mode won, so no default question arises: `adjacent` stays._
 
 **Phase 3: warm-up**
-36. [ ] Create `bench/cold_start.py` and measure the "before" figure with warm-up shapes switched off.
-37. [ ] Add `warm_shapes` and `warm_batch` with limits to `service/ai_memory_service/config.py`.
-38. [ ] Implement the multi-shape warm-up in `App.warm` in `server.py`.
-39. [ ] Add `warmed` and `warm_ms` to the `/v1/health` reply and update `docs/semantic-retrieval/service-contract.md`.
-40. [ ] Add the tests of section 1.4 to `tests/service/test_server.py`.
-41. [ ] Run the Python service tests under all three interpreters.
-42. [ ] Run `bench/cold_start.py` "after". Apply the acceptance rule (at least 9 of 10 first queries inside the budget) and record the result. If it fails, record the figures and do not build further.
+36. [x] Create `bench/cold_start.py` and measure the "before" figure with warm-up shapes switched off.
+37. [x] Add `warm_shapes` and `warm_batch` with limits to `service/ai_memory_service/config.py`.
+38. [x] Implement the multi-shape warm-up in `App.warm` in `server.py`.
+39. [x] Add `warmed` and `warm_ms` to the `/v1/health` reply and update `docs/semantic-retrieval/service-contract.md`.
+40. [x] Add the tests of section 1.4 to `tests/service/test_server.py`.
+41. [x] Run the Python service tests under all three interpreters.
+42. [x] Run `bench/cold_start.py` "after". Apply the acceptance rule (at least 9 of 10 first queries inside the budget) and record the result. If it fails, record the figures and do not build further. _Acceptance met (10 of 10) both before and after; no measurable gain from the shapes._
 
 **Close**
-43. [ ] Run every suite and the golden comparison once more. Confirm that `git status` shows no ledger or internal text as tracked.
-44. [ ] Update `docs/rerank_enhacement.md` (results, status of H8, the warm-up and R02, R03, R10, R49) and `docs/rerank_enhacement_plan_tranche2.md` (status of each step).
-45. [ ] Run `repos/ai-vault/scripts/commit_handoff.py render` once for `ai-memory-ingester` with only the files written in this tranche (include the rebuilt jar).
-46. [ ] Record the turn through the governed worklog writer.
-47. [ ] Open the next plan (chunking, query side, source mix) only after steps 34 and 42, using their numbers.
+43. [x] Run every suite and the golden comparison once more. Confirm that `git status` shows no ledger or internal text as tracked.
+44. [x] Update `docs/rerank_enhacement.md` (results, status of H8, the warm-up and R02, R03, R10, R49) and `docs/rerank_enhacement_plan_tranche2.md` (status of each step).
+45. [x] Run `repos/ai-vault/scripts/commit_handoff.py render` once for `ai-memory-ingester` with only the files written in this tranche (include the rebuilt jar).
+46. [x] Record the turn through the governed worklog writer.
+47. [ ] Open the next plan (chunking, query side, source mix) only after steps 34 and 42, using their numbers. _Waiting for the owner: the next plan is amendment A1 (frozen corpus per task), which needs approval._
 
 Any deviation from this plan returns to PLAN mode.
+
+---
+
+## Amendment proposal A1 (not approved, not built)
+
+Found during step 7: the benchmark is not reproducible across days and loses coverage as the corpus grows, because turns after a task's freeze point crowd the 30-document re-rank window. The fix is a frozen corpus per task (a copy of the snapshot's `convo.db` with the later chat turns deleted), described in `rerank_enhacement.md` section 11.5. It is outside this plan, so it needs the owner's approval and a plan of its own. Until then, the weight decision (D-35) and the neighbor default stay open.
+
+## Execution notes (2026-11-04)
+
+- Steps 1 to 14, 16 and 22 to 46 are done. Steps 15 and 17 to 21 are delivered or prepared and wait for the owner. Steps 44 to 46 are done. Step 47 waits for the owner.
+- Results and decisions: section 11 of [rerank_enhacement.md](rerank_enhacement.md) and the re-measurement section of [comparison.md](comparison.md).
+- Deviations from this plan, all small: the benchmark config of `bench/cold_start.py` waits a fixed time instead of polling `warmed` (to keep the "before" and "after" runs comparable); `bench/common.py write_config` takes an `extra` argument for it; the neighbor tests that need no service are in `tests/test_query_suite.groovy` and the rest in `tests/test_semantic_suite.groovy`, as in tranche 1. No step was skipped.
+- Finding that changes an earlier decision: D-34 is not reproduced on the snapshot. D-35 (proposed) asks the owner to re-decide it.
 
 ---
 

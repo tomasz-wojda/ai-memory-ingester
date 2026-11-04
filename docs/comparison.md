@@ -1348,3 +1348,98 @@ therefore not computed. A partial score is given instead.
 
 Created using Anthropic Claude. Keep this internal until a person has reviewed
 and verified it.
+
+## Re-measurement on a frozen snapshot (2026-11-04)
+
+This section re-measures the four tasks on a frozen copy of the databases and records two findings about the benchmark itself. The numbers below supersede the values for tasks C and D in the earlier sections, which could not be reproduced. The earlier sections stay unchanged.
+
+### Setup
+
+- **Snapshot:** `data/eval/snapshots/20261104` (git-ignored): `convo.db` 12,630 turns, `worklogs.db` 680 documents, `artifacts.db` 1,012 documents, copied with the SQLite backup API. The harness and the engine read it through `BENCH_DATA_DIR` and `--data-dir`. The 12 golden queries give identical output on the live data and on the snapshot. `prompt.log` is not part of the snapshot. The freeze cutoffs of each task still apply to it.
+- **Determinism:** two runs of `three_way.py` (weight 12 and weight 5, 5 repeats, budget 1.2 s) and of `model_bench.py` on the snapshot gave 0 differences in every coverage field.
+- **Default weight:** the engine default is now 12 (D-34). The "weight 5" column uses `--rerank-weight 5`.
+- **Method of the scores:** as in the score summary for tasks C and D: weighted strict-fact coverage over all selected items, retrieval precision (items that satisfy a ledger fact), authority tier, traceability 100, and the partial score `(0.25 × coverage + 0.20 × precision + 0.10 × authority + 0.10 × traceability) / 0.65`. Freshness, temporal correctness and contradictions were not measured.
+
+### Findings about the benchmark
+
+1. **Why the numbers moved between 2026-11-03 and 2026-11-04.** Each archive is replaced as a whole when it is ingested (one `ingestion_manifest` row per archive: `worklog:chunks` at 08:37, `worklog:state` at 08:50 and `chat:turns` at 09:17 on 2026-11-04), so document IDs change, and `chat:turns` grew from 10,159 to 12,630 documents during the day. This explains the drift of tasks C and D. Tasks A and B reproduce.
+2. **Candidate crowding.** The harness removes turns after a task's freeze point only at the end, after the re-rank has already used its 30-document window. In the morning run, tasks C and D had 3 and 1 post-freeze turns in the window. On the snapshot they have 17 and 16, because this session's own discussion of "Trace in Konto" and "KD-8130" is now in the corpus. Tasks A and B already had 11 to 27 of 30 slots taken by later turns in both runs. The benchmark therefore loses coverage as the corpus grows, and a result measured on a less crowded corpus does not carry over. A per-task corpus cut at the freeze point is needed (amendment A1 in the tranche 2 plan).
+
+### Mean coverage at the top 10 (10 queries, chat turns, engine order)
+
+| System | This morning (live data) | Snapshot, 2026-11-04 |
+|---|---:|---:|
+| lexical (no re-rank) | 33.2 | 33.7 |
+| mmarco, weight 5 | 40.3 | 36.4 |
+| mmarco, weight 12 (default) | 44.0 | 36.5 |
+
+On the snapshot, weight 12 against weight 5: +0.11, interval [-1.53, 1.86], 1 win, 1 loss, 8 ties; per task A 0.0, B +1.55, C -5.1, D 0.0. Weight 12 against lexical: +2.77, interval [-6.43, 10.97], 5 wins, 3 losses, 2 ties. **The gain of weight 12 found on the morning data is not reproduced on this snapshot.** See D-35.
+
+### SCTASK1544083 (task A)
+
+| Dimension | Direct prompt.log | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco, weight 12 | FTS5 all + mmarco, weight 5 |
+|---|---|---|---|---|---|
+| Selected / bytes | 18 / 21,813 | 20 / 15,369 | 20 / 20,802 | 20 / 21,056 | 20 / 21,056 |
+| Whole-command time | 6.96 s (journal parse) | cold 0.91 s, cached 0.91 s | cold 0.75 s, cached 0.74 s | cold 1.76 s, cached 1.04 s | cold 2.54 s, cached 1.19 s |
+| Factual coverage, top 10 / all | 41.7 / **63.9** | 33.3 / **61.1** | 86.1 / **86.1** | 63.9 / **72.2** | 63.9 / **72.2** |
+| Precision (retrieval only) | 83 (15 of 18) | 60 (12 of 20) | 75 (15 of 20) | 40 (8 of 20) | 40 (8 of 20) |
+| Authority | 70.0 | 70.0 | 80.0 | 60.5 | 60.5 |
+| Partial score (4 of 7 dimensions) | **76.3** | **68.1** | **83.9** | **64.8** | **64.8** |
+| Freshness, temporal correctness, contradictions | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+### MongoDB metrics (task B)
+
+| Dimension | Direct prompt.log | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco, weight 12 | FTS5 all + mmarco, weight 5 |
+|---|---|---|---|---|---|
+| Selected / bytes | 20 / 21,772 | 20 / 17,965 | 20 / 20,084 | 20 / 21,070 | 20 / 21,068 |
+| Whole-command time | 6.97 s (journal parse) | cold 0.98 s, cached 0.87 s | cold 0.74 s, cached 0.73 s | cold 1.91 s, cached 1.06 s | cold 1.9 s, cached 1.13 s |
+| Factual coverage, top 10 / all | 79.2 / **93.8** | 64.6 / **77.1** | 50.0 / **66.7** | 47.9 / **64.6** | 56.2 / **64.6** |
+| Precision (retrieval only) | 95 (19 of 20) | 85 (17 of 20) | 85 (17 of 20) | 50 (10 of 20) | 50 (10 of 20) |
+| Authority | 70.0 | 70.0 | 80.0 | 57.5 | 57.5 |
+| Partial score (4 of 7 dimensions) | **91.5** | **82.0** | **79.5** | **64.5** | **64.5** |
+| Freshness, temporal correctness, contradictions | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+### Trace in Konto (KD-6945) (task C)
+
+| Dimension | Direct prompt.log | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco, weight 12 | FTS5 all + mmarco, weight 5 |
+|---|---|---|---|---|---|
+| Selected / bytes | 7 / 21,933 | 20 / 13,254 | 20 / 21,038 | 20 / 18,960 | 20 / 20,330 |
+| Whole-command time | 6.97 s (journal parse) | cold 0.88 s, cached 0.85 s | cold 0.67 s, cached 0.65 s | cold 1.65 s, cached 1.01 s | cold 1.73 s, cached 0.96 s |
+| Factual coverage, top 10 / all | 12.8 / **12.8** | 5.1 / **12.8** | 69.2 / **82.1** | 17.9 / **46.2** | 41.0 / **46.2** |
+| Precision (retrieval only) | 14 (1 of 7) | 10 (2 of 20) | 60 (12 of 20) | 20 (4 of 20) | 25 (5 of 20) |
+| Authority | 70.0 | 70.0 | 80.0 | 59.0 | 57.0 |
+| Partial score (4 of 7 dimensions) | **35.4** | **34.2** | **77.7** | **48.4** | **49.6** |
+| Freshness, temporal correctness, contradictions | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+### Summary of KD-8130 (task D)
+
+| Dimension | Direct prompt.log | FTS5 top 20 | Indexed worklogs | FTS5 all + mmarco, weight 12 | FTS5 all + mmarco, weight 5 |
+|---|---|---|---|---|---|
+| Selected / bytes | 8 / 21,486 | 20 / 16,850 | 20 / 17,967 | 20 / 15,264 | 20 / 15,264 |
+| Whole-command time | 7.0 s (journal parse) | cold 1.19 s, cached 1.13 s | cold 0.81 s, cached 0.87 s | cold 1.36 s, cached 1.13 s | cold 1.27 s, cached 1.06 s |
+| Factual coverage, top 10 / all | 47.5 / **47.5** | 17.5 / **50.0** | 47.5 / **47.5** | 40.0 / **57.5** | 45.0 / **57.5** |
+| Precision (retrieval only) | 75 (6 of 8) | 55 (11 of 20) | 40 (8 of 20) | 55 (11 of 20) | 55 (11 of 20) |
+| Authority | 70.0 | 70.0 | 80.0 | 73.0 | 73.0 |
+| Partial score (4 of 7 dimensions) | **67.5** | **62.3** | **58.3** | **65.7** | **65.7** |
+| Freshness, temporal correctness, contradictions | Not measured | Not measured | Not measured | Not measured | Not measured |
+
+### Latency, cold and cached (whole command, weight 12, 4 tasks)
+
+The service caches scores per model, query and passage (14 days). Each harness run starts with an empty cache, so the first call is uncached and the repeats are cache hits.
+
+| Branch | Cold (first call) | Cached p50 | Degraded runs |
+|---|---:|---:|---:|
+| FTS5 | 0.88 to 1.19 s | 0.85 to 1.13 s | 0 of 20 |
+| FTS5 + mmarco (chat turns) | 1.73 to 2.12 s | 0.91 to 1.20 s | 0 of 20 |
+| Indexed worklogs | 0.67 to 0.81 s | 0.65 to 0.87 s | 0 of 20 |
+| FTS5 all sources + mmarco | 1.36 to 1.91 s | 1.01 to 1.13 s | 0 of 20 |
+
+The re-ranker adds about 0.8 to 1.0 s to a cold whole-command time, which includes about 0.7 s of Java start-up. No run was degraded at the 1.2 s budget.
+
+### Reading this section
+
+- No branch wins on every task. The all-source re-ranker leads on task A and task D, and the indexed worklogs lead on task C (with the usual caveat: the ledgers were drafted from the worklog or capsule). Direct `prompt.log` is best on task B and is the slowest.
+- On the all-source branch, weight 12 gives a lower top-10 coverage than weight 5 on tasks B, C and D (47.9 against 56.2, 17.9 against 41.0, 40.0 against 45.0) and the same on task A. Over all 20 results the coverage is identical for all four tasks.
+- Results are in `three-way-t2-w12-a.json`, `three-way-t2-w5-a.json` and `model-bench-t2-a.json` in `data/eval/ledger-run/` (git-ignored).
+
+Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

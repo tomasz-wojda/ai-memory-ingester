@@ -110,7 +110,7 @@ Errors (JSON body `{"error": "<code>", "message": "<text>"}`):
 
 | Method and path | Purpose | Phase |
 |---|---|---|
-| `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, contract_version}`. The model named in `rerank_model` is loaded in a background thread when the service starts and appears in `models` once it is loaded; a rerank request that arrives before then waits for the load | 1 |
+| `GET /v1/health` | `{status, uptime_s, rss_mb, models:[{name, loaded, device}], queue, warmed, warm_ms, contract_version}`. The model named in `rerank_model` is loaded in a background thread when the service starts and appears in `models` once it is loaded; a rerank request that arrives before then waits for the load. After the load the service scores one short pair and one batch of `warm_batch` synthetic passages for each word count in `warm_shapes` (default 80, 160 and 200; an empty list keeps the single pair), directly through the backend so the score cache stays empty. `warmed` is true when this has finished and `warm_ms` is its duration in milliseconds (null before) | 1 |
 | `GET /v1/models` | Configured models with revision, size, max tokens, licence id and checksum status | 1 |
 | `POST /v1/passages/upsert` | Store passages for documents: `{documents:[{origin_db, source_archive, file_path, content_hash, passages:[{section, start, end, tokens, text}]}]}`; replaces the old passages of each document in one transaction | 1 |
 | `POST /v1/passages/delete` | `{docs:[{origin_db, source_archive, file_path}]}` removes passages and vectors; at most 2000 docs per call | 1 |

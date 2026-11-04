@@ -497,6 +497,97 @@ class ServerTest(unittest.TestCase):
             server_module.build_backend = original
             fx.close()
 
+    def _recording_backend(self):
+        class Recording:
+            def __init__(self):
+                self.calls = []
+
+            def load(self):
+                return self
+
+            def info(self):
+                return {"revision": "recording", "device": "cpu", "max_tokens": 256}
+
+            def score(self, query, texts):
+                self.calls.append(list(texts))
+                return [0.0] * len(texts)
+
+        return Recording()
+
+    def _warm_fixture(self, **overrides):
+        from ai_memory_service import server as server_module
+        recorder = self._recording_backend()
+        original = server_module.build_backend
+        server_module.build_backend = lambda name, config, allow_stub: recorder
+        fx = ServiceFixture(overrides={"rerank_model": "warm-me", "models": {"warm-me": {}}, **overrides})
+        return fx, recorder, server_module, original
+
+    def test_warming_scores_one_batch_per_shape_and_reports_it(self):
+        fx, recorder, server_module, original = self._warm_fixture(warm_shapes=[10, 20], warm_batch=4)
+        try:
+            status, before = fx.request("GET", "/v1/health", None)
+            self.assertEqual((before["warmed"], before["warm_ms"]), (False, None))
+            self.assertTrue(fx.app.warm())
+            self.assertEqual(len(recorder.calls), 3)
+            self.assertEqual(recorder.calls[0], ["warm up"])
+            self.assertEqual([len(call) for call in recorder.calls[1:]], [4, 4])
+            self.assertEqual([len(text.split()) for text in recorder.calls[1]], [10] * 4)
+            self.assertEqual([len(text.split()) for text in recorder.calls[2]], [20] * 4)
+            self.assertEqual(len(set(recorder.calls[1])), 4)
+            status, after = fx.request("GET", "/v1/health", None)
+            self.assertTrue(after["warmed"])
+            self.assertIsInstance(after["warm_ms"], int)
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
+    def test_warming_leaves_the_score_cache_empty(self):
+        fx, recorder, server_module, original = self._warm_fixture(warm_shapes=[10], warm_batch=2)
+        try:
+            self.assertTrue(fx.app.warm())
+            self.assertEqual(fx.app.db.counts()["score_cache"], 0)
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
+    def test_an_empty_shape_list_keeps_the_single_pair(self):
+        fx, recorder, server_module, original = self._warm_fixture(warm_shapes=[])
+        try:
+            self.assertTrue(fx.app.warm())
+            self.assertEqual(recorder.calls, [["warm up"]])
+            self.assertTrue(fx.app.warmed)
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
+    def test_a_failing_warm_up_leaves_the_service_not_warmed_and_running(self):
+        from ai_memory_service import server as server_module
+        fx = ServiceFixture(overrides={"rerank_model": "broken", "models": {"broken": {}}})
+        original = server_module.build_backend
+
+        def failing(name, config, allow_stub):
+            raise backends.ModelUnavailable("the model folder is missing")
+
+        server_module.build_backend = failing
+        try:
+            self.assertFalse(fx.app.warm())
+            status, body = fx.request("GET", "/v1/health", None)
+            self.assertEqual(status, 200)
+            self.assertEqual((body["warmed"], body["warm_ms"]), (False, None))
+        finally:
+            server_module.build_backend = original
+            fx.close()
+
+    def test_warm_up_settings_are_clamped(self):
+        from ai_memory_service import config as config_module
+        clamped = config_module.clamp_limits({"warm_shapes": [0, 999, 5, 5, 5, 5, 5], "warm_batch": 0})
+        self.assertEqual(clamped["warm_shapes"], [1, 400, 5, 5, 5])
+        self.assertEqual(clamped["warm_batch"], 1)
+        self.assertEqual(config_module.clamp_limits({"warm_batch": 1000})["warm_batch"], 256)
+        for bad in ("text", [1, "x"], [True], None):
+            self.assertEqual(config_module.clamp_limits({"warm_shapes": bad})["warm_shapes"], [80, 160, 200])
+        self.assertEqual(config_module.clamp_limits({"warm_shapes": []})["warm_shapes"], [])
+
     def test_a_stale_index_is_refused(self):
         self.fx.app.db.set_manifest({"late_model_id": "another-model"})
         status, body = self.fx.request("POST", "/v1/search/late", {"query": "nginx", "top_k": 3})

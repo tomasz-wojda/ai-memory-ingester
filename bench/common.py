@@ -17,6 +17,7 @@ WORKSPACE_ROOT = REPO.parents[1]
 MODELS_DIR = Path(os.environ.get('MODELS_DIR') or Path.home() / '.local/share/ai-memory-service/models')
 VENV_PYTHON = Path(os.environ.get('VENV_PYTHON') or Path.home() / '.local/share/ai-memory-service/venv/bin/python')
 PROMPT_LOG = Path(os.environ.get('PROMPT_LOG') or WORKSPACE_ROOT / 'prompt.log')
+DATA_DIR = Path(os.environ.get('BENCH_DATA_DIR') or REPO / 'data')
 TASKS_DIR = Path(os.environ.get('BENCH_TASKS_DIR') or REPO / 'data/eval/ledger-run/tasks')
 OUT_DIR = Path(os.environ.get('BENCH_OUT_DIR') or REPO / 'data/eval/ledger-run')
 
@@ -64,7 +65,7 @@ def manifest_checksums():
 
 def connection(origin):
     if origin not in CONNECTIONS:
-        CONNECTIONS[origin] = sqlite3.connect(f"file:{REPO / 'data' / origin}?mode=ro", uri=True)
+        CONNECTIONS[origin] = sqlite3.connect(f"file:{DATA_DIR / origin}?mode=ro", uri=True)
     return CONNECTIONS[origin]
 
 
@@ -276,13 +277,14 @@ def select_journal(entries, task, greedy=False, by_text=False):
     return chosen, size, len(eligible)
 
 
-def write_config(workspace, folder, checksum, device, max_tokens):
+def write_config(workspace, folder, checksum, device, max_tokens, extra=None):
     config = {
         'rerank_model': 'bench',
         'model_cache': str(MODELS_DIR),
         'models': {'bench': {'path': folder, 'sha256': checksum, 'max_tokens': max_tokens, 'device': device}},
         'max_rss_mb': 4096,
     }
+    config.update(extra or {})
     target = workspace / '.ai-worklog'
     target.mkdir(parents=True, exist_ok=True)
     (target / 'memory-service.json').write_text(json.dumps(config), encoding='utf-8')
@@ -320,6 +322,8 @@ def run_engine(query, rerank, depth, budget_ms, socket_path, archive='chat:turns
                '--rerank', rerank, '--rerank-depth', str(depth), '--rerank-budget-ms', str(budget_ms), *extra_args]
     if archive:
         command += ['-A', archive]
+    if os.environ.get('BENCH_DATA_DIR'):
+        command += ['--data-dir', str(DATA_DIR)]
     env = dict(os.environ)
     if socket_path is not None:
         env['AI_MEMORY_SERVICE_SOCKET'] = str(socket_path)
@@ -340,8 +344,11 @@ def run_repeated(query, rerank, depth, budget_ms, socket_path, archive='chat:tur
         walls.append(wall)
         if rerank == 'on' and not any(r.get('rerank_score') is not None for r in rows):
             degraded += 1
+    cached = walls[1:]
     return {'chat': first[0], 'rows': first[1], 'code': first[3], 'walls': walls, 'p50': round(percentile(walls, 0.5), 2),
-            'p95': round(percentile(walls, 0.95), 2), 'degraded_runs': degraded}
+            'p95': round(percentile(walls, 0.95), 2), 'degraded_runs': degraded, 'cold_wall': round(walls[0], 2),
+            'cached_p50': round(percentile(cached, 0.5), 2) if cached else None,
+            'cached_p95': round(percentile(cached, 0.95), 2) if cached else None}
 
 
 def warm_up(socket_path, query):

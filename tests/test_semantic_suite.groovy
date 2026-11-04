@@ -14,6 +14,8 @@ class TestSemanticSuite {
     private static Class EvalRunner
     private static Class GoldSet
     private static Class SignalFusion
+    private static Class NeighborExpansion
+    private static List<Map> corpusRows = []
     private static File workspace
     private static File data
     private static Process service
@@ -27,6 +29,7 @@ class TestSemanticSuite {
         try {
             Map fixture = loader.loadClass('SemanticFixtureBuilder').build(root, loader.loadClass('MemoryEngine')) as Map
             data = fixture.data as File
+            corpusRows = fixture.corpus as List<Map>
             Config.setDataDir(data.absolutePath)
             testPassageBuilder()
             testFrontMatterParsing()
@@ -38,6 +41,7 @@ class TestSemanticSuite {
             testClientRefusesAnOpenSocketDirectory()
             testRerank()
             testRerankFusion()
+            testNeighborModes()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
             testReindexCommand()
@@ -308,6 +312,79 @@ why do exports fail
         verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 12 / 61.0d) < 1.0e-12d)
     }
 
+    private static void testNeighborModes() {
+        String question = 'what did we decide about the nginx timeout'
+        Map adjacent = search(question, [rerank_mode: 'on', rerank_depth: 20])
+        Map explicitAdjacent = search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'adjacent'])
+        verify('adjacent is the default and keeps the order', ids(adjacent) == ids(explicitAdjacent))
+        verify('the neighbor info names the mode', (adjacent.neighbors as Map).mode == 'adjacent')
+        verify('the fixture gives neighbor rows in adjacent mode', ((adjacent.neighbors as Map).added as int) > 0)
+        verify('adjacent mode scores no neighbor', ((adjacent.neighbors as Map).scored as int) == 0)
+
+        Map after = search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'after'])
+        List<Map> afterRows = after.results as List<Map>
+        int firstNeighbor = afterRows.findIndexOf { it.pool == 'neighbor' }
+        verify('after puts every neighbor row behind every other row', firstNeighbor > 0 && afterRows.drop(firstNeighbor).every { it.pool == 'neighbor' })
+        verify('after keeps the order of the other rows', afterRows.findAll { it.pool != 'neighbor' }*.file_path == (adjacent.results as List<Map>).findAll { it.pool != 'neighbor' }*.file_path)
+        verify('after keeps the order of the neighbor rows', afterRows.findAll { it.pool == 'neighbor' }*.file_path == (adjacent.results as List<Map>).findAll { it.pool == 'neighbor' }*.file_path)
+
+        Map off = search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'off'])
+        verify('off gives no neighbor rows', (off.results as List<Map>).every { it.pool != 'neighbor' } && (off.neighbors as Map).added == 0)
+        List<String> adjacentOthers = (adjacent.results as List<Map>).findAll { it.pool != 'neighbor' }*.file_path
+        verify('off keeps the other rows of adjacent mode in the same order', (off.results as List<Map>)*.file_path.take(adjacentOthers.size()) == adjacentOthers)
+
+        Map scored = search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'scored'])
+        Map scoredInfo = scored.neighbors as Map
+        List<Map> scoredNeighbors = (scored.results as List<Map>).findAll { it.pool == 'neighbor' && it.rerank_score != null }
+        verify('scored mode scores neighbor rows in the same call', (scoredInfo.scored as int) > 0 && scoredNeighbors.size() == (scoredInfo.scored as int))
+        verify('the re-rank info counts the scored neighbors', (scored.rerank as Map).neighbors_scored == scoredInfo.scored)
+        verify('scored mode keeps the mode name', scoredInfo.mode == 'scored')
+        verify('scored mode is deterministic', ids(scored) == ids(search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'scored'])))
+
+        Object fake = client()
+        fake.metaClass.rerank = { String q, List p, String m, int d -> [ok: true, status: 200, body: [scored: 1, skipped: 5, model: 'x', device: 'cpu', elapsed_ms: 1, results: []]] }
+        Map degradedAdjacent = search(question, [rerank_mode: 'on', semantic_client: fake])
+        Map degradedScored = search(question, [rerank_mode: 'on', semantic_client: fake, neighbors: 'scored'])
+        verify('scored mode equals adjacent mode when the re-rank is degraded', (degradedScored.rerank as Map).reason == 'too_few_scored' && ids(degradedScored) == ids(degradedAdjacent))
+        verify('scored mode equals adjacent mode when re-ranking is off', ids(search(question, [neighbors: 'scored'])) == ids(search(question)))
+        verify('an unknown mode falls back to adjacent', ids(search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'bogus'])) == ids(adjacent))
+
+        String savedMode = System.getProperty('ai.memory.neighbors')
+        String savedAnchors = System.getProperty('ai.memory.neighbor_anchors')
+        try {
+            verify('the default neighbor settings', Config.neighborMode() == 'adjacent' && Config.neighborAnchors() == 10)
+            System.setProperty('ai.memory.neighbors', ' OFF ')
+            verify('the mode setting is read and folded to lower case', Config.neighborMode() == 'off')
+            Map fromSetting = search(question, [rerank_mode: 'on', rerank_depth: 20])
+            verify('the setting reaches the search when no option is given', (fromSetting.neighbors as Map).mode == 'off')
+            Map overridden = search(question, [rerank_mode: 'on', rerank_depth: 20, neighbors: 'after'])
+            verify('an option wins over the setting', (overridden.neighbors as Map).mode == 'after')
+            System.setProperty('ai.memory.neighbors', 'bogus')
+            verify('an unknown mode setting is ignored', Config.neighborMode() == 'adjacent')
+            System.setProperty('ai.memory.neighbor_anchors', '3')
+            verify('the anchor setting is read', Config.neighborAnchors() == 3)
+            ['0', '31', 'abc', ''].each { String bad ->
+                System.setProperty('ai.memory.neighbor_anchors', bad)
+                verify("the anchor setting '${bad}' is ignored", Config.neighborAnchors() == 10)
+            }
+        } finally {
+            if (savedMode == null) System.clearProperty('ai.memory.neighbors') else System.setProperty('ai.memory.neighbors', savedMode)
+            if (savedAnchors == null) System.clearProperty('ai.memory.neighbor_anchors') else System.setProperty('ai.memory.neighbor_anchors', savedAnchors)
+        }
+
+        List<Map> anchors = ['turn-000002.md', 'turn-000006.md', 'turn-000010.md'].collect { String name ->
+            Map doc = corpusRows.find { it.archive == 'chat:turns' && it.name == name }
+            [origin_db: 'convo.db', source_archive: 'chat:turns', file_path: doc.path, file_name: doc.name] as Map
+        }
+        List<Map> everything = NeighborExpansion.expand(anchors, data, false, 1) as List<Map>
+        verify('expand with defaults keeps the anchors and adds neighbors', everything.size() > anchors.size() && everything*.file_path.containsAll(anchors*.file_path))
+        List<Map> onlyNeighbors = NeighborExpansion.expand(anchors, data, false, 1, null, true) as List<Map>
+        verify('neighborsOnly returns neighbor rows and no candidate', !onlyNeighbors.isEmpty() && onlyNeighbors.every { it.pool == 'neighbor' } && onlyNeighbors*.file_path.disjoint(anchors*.file_path))
+        List<Map> limited = NeighborExpansion.expand(anchors, data, false, 1, 1, true) as List<Map>
+        verify('maxAnchors limits the expansion to the first anchors', limited.size() <= 2 && limited.size() < onlyNeighbors.size())
+        verify('radius 0 with neighborsOnly returns nothing', NeighborExpansion.expand(anchors, data, false, 0, null, true).isEmpty())
+    }
+
     private static void testFallbackAndSwitches() {
         String question = 'what did we decide about the nginx timeout'
         Map lexical = search(question)
@@ -435,6 +512,9 @@ why do exports fail
         verify('the default explain line names the fusion mode and weight', on.out.contains('fusion=rrf weight=12'))
         Map fusionCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--explain', '--limit', '3', '--rerank-fusion', 'cut', '--rerank-weight', '12', '--data-dir', data.absolutePath])
         verify('query accepts --rerank-fusion and --rerank-weight and prints them', fusionCli.code == 0 && fusionCli.out.contains('fusion=cut weight=12'))
+        verify('the default explain line names the neighbor mode', on.out.contains('Neighbors: mode=adjacent'))
+        Map neighborsCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--explain', '--limit', '3', '--neighbors', 'after', '--data-dir', data.absolutePath])
+        verify('query accepts --neighbors and prints the mode', neighborsCli.code == 0 && neighborsCli.out.contains('Neighbors: mode=after'))
         Map bad = command(['query', 'nginx', '--rerank-depth', '500', '--data-dir', data.absolutePath])
         verify('a bad depth is refused', bad.code == 2 && bad.out.contains('--rerank-depth'))
         Map json = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--json', '--limit', '2', '--data-dir', data.absolutePath])
@@ -472,6 +552,7 @@ why do exports fail
         EvalRunner = loader.loadClass('EvalRunner')
         GoldSet = loader.loadClass('GoldSet')
         SignalFusion = loader.loadClass('SignalFusion')
+        NeighborExpansion = loader.loadClass('NeighborExpansion')
     }
 
     private static void verify(String name, boolean condition) {

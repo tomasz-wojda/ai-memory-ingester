@@ -1,21 +1,26 @@
 class NeighborExpansion {
 
-    static List<Map> expand(List<Map> candidates, File dataDir, boolean allowRetrievalMeta = false, int radius = 1) {
-        if (!candidates || radius <= 0) return candidates ?: []
+    static List<Map> expand(List<Map> candidates, File dataDir, boolean allowRetrievalMeta = false, int radius = 1,
+                            Integer maxAnchors = null, boolean neighborsOnly = false) {
+        if (!candidates || radius <= 0) return neighborsOnly ? [] : (candidates ?: [])
         List<Map> expanded = []
         Set<String> seen = [] as Set<String>
+        if (neighborsOnly) candidates.each { Map candidate -> seen << SignalFusion.stableIdOf(candidate) }
+        int anchors = 0
         Map<String, MemoryEngine> engines = [:]
         try {
             candidates.each { Map candidate ->
                 String stableId = SignalFusion.stableIdOf(candidate)
                 if (!seen.contains(stableId)) {
-                    expanded << candidate
+                    if (!neighborsOnly) expanded << candidate
                     seen << stableId
                 }
                 if (candidate.source_archive?.toString() != 'chat:turns') return
                 if (!allowRetrievalMeta && candidate.retrieval_meta) return
                 File database = resolveDatabase(dataDir, candidate.origin_db?.toString())
                 if (!database?.exists()) return
+                if (maxAnchors != null && anchors >= maxAnchors) return
+                anchors++
                 MemoryEngine engine = engines.computeIfAbsent(database.absolutePath) {
                     new MemoryEngine(it)
                 }

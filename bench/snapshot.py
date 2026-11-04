@@ -4,10 +4,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from common import PROMPT_LOG, REPO
+from common import DATA_DIR, PROMPT_LOG
 
 DOCUMENT_DATABASES = ('convo.db', 'worklogs.db', 'artifacts.db')
-WATCHED = [REPO / 'data' / name for name in ('convo.db', 'worklogs.db', 'artifacts.db', 'journal.db')] + [PROMPT_LOG]
+WATCHED = [DATA_DIR / name for name in ('convo.db', 'worklogs.db', 'artifacts.db', 'journal.db')] + [PROMPT_LOG]
 
 
 def file_entry(path):

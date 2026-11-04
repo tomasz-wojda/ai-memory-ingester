@@ -11,7 +11,7 @@ import common
 import snapshot
 
 CSV_FIELDS = ['system', 'setting', 'depth', 'task', 'query', 'order', 'cov@5', 'cov@10', 'cov@20', 'bytes@20', 'prec@10', 'scored',
-              'wall_p50', 'wall_p95', 'degraded_runs', 'evidence_fallbacks']
+              'wall_p50', 'wall_p95', 'wall_cold', 'degraded_runs', 'evidence_fallbacks']
 
 
 def parse_settings(text):
@@ -21,10 +21,15 @@ def parse_settings(text):
         if token in ('', 'default'):
             settings.append(('default', ()))
             continue
-        fusion, _, weight = token.partition(':')
-        extra = ['--rerank-fusion', fusion]
-        if weight:
-            extra += ['--rerank-weight', weight]
+        extra = []
+        for part in token.split('+'):
+            if part.startswith('neighbors='):
+                extra += ['--neighbors', part.partition('=')[2]]
+                continue
+            fusion, _, weight = part.partition(':')
+            extra += ['--rerank-fusion', fusion]
+            if weight:
+                extra += ['--rerank-weight', weight]
         settings.append((token, tuple(extra)))
     return settings
 
@@ -47,7 +52,7 @@ def score_case(task, run, depth, mode):
     result = {
         'scored': sum(1 for row in window if row.get('rerank_score') is not None),
         'post_cutoff_in_depth': sum(1 for row in window if (common.number(row.get('file_name')) or 0) > task['cutoff_turn']),
-        'wall_s': run['p50'], 'wall_p50': run['p50'], 'wall_p95': run['p95'], 'degraded_runs': run['degraded_runs'],
+        'wall_s': run['p50'], 'wall_p50': run['p50'], 'wall_p95': run['p95'], 'wall_cold': run['cold_wall'], 'degraded_runs': run['degraded_runs'],
         'fused': coverage_by_cut(task, common.chat_rows(rows), mode),
         'model_only': coverage_by_cut(task, common.chat_rows(common.model_only_order(rows)), mode),
     }
@@ -78,7 +83,7 @@ def csv_rows(system, setting, depth, results):
             rows.append({'system': system, 'setting': setting, 'depth': depth, 'task': task_key, 'query': query, 'order': order,
                          'cov@5': case[order]['cov@5'], 'cov@10': case[order]['cov@10'], 'cov@20': case[order]['cov@20'],
                          'bytes@20': case[order]['bytes@20'], 'prec@10': case[order]['prec@10'], 'scored': case['scored'], 'wall_p50': case['wall_p50'],
-                         'wall_p95': case['wall_p95'], 'degraded_runs': case['degraded_runs'],
+                         'wall_p95': case['wall_p95'], 'wall_cold': case['wall_cold'], 'degraded_runs': case['degraded_runs'],
                          'evidence_fallbacks': case[order]['evidence_fallbacks']})
     return rows
 
@@ -136,7 +141,7 @@ def main():
                 common.stop_service(process)
     shutil.rmtree(work, ignore_errors=True)
     report = {'cases': [{'task': key, 'form': label, 'query': query} for key, label, query in cases], 'device': args.device,
-              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'snapshot': snapshot.manifest(), 'results': results,
+              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'results': results,
               'summary': summarize({k: v for k, v in results.items() if 'error' not in v})}
     common.OUT_DIR.mkdir(parents=True, exist_ok=True)
     (common.OUT_DIR / f'model-bench{args.tag}.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')

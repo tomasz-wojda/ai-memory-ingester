@@ -479,6 +479,24 @@ class TestQuerySuite {
             { out -> out.contains("Found ") && !out.contains("ERROR") }
         )
 
+        runTest("14.5 Query --help lists the neighbors option",
+            ["query", "--help"],
+            { out -> out.contains("--neighbors") && out.contains("adjacent (default), after, scored or off") }
+        )
+
+        runTest("14.6 An unknown neighbor mode is refused",
+            ["query", "pipeline", "--neighbors", "bogus"],
+            { out -> out.contains("--neighbors needs adjacent, after, scored or off") && !out.contains("Found ") },
+            true
+        )
+
+        ['adjacent', 'after', 'scored', 'off'].each { String mode ->
+            runTest("14.7 Neighbor mode '${mode}' is accepted without the service",
+                ["query", "pipeline", "--rerank", "off", "--neighbors", mode],
+                { out -> out.contains("Found ") && !out.contains("ERROR") }
+            )
+        }
+
         // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------

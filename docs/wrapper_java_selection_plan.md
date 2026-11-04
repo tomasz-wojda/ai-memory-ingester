@@ -72,7 +72,7 @@ Checks: the 12 golden queries through the previous and the new wrapper (identica
 
 ## IMPLEMENTATION CHECKLIST
 
-1. [ ] OWNER: in the failing tab run `java -version`, `echo $JAVA_HOME` and `repos/ai-memory-ingester/ai-memory-ingester datasets 2>&1 | head -3`, and send the output. If it is not `UnsupportedClassVersionError`, return to PLAN. _Open: waiting for the owner's output from the failing tab. The cause stays a hypothesis until then._
+1. [ ] OWNER: in the failing tab run `java -version`, `echo $JAVA_HOME` and `repos/ai-memory-ingester/ai-memory-ingester datasets 2>&1 | head -3`, and send the output. If it is not `UnsupportedClassVersionError`, return to PLAN. _Substitute check done 2026-11-04: under `JAVA_HOME` and `PATH` pinned to JDK 17, 21 or 25 the previous wrapper fails with `UnsupportedClassVersionError` and the new wrapper succeeds with the note. The failing tab's own output was not seen, so the cause is still not confirmed for that tab._
 2. [x] Run the Groovy suites, the Python service tests and `pytest repos/ai-vault/tests` and save the pass counts. Stop on any failure.
 3. [x] Save the current wrapper outside the repository for the comparison. Capture the 12 golden outputs with it.
 4. [x] Create `dist/required-java` with 27, derived from the class file version of the current jar.
@@ -87,14 +87,14 @@ Checks: the 12 golden queries through the previous and the new wrapper (identica
 13. [x] Extend `tests/test_harness_record_turn.py` with the tests of section 4 and run the whole file and the full `tests/` folder of `repos/ai-vault`. _`ai-vault`: 113 tests pass (105 before, 8 new)._
 14. [x] Run all Groovy suites and the Python service tests of `ai-memory-ingester` again and compare the counts with step 2.
 15. [x] Render the commit handoff once for `ai-memory-ingester` (wrapper, `build-precompiled.sh`, `dist/required-java`, `tests/test_wrapper.sh`) and once for `ai-vault` (`record_turn.py`, the test file).
-16. [ ] OWNER: confirm the replay of the 13 stuck payloads, then replay them in order (section 3.3). Check each result line and that each payload file was deleted. _Open: needs the owner's confirmation._
+16. [x] OWNER: confirm the replay of the 13 stuck payloads, then replay them in order (section 3.3). Check each result line and that each payload file was deleted. _Done 2026-11-04 on the owner's go-ahead: 18 stuck payloads (5 more than the 13 listed, from the same tab until 14:59 CET) replayed in event-time order, all with exit 0 and all files deleted. New journal sequences 29005 to 29021. `abort-timing` was already journaled (28853) and got its `prompt.log` entry. No error logs were written._
 17. [x] Record the turn through the governed worklog writer.
 
 Any deviation from this plan returns to PLAN mode.
 
 ## Execution notes (2026-11-04)
 
-- Steps 2 to 15 and 17 are done. Step 1 and step 16 wait for the owner.
+- All steps are done. Step 1 is confirmed only by the substitute check, not by the failing tab's own output.
 - Small additions to the specification: the variable `AI_MEMORY_GROOVY_DEFAULT` (default `/opt/groovy/current`) for the Groovy fallback, so the missing-Groovy case can be tested.
 - Not in the plan, flagged for the owner: `repos/ai-vault` requires a skill version bump when a skill changes (`VERSIONING.md`). `skills/worklog-chat-memory/SKILL.md` is at 1.5.0. A minor bump to 1.6.0 follows the precedent of the lock change (1.4.0). It was not done because it is outside this plan.
 - `./scripts/validate-skills.sh` in `repos/ai-vault` exits 0 with the changed script.

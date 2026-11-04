@@ -13,7 +13,13 @@ fi
 
 cd "${ROOT}"
 
+JVM_FLAGS=()
+case "${1:-}" in
+  query|03) JVM_FLAGS=(-XX:TieredStopAtLevel=1 -XX:+UseSerialGC) ;;
+esac
+
 exec java \
+  ${JVM_FLAGS[@]+"${JVM_FLAGS[@]}"} \
   --enable-native-access=ALL-UNNAMED \
   -cp "${APPLICATION_JAR}:${ROOT}/vendor/*:${GROOVY_HOME_RESOLVED}/lib/*" \
   PrecompiledRunner \

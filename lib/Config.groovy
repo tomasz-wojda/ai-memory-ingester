@@ -45,7 +45,7 @@ class Config {
     static final int RERANK_DEPTH = 30
     static final int RERANK_BUDGET_MS = 1200
     static final int RERANK_MIN_SCORED = 10
-    static final int RERANK_WEIGHT_DEFAULT = 5
+    static final int RERANK_WEIGHT_DEFAULT = 12
     static final String RERANK_FUSION_DEFAULT = 'rrf'
     static final List<String> RERANK_FUSION_MODES = ['rrf', 'score', 'cut'].asImmutable()
     static final int LATE_TOP_K = 50

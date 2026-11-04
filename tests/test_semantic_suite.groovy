@@ -229,10 +229,10 @@ why do exports fail
         Map lexical = search(question)
         Map base = search(question, [rerank_mode: 'on', rerank_depth: 20])
         verify('the default weight equals the weight of the rerank signal', Config.RERANK_WEIGHT_DEFAULT == SignalFusion.SIGNAL_WEIGHTS.rerank)
-        verify('the default settings are rrf and weight 5', Config.rerankFusion() == 'rrf' && Config.rerankWeight() == 5)
-        Map explicitDefault = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'rrf', rerank_weight: 5])
-        verify('rrf with weight 5 gives the same order as the default', ids(base) == ids(explicitDefault))
-        verify('the re-rank info names the fusion mode and the weight', (base.rerank as Map).fusion == 'rrf' && (base.rerank as Map).weight == 5)
+        verify('the default settings are rrf and weight 12', Config.rerankFusion() == 'rrf' && Config.rerankWeight() == 12)
+        Map explicitDefault = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'rrf', rerank_weight: 12])
+        verify('rrf with weight 12 gives the same order as the default', ids(base) == ids(explicitDefault))
+        verify('the re-rank info names the fusion mode and the weight', (base.rerank as Map).fusion == 'rrf' && (base.rerank as Map).weight == 12)
 
         Map heavy = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_weight: 40])
         Map baseScores = fusedScores(base)
@@ -252,7 +252,7 @@ why do exports fail
         verify('score mode keeps the rerank signal and is deterministic', (score.results as List<Map>).any { it.signals?.containsKey('rerank') } && ids(score) == ids(search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'score'])))
 
         Map invalid = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'bogus', rerank_weight: 500])
-        verify('invalid fusion settings fall back to rrf and weight 5', (invalid.rerank as Map).fusion == 'rrf' && (invalid.rerank as Map).weight == 5 && ids(invalid) == ids(base))
+        verify('invalid fusion settings fall back to rrf and weight 12', (invalid.rerank as Map).fusion == 'rrf' && (invalid.rerank as Map).weight == 12 && ids(invalid) == ids(base))
 
         ['rrf', 'score', 'cut'].each { String fusion ->
             Map ticket = search('FIX-101 monitoring', [rerank_mode: 'on', rerank_fusion: fusion])
@@ -272,11 +272,11 @@ why do exports fail
         String savedWeight = System.getProperty('ai.memory.rerank_weight')
         String savedFusion = System.getProperty('ai.memory.rerank_fusion')
         try {
-            System.setProperty('ai.memory.rerank_weight', '12')
-            verify('the weight setting is read', Config.rerankWeight() == 12)
+            System.setProperty('ai.memory.rerank_weight', '33')
+            verify('the weight setting is read', Config.rerankWeight() == 33)
             ['0', 'abc', '101', ''].each { String bad ->
                 System.setProperty('ai.memory.rerank_weight', bad)
-                verify("the weight setting '${bad}' is ignored", Config.rerankWeight() == 5)
+                verify("the weight setting '${bad}' is ignored", Config.rerankWeight() == 12)
             }
             System.setProperty('ai.memory.rerank_fusion', ' CUT ')
             verify('the fusion setting is read and folded to lower case', Config.rerankFusion() == 'cut')
@@ -305,7 +305,7 @@ why do exports fail
         verify('a weight override replaces the table weight in addSignal', Math.abs((single[0].fused_score as double) - 10 / 61.0d) < 1.0e-12d)
         List<Map> plain = [[origin_db: 'd', source_archive: 'a', file_path: 'x', fused_score: 0.0d, signals: [:]] as Map]
         SignalFusion.addSignal(plain, 'rerank', [plain[0]])
-        verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 5 / 61.0d) < 1.0e-12d)
+        verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 12 / 61.0d) < 1.0e-12d)
     }
 
     private static void testFallbackAndSwitches() {
@@ -432,7 +432,7 @@ why do exports fail
         verify('AI_MEMORY_RERANK=0 with --rerank on exits 5 (nothing was re-ranked)', killed.code == 5)
         Map lateCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'late', '--explain', '--limit', '3', '--data-dir', data.absolutePath])
         verify('query --rerank late prints the late re-score line', lateCli.code == 0 && lateCli.out.contains('Re-rank: model=stub-encoder device=late'))
-        verify('the default explain line names the fusion mode and weight', on.out.contains('fusion=rrf weight=5'))
+        verify('the default explain line names the fusion mode and weight', on.out.contains('fusion=rrf weight=12'))
         Map fusionCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--explain', '--limit', '3', '--rerank-fusion', 'cut', '--rerank-weight', '12', '--data-dir', data.absolutePath])
         verify('query accepts --rerank-fusion and --rerank-weight and prints them', fusionCli.code == 0 && fusionCli.out.contains('fusion=cut weight=12'))
         Map bad = command(['query', 'nginx', '--rerank-depth', '500', '--data-dir', data.absolutePath])

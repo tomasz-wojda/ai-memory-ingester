@@ -108,7 +108,7 @@ Suites: `test_query_plan_suite` (119), `test_semantic_suite` (90), `test_query_s
 27. [x] Run the weight and mode sweep of section 1.5 with the rebuilt jar and the service on MPS. Save the report and the CSV for each run.
 28. [x] Run the paired statistics of each setting against the lexical baseline and against the current engine.
 29. [x] Apply the decision rule and write the table and the decision into `docs/rerank_enhacement.md`.
-30. [ ] If a setting passes all gates, ask the owner to approve it as the new default. Make no default change before the approval. _Open: rrf weight 12 at depth 30 passes all gates and waits for the owner._
+30. [x] If a setting passes all gates, ask the owner to approve it as the new default. Make no default change before the approval. _Done 2026-11-04: the owner approved rrf weight 12 at depth 30 and the default was changed (D-34)._
 
 **Best-passage snippet (conditional; steps 32 to 34 skipped, marked `[-]`)**
 31. [x] Run the harness with `--evidence best_passage` and compare against `head` on all tasks, with paired statistics. Apply the condition of section 1.4. If it is not met, skip steps 32 to 34 and record the result.
@@ -126,7 +126,7 @@ Suites: `test_query_plan_suite` (119), `test_semantic_suite` (90), `test_query_s
 
 ## Execution notes (2026-11-04)
 
-- Steps 1 to 29, 31, 35, 36 and 37 are done. Step 30 is open and waits for the owner. Steps 32 to 34 were skipped by their own condition. Step 38 opens the follow-up plans after the owner's decision.
+- Steps 1 to 31 and 35 to 37 are done. Step 30 was done on 2026-11-04 (owner approval, D-34). Steps 32 to 34 were skipped by their own condition. Step 38 opens the follow-up plans after the owner's decision.
 - Results and decisions are in section 10 of [rerank_enhacement.md](rerank_enhacement.md).
 - Deviations from this plan, all small and recorded there: the snapshot manifest has a content fingerprint besides the byte hash, because a query rewrites the database file header; the tests for the explain fields are in `tests/test_semantic_suite.groovy` (it holds the service fixture) and the option and help tests are in `tests/test_query_suite.groovy`; the benchmark CSV has a precision@10 column for gate 2; a tie rule (smallest change) was applied in the decision of step 29.
 

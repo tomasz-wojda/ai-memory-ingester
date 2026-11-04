@@ -179,7 +179,7 @@ Documents are long and a cross-encoder reads at most 512 tokens per pair. Each c
 The model score is one signal, not the final order.
 
 1. Rank the scored documents by model score (ties by prior rank, then stable id). This gives the `rerank` signal.
-2. Fuse with the same RRF code (`SignalFusion.fuse`), adding `rerank` to the pools with weight 5. The existing weights stay: exact 4, bm25 3, bm25_relaxed 2, late 3, recency 2, authority 2, impact 1. Weights are configuration, tuned only on the gold set.
+2. Fuse with the same RRF code (`SignalFusion.fuse`), adding `rerank` to the pools with weight 12 (it was 5 in the first build; changed by D-34 on 2026-11-04). The existing weights stay: exact 4, bm25 3, bm25_relaxed 2, late 3, recency 2, authority 2, impact 1. Weights are configuration, tuned only on the gold set.
 3. Apply the invariants of section 8.
 4. Round the model score to four decimals before it is used, so equal inputs give equal orders across devices.
 5. The result keeps `fused_score`, `signals` and gains `rerank_score` and `rerank_rank`.

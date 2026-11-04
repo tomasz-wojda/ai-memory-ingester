@@ -952,7 +952,7 @@ static void printQueryUsage() {
     println "      --rerank auto|on|off|late  Re-rank with the memory service (default auto; on and late exit 5 if they cannot; late scores with the late-interaction index; AI_MEMORY_RERANK=0 turns it off)"
     println "      --rerank-depth N        Candidates sent to the service (1 to 100, default 30)"
     println "      --rerank-budget-ms N    Time limit of the call (100 to 10000, default 1200)"
-    println "      --rerank-weight N       Weight of the re-rank signal in the rank fusion (1 to 100, default 5; AI_MEMORY_RERANK_WEIGHT)"
+    println "      --rerank-weight N       Weight of the re-rank signal in the rank fusion (1 to 100, default 12; AI_MEMORY_RERANK_WEIGHT)"
     println "      --rerank-fusion MODE    How the model score joins the order: rrf (default), score or cut (AI_MEMORY_RERANK_FUSION)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"

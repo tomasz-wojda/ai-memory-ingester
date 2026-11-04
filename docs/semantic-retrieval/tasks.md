@@ -56,7 +56,7 @@ Each task finishes with its tests and, at phase end, a gate from [evaluation.md]
 
 ## Phase 3: options (not planned; each needs its own plan)
 
-- [ ] T060 Tune fusion weights on the dev split with a simple search; report on the test split.
+- [ ] T060 Tune fusion weights on the dev split with a simple search; report on the test split. _Update 2026-11-04: a first sweep on the 10-query ledger benchmark set the re-rank weight to 12 (D-34). The search on the gold dev and test splits is still open._
 - [ ] T061 Polish lemmatizer if the Polish gap on the gold set exceeds 0.10.
 - [ ] T062 Local query expansion model (new review of threat S9).
 - [ ] T063 Fine-tune the cross-encoder when at least 500 labelled queries exist.

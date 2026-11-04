@@ -8,7 +8,7 @@ class SignalFusion {
         recency: 2,
         authority: 2,
         impact: 1,
-        rerank: 5,
+        rerank: 12,
         late: 3
     ].asImmutable()
 

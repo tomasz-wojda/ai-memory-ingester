@@ -27,7 +27,7 @@ Facts read from the code on 2026-11-03.
 | Passage cap | At most 100 passages per request | `lib/RerankStage.groovy` |
 | Scoring | The service scores each (query, passage) pair with the cross-encoder. A document keeps its best passage score (MaxP) | `lib/RerankStage.groovy` |
 | Model input limit | `max_tokens` is 256 unless the model entry sets another value | `service/ai_memory_service/backends.py` |
-| Fusion | The re-rank signal is added to the other signals by weighted reciprocal rank fusion: `weight / (60 + rank)`. Weights: exact 4, bm25 3, bm25_relaxed 2, recency 2, authority 2, impact 1, rerank 5, late 3 | `lib/SignalFusion.groovy` |
+| Fusion | The re-rank signal is added to the other signals by weighted reciprocal rank fusion: `weight / (60 + rank)`. Weights: exact 4, bm25 3, bm25_relaxed 2, recency 2, authority 2, impact 1, rerank 12 (5 until 2026-11-04, see D-34), late 3 | `lib/SignalFusion.groovy` |
 | Degraded mode | Fewer than 10 passages scored, a down service, or a missed deadline keeps the lexical order and reports a reason | `lib/RerankStage.groovy` |
 | Default model | `mmarco-mMiniLMv2-L12-H384-v1` on MPS at depth 30 (D-04, confirmed 2026-11-03, for now) | `decision-log.md` |
 
@@ -392,6 +392,15 @@ The benchmark scored the snippet from the best passage chosen by the model inste
 | Model-only order | 47.4 | 41.0 | -6.38 | [-12.02, -2.01] | 1 / 6 / 3 |
 
 The condition for R37 (at least +3 points at the top 10 with no task losing more than 3) is **not met**. The `AI_MEMORY_SNIPPET` setting was not built (plan steps 32 to 34 skipped). H2 is not supported on this benchmark: the best 900-character passage carries less context than the head of the document, which holds the title and the first facts.
+
+### 10.8 Default change (plan step 30, D-34)
+
+On 2026-11-04 the owner approved rrf weight 12 at depth 30 as the default. `Config.RERANK_WEIGHT_DEFAULT` and the rerank entry of `SignalFusion.SIGNAL_WEIGHTS` are now 12, the help text says so, and `--rerank-weight` and `AI_MEMORY_RERANK_WEIGHT` still override it. The tables in sections 10.5 and 10.6 describe the former default (weight 5) as the "current default".
+
+- Verification: the semantic suite has 125 tests and passes. A benchmark run with the new default is identical, query by query, to the earlier run with `--rerank-weight 12` (coverage at 5, 10 and 20, bytes, precision and the top 20 turns). `--rerank-weight 5` reproduces the old default.
+- Golden outputs: of 12, ten are identical. The two that use the live service changed, because the re-rank order follows the new weight, and the explain line now ends with `fusion=rrf weight=12`.
+- Benchmark labels: in `bench/model_bench.py` the setting `default` now means weight 12. Use `rrf:5` for the former default.
+- The three-way results of `comparison.md` were measured with weight 5 and are not updated.
 
 ### 10.7 Status of the checklist
 

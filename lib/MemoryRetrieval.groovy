@@ -78,9 +78,12 @@ class MemoryRetrieval {
             client = client ?: ((options.semantic_client ?: SemanticClient.discover()) as SemanticClient)
             List<Map> head = hydrateDocuments(fused.take(depth), dataDir)
             List<String> words = (plan.terms ?: parsed.terms.tokenize(' ')) as List<String>
+            Map rerankOptions = new LinkedHashMap(options)
+            rerankOptions.rerank_fusion = options.rerank_fusion ?: Config.rerankFusion()
+            rerankOptions.rerank_weight = options.rerank_weight ?: Config.rerankWeight()
             Map outcome = (options.rerank_mode?.toString() == 'late')
-                ? RerankStage.applyLate(head, parsed.terms, client, parsed.ticket)
-                : RerankStage.apply(head, parsed.terms, words, options, client, parsed.ticket)
+                ? RerankStage.applyLate(head, parsed.terms, client, parsed.ticket, rerankOptions)
+                : RerankStage.apply(head, parsed.terms, words, rerankOptions, client, parsed.ticket)
             rerankInfo = outcome.info as Map
             fused = (outcome.rows as List<Map>) + fused.drop(depth)
         }

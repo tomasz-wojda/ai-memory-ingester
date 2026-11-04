@@ -145,15 +145,15 @@ Task A and B values for the worklog and all-source columns come from `three-way-
 
 The tuning steps below are only safe when the measurement is sound. These steps come first.
 
-- [ ] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
+- [x] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
 - [ ] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`.
 - [ ] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less.
 - [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks.
-- [ ] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
-- [ ] **R06 [ING] Add paired statistics.** Report per-query differences against the lexical baseline, a bootstrap interval, and a win/loss count. Accept: a change counts as an improvement only when the interval excludes zero or it wins on a clear majority without any large loss.
-- [ ] **R07 [ING] Add a cutoff for worklog and artifact documents** in the all-source branch (by document date, or a frozen database copy). Accept: no document newer than the freeze point enters the scored set.
-- [ ] **R08 [ING] Freeze and version the databases per run.** Record the file sizes, hashes and sweep time of `convo.db`, `worklogs.db` and `artifacts.db` in every report. Accept: a rerun on the same snapshot gives identical numbers.
-- [ ] **R09 [ING] Explain the three open anomalies**: the Polish ArgoCD regression (all models identical), the depth 100 speed, and the identical results of different models on some queries. Accept: each has a documented cause or a reproduction.
+- [x] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
+- [x] **R06 [ING] Add paired statistics.** Report per-query differences against the lexical baseline, a bootstrap interval, and a win/loss count. Accept: a change counts as an improvement only when the interval excludes zero or it wins on a clear majority without any large loss.
+- [x] **R07 [ING] Add a cutoff for worklog and artifact documents** in the all-source branch (by document date, or a frozen database copy). Accept: no document newer than the freeze point enters the scored set.
+- [x] **R08 [ING] Freeze and version the databases per run.** Record the file sizes, hashes and sweep time of `convo.db`, `worklogs.db` and `artifacts.db` in every report. Accept: a rerun on the same snapshot gives identical numbers.
+- [x] **R09 [ING] Explain the three open anomalies**: the Polish ArgoCD regression (all models identical), the depth 100 speed, and the identical results of different models on some queries. Accept: each has a documented cause or a reproduction.
 - [ ] **R10 OWNER Decide the target and the budget.** Confirm the time budget (1.2 s at depth 30), whether CPU-only machines must also meet it, and the accepted regression per task.
 
 ---
@@ -176,15 +176,15 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 ### Phase A: fusion (highest evidence)
 
-- [ ] **R11 [ING] Make the signal weights configurable** (`AI_MEMORY_RERANK_WEIGHT` and a config key) without changing the default. Accept: the default order is byte-identical to today.
-- [ ] **R12 [ING] Sweep the re-rank weight** over 5, 8, 12, 20 and a model-order-only mode. Measure the engine-order coverage against the model-only coverage from R04. Evidence: 3.3. Accept: the gap between engine order and model-only order at the top 10 falls below 5 points, with the gates passed.
-- [ ] **R13 [ING] Test score-based fusion.** Replace the rank-based re-rank signal with a normalized model score (for example a logistic or z-score of the cross-encoder score) added to the other signals. Reason: rank fusion discards how far apart two scores are. Accept: gates pass and it beats the best weight of R12.
-- [ ] **R14 [ING] Test "re-rank, then cut"** for the final list: when the re-rank is not degraded, order the scored documents by model score and keep the other signals only as tie-breakers and for unscored documents. Accept: gates pass.
-- [ ] **R15 [ING] Keep the guarantees.** The strict rows stay first, the ticket capsule pin still works, and the rank of an exact match is not lowered below a defined floor. Accept: the existing retrieval suites (query plan, semantic) pass without edits to their expected values, or each changed value is justified.
+- [x] **R11 [ING] Make the signal weights configurable** (`AI_MEMORY_RERANK_WEIGHT` and a config key) without changing the default. Accept: the default order is byte-identical to today.
+- [x] **R12 [ING] Sweep the re-rank weight** over 5, 8, 12, 20 and a model-order-only mode. Measure the engine-order coverage against the model-only coverage from R04. Evidence: 3.3. Accept: the gap between engine order and model-only order at the top 10 falls below 5 points, with the gates passed.
+- [x] **R13 [ING] Test score-based fusion.** Replace the rank-based re-rank signal with a normalized model score (for example a logistic or z-score of the cross-encoder score) added to the other signals. Reason: rank fusion discards how far apart two scores are. Accept: gates pass and it beats the best weight of R12.
+- [x] **R14 [ING] Test "re-rank, then cut"** for the final list: when the re-rank is not degraded, order the scored documents by model score and keep the other signals only as tie-breakers and for unscored documents. Accept: gates pass.
+- [x] **R15 [ING] Keep the guarantees.** The strict rows stay first, the ticket capsule pin still works, and the rank of an exact match is not lowered below a defined floor. Accept: the existing retrieval suites (query plan, semantic) pass without edits to their expected values, or each changed value is justified.
 
 ### Phase B: candidate recall and depth
 
-- [ ] **R16 [ING] Measure recall of the first stage.** For each ledger fact, find the rank of the first passage that carries it in the first-stage list. Accept: a table of recall@10, 30, 50, 100 per task. Evidence: facts that never enter the first 30 cannot be repaired by re-ranking.
+- [x] **R16 [ING] Measure recall of the first stage.** For each ledger fact, find the rank of the first passage that carries it in the first-stage list. Accept: a table of recall@10, 30, 50, 100 per task. Evidence: facts that never enter the first 30 cannot be repaired by re-ranking.
 - [ ] **R17 [ING] Make the passage cap depend on the time budget.** Today the cap is a fixed 100 passages and 3 per document. On MPS, mmarco needs about 5.7 ms per passage (measured up to depth 50), so 200 passages is about 1.1 s (an estimate, to be measured). Choose the number of passages from a measured cost per passage and the remaining budget. Accept: p95 stays inside the budget on MPS and on CPU, and the degraded rate stays below 2%.
 - [ ] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30.
 - [ ] **R19 [ING] Use a partial result when the deadline is near.** Score the highest-ranked passages first, and use the scored subset instead of dropping the whole re-rank when the time runs out. Accept: the degraded rate falls without a quality loss.
@@ -217,7 +217,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 ### Phase F: evidence assembly
 
-- [ ] **R37 [ING] Use the best passage as the snippet** in the engine output and in the packed context, with a link to the full document. Hypothesis H2. Accept: coverage under a fixed budget rises (R05).
+- [ ] **R37 [ING] Use the best passage as the snippet** in the engine output and in the packed context, with a link to the full document. Hypothesis H2. Accept: coverage under a fixed budget rises (R05). _Evaluated 2026-11-04: the condition was not met (section 10.6), not built._
 - [ ] **R38 [ING] Pack the context by gain, not by rank.** Choose items by new facts per byte (a diversity rule such as MMR) and skip items that repeat content. Accept: coverage per byte rises.
 - [ ] **R39 [ING] Expand neighbors only after the packed set is chosen**, and measure whether the expansion adds facts or noise. Accept: gates pass.
 
@@ -273,6 +273,143 @@ The expected size of each gain is unknown until the steps run. The only measured
 | R43 | Collect labels for fine-tuning, and when? | Phase G |
 | R44 | Ask IP Legal to confirm Apache-2.0 | Any model change |
 | R49 | How should the service start? | Phase H |
+
+---
+
+## 10. Tranche 1 results (plan: [rerank_enhacement_plan.md](rerank_enhacement_plan.md))
+
+Status on 2026-11-04. This section is written during execution and extended at each gate.
+
+### 10.1 Harness (R01, R03 tooling, R05, R06, R08, R11 part, R12, R14)
+
+- The harness is in `bench/` (`common.py`, `model_bench.py`, `three_way.py`, `stats.py`, `snapshot.py`, `dump_journal.groovy`). It has no absolute path. Ledgers stay in `data/eval/ledger-run/tasks/` (git-ignored).
+- Equivalence: the new `three_way.py` and the old script gave 0 differences over all fields of all branches for the four tasks on the same snapshot. The new and old `model_bench.py` gave 0 differences over 20 cells (lexical and mmarco, all queries).
+- Determinism: three consecutive runs of the new harness on the same data were identical in every coverage field.
+- New options: `--evidence head|best_passage`, `--repeats N` (p50, p95, degraded runs), `--settings` (fusion and weight, used after step 21), per-query CSV, first-stage fact recall, undated-document counter, and paired statistics (`stats.py`: mean difference, wins, losses, ties, bootstrap 95% interval with 10,000 resamples and seed 1).
+- The benchmark has 10 queries, not 12 as written earlier (tasks A and B have 4 each, tasks C and D have 1 each).
+
+### 10.2 Findings about the measurement itself
+
+- **A query changes the database files.** The engine sets WAL mode when it opens a database, so a query alone changes the byte hash of `convo.db`, `worklogs.db` and `artifacts.db` while the content stays the same. A plan deviation: `snapshot.py` records size, modification time and SHA-256 as specified, plus a content fingerprint (document count, content bytes, maximum id, and a hash over ids and contents). The fingerprint stays stable after queries and is the key used to compare snapshots.
+- **Numbers for tasks C and D changed between runs on different days.** Against `three-way-run8.json` (2026-11-03), tasks A and B reproduce exactly, but the re-ranked cells of C and D differ: C all-source 46.2 became 23.1, D all-source 65.0 became 60.0, and some byte counts changed. The cause is not determined: the earlier run recorded no content fingerprint, so a data change between the runs (new swept turns or documents) cannot be proved or excluded. The re-ranker values for tasks C and D in `comparison.md` are therefore as of the earlier run and are not reproducible on the current data. All Tranche 1 comparisons use runs on one snapshot.
+
+### 10.3 First-stage recall (R16 part)
+
+Share of strict fact weight that appears in the first-stage list (no re-rank, limit 300), by rank. A fact counts when any retrieved document contains its anchors anywhere in its full text.
+
+| Task | Source | @10 | @30 | @50 | @100 | Never found |
+|---|---|---:|---:|---:|---:|---|
+| A | chat turns | 33.3 | 69.4 | 69.4 | 69.4 | F03, F07, F12, F18 |
+| A | all sources | 94.4 | 100 | 100 | 100 | none |
+| B | chat turns | 75.0 | 93.8 | 93.8 | 93.8 | M10 |
+| B | all sources | 87.5 | 100 | 100 | 100 | none |
+| C | chat turns | 0.0 | 33.3 | 48.7 | 71.8 | C07, C09, C11, C12, C19 |
+| C | all sources | 94.9 | 100 | 100 | 100 | none |
+| D | chat turns | 35.0 | 65.0 | 70.0 | 70.0 | D02, D05, D13, D18 |
+| D | all sources | 67.5 | 85.0 | 90.0 | 90.0 | none |
+
+- With all sources, every fact is in the first 30 documents for tasks A, B and C, and 85% by weight for task D. Candidate recall is not the limit there.
+- With chat turns only, the first 30 documents hold only a third of the weight on task C, and facts that are absent from every turn in the list cannot be repaired by re-ranking. This confirms that raising depth matters for chat-turn search (R18).
+
+### 10.4 Anomalies (R09)
+
+**Polish ArgoCD regression (task A, queries `pl` and `pl-diacritics`).**
+- Not a model failure. The lexical top 10 for these queries consists mostly of neighbor triplets (for example turns 914 to 916 and 1665 to 1666). Neighbors are added after re-ranking and are never scored.
+- In the model-only order, unscored rows follow all scored rows, so the neighbor turns that carry the facts F02 and F17 drop out of the top 10. In the engine order, the model promotes other anchors (turns 366, 882 and 1070 with their neighbors) over turns 915 and 1665, so those two facts also leave the top 10.
+- At the top 20 there is no loss. The cause is a set effect at a small cut-off, not a quality loss at depth.
+
+**Identical results across models.**
+- Not a harness fault. For every query the five models produce five different orders. The top-10 sets are identical for some queries (for example the Polish query of task A and the English paraphrase of task B), because only 12 to 17 chat documents are scored and the top 10 is almost the whole scored window. Coverage at the top 10 is a set measure, so models that rank the same window give the same number. This is why the model benchmark cannot separate the models.
+
+**Depth 100 faster than depth 30.**
+- An ordering effect. With the order alternated five times per depth on a fresh service, depth 30 takes 1.3 s and depth 100 takes 1.3 to 1.4 s (17 and 34 documents scored), so depth costs about 0.1 s here. The first call of a fresh service pays a one-time cost: 5.5 s when the first call is depth 30, and 2.9 s when it is depth 100. The model benchmark ran depth 30 first and absorbed that cost.
+- Consequence for the default budget: with the 1.2 s budget the first real query after the service starts is likely to miss it. The start-up warm-up scores one short dummy pair and does not cover a realistic batch. This is a follow-up for phase H (a warm-up with a realistic batch).
+
+### 10.5 Fusion sweep (R11 to R15, plan steps 17 to 29)
+
+Setup: the rebuilt jar with `--rerank-weight` and `--rerank-fusion`, mmarco on MPS, depth 30, the 10 queries of the four tasks, chat turns only, head evidence, budget 10 s (no deadline skips). Weighted fact coverage (%), engine order unless stated. Two sweeps gave identical coverage.
+
+| Setting | cov@5 | cov@10 | cov@20 | Precision@10 | Model-only cov@10 |
+|---|---:|---:|---:|---:|---:|
+| lexical (no re-rank) | 22.2 | 33.2 | 52.5 | 62.0 | 33.2 |
+| **current default (rrf, weight 5)** | 25.6 | 40.3 | 61.3 | 55.0 | 47.4 |
+| rrf, weight 8 | 21.7 | 41.5 | 61.3 | 56.0 | 47.4 |
+| **rrf, weight 12** | 21.7 | **44.0** | 61.3 | 57.0 | 47.4 |
+| rrf, weight 20 | 25.0 | 44.0 | 61.3 | 57.0 | 47.4 |
+| rrf, weight 40 | 25.0 | 44.0 | 61.3 | 57.0 | 47.9 |
+| score, weight 5 | 24.8 | 42.4 | 60.0 | 56.0 | 47.1 |
+| score, weight 12 | 22.9 | 41.0 | 60.5 | 55.0 | 47.1 |
+| score, weight 20 | 22.9 | 41.0 | 60.5 | 54.0 | 47.1 |
+| cut | 25.0 | 44.0 | 61.3 | 57.0 | 47.9 |
+
+Paired statistics for cov@10 (10 pairs, bootstrap 95% interval):
+
+| Setting | Against | Mean difference | Interval | Wins / losses / ties | Worst loss | Per task (A, B, C, D) |
+|---|---|---:|---|---|---:|---|
+| rrf 12, rrf 20, rrf 40, cut (identical per query) | current engine | +3.69 | [0.12, 7.73] | 5 / 1 / 4 | -5.6 | -1.4, +3.7, +15.4, +12.5 |
+| rrf 12 | lexical | +10.78 | [-4.32, 25.63] | 6 / 3 / 1 | -25.0 | -10.4, +23.5, +28.2, +27.5 |
+| current engine | lexical | +7.09 | [-6.69, 20.89] | 6 / 3 / 1 | -25.0 | -9.0, +19.8, +12.8, +15.0 |
+| rrf 8 | current engine | +1.19 | [-1.47, 4.83] | 2 / 1 / 7 | -5.6 | |
+| score 5 | current engine | +2.12 | [-2.62, 6.51] | 4 / 1 / 5 | -15.0 | |
+| score 12 and 20 | current engine | +0.73 | [-4.04, 5.31] | 3 / 2 / 5 | -15.0 | |
+
+Depth 50 (default, rrf 12, cut):
+
+| Setting at depth 50 | cov@5 | cov@10 | cov@20 | Precision@10 | Model-only cov@10 |
+|---|---:|---:|---:|---:|---:|
+| default (rrf, weight 5) | 26.8 | 35.7 | 58.6 | 59.0 | 49.7 |
+| rrf, weight 12 | 23.6 | 38.1 | 57.8 | 60.0 | 49.7 |
+| cut | 25.2 | 33.6 | 57.0 | 54.0 | 49.7 |
+
+**Gate check for rrf weight 12 at depth 30** (gates of section 6, against the current engine unless stated):
+
+| Gate | Result |
+|---|---|
+| 1. Coverage at the top 10 at least +5 over lexical, and no task falls by more than 3 against the current engine | Pass: +10.8 over lexical. Per task against the current engine: -1.4, +3.7, +15.4, +12.5 |
+| 2. Retrieval precision does not fall by more than 5 on any task | Pass: precision@10 changes by -2.5, -2.5, +20.0, +20.0 |
+| 3. Time budget and degraded rate | Pass: 0 degraded runs out of 40 at the 1.2 s budget on a quiet machine. The weight does not change latency (p50 differences within 0.15 s). Whole-command time with Java start-up was p50 1.2 to 1.5 s and p95 1.4 to 2.1 s |
+| 4. Reproducible on the same snapshot | Pass: two sweeps identical |
+| 5. Paired interval excludes zero, or 75% wins and no loss above 10 | Pass: interval [0.12, 7.73] against the current engine, 5 wins, 1 loss, worst loss -5.6 |
+
+**Findings**
+- The weight saturates at 12. Weights 12, 20 and 40 and the `cut` mode give the same coverage on every query, so a larger weight than 12 adds nothing on this benchmark.
+- Score fusion (`score`) does not beat rank fusion. It is no better than the current default at weights 12 and 20 and loses 15 points on task D.
+- **A gap of about 3.4 points to the model-only order remains** (44.0 against 47.4 at the top 10). I did not test the cause directly. The neighbor expansion runs after re-ranking and inserts unscored neighbor turns next to their anchors, while the model-only order in the harness places all unscored rows last. This is a hypothesis for the next plan (H8: score or place the neighbors by their anchor's score).
+- **Depth 50 is worse in engine order** than depth 30 for every setting (default 35.7 against 40.3, weight 12 38.1 against 44.0) although the model-only coverage rises (47.4 to 49.7). The `cut` mode loses 32.5 points on task D at depth 50. Depth 30 stays.
+- **Secondary measure, all sources (three-way harness, 5 repeats, budget 1.2 s):** weight 12 against the default changes cov@10 on the all-source branch by -5.5 on task A (86.1 to 80.6, about one fact), 0 on B and C, and +5.0 on D. Over all 20 results it gains +6.3 on B and +5.0 on D and changes nothing on A and C. On the chat-turn branch it gains +15.4 on C and +12.5 on D. The one loss on task A is larger than the 3-point rule, but this branch is not the benchmark defined for the gates.
+- Limits: 10 queries, one model, a ledger drafted by the benchmark author, head evidence.
+
+**Decision under the rule of section 1.5 of the plan.** Four settings tie at the highest coverage (rrf 12, rrf 20, rrf 40 and cut). The plan has no tie rule. I applied the smallest change: rank fusion with the lowest weight that reaches the plateau, **rrf weight 12 at depth 30**. This is a candidate only. **No default was changed.** The default changes only after the owner approves it (plan step 30).
+
+### 10.6 Best-passage evidence (R05, R37, plan step 31)
+
+The benchmark scored the snippet from the best passage chosen by the model instead of the head of the document (rows without a passage keep the head; 9 to 14 of the top 20 rows fall back).
+
+| Order | cov@10, head | cov@10, best passage | Difference | Interval | Wins / losses / ties |
+|---|---:|---:|---:|---|---|
+| Engine order, default weight | 40.3 | 38.1 | -2.18 | [-6.05, 1.45] | 2 / 3 / 5 |
+| Engine order, weight 12 | 44.0 | 41.3 | -2.70 | [-6.67, 1.20] | 2 / 4 / 4 |
+| Model-only order | 47.4 | 41.0 | -6.38 | [-12.02, -2.01] | 1 / 6 / 3 |
+
+The condition for R37 (at least +3 points at the top 10 with no task losing more than 3) is **not met**. The `AI_MEMORY_SNIPPET` setting was not built (plan steps 32 to 34 skipped). H2 is not supported on this benchmark: the best 900-character passage carries less context than the head of the document, which holds the title and the first facts.
+
+### 10.7 Status of the checklist
+
+| Item | Status |
+|---|---|
+| R01, R05, R06, R08, R09 | Done |
+| R07 | Done in a changed form: an undated-document counter replaces a time cutoff (the databases hold no per-document date) |
+| R11 to R15 | Done: settings `AI_MEMORY_RERANK_WEIGHT` and `AI_MEMORY_RERANK_FUSION` and the options `--rerank-weight` and `--rerank-fusion`, off by default. R13 (`score`) and R14 (`cut`) tested, neither beats rank fusion with a higher weight |
+| R16 | Done for the first stage (section 10.3). The per-fact table is in the JSON reports |
+| R18 | Partly: depth 50 tested, not adopted |
+| R37 | Evaluated, condition not met, not built |
+| R02, R03, R04, R10 | Open: owner input and more tasks are needed. R04 is partly covered (latency percentiles, recall, precision proxy) |
+| New: H8 | Neighbor turns are never scored and cap the engine order at about 44.0 against 47.4 model-only |
+| New: warm-up | The start-up warm-up does not cover a realistic batch (section 10.4) |
+
+Deviations from the plan, all small: the snapshot has a content fingerprint in addition to the byte hash (section 10.2); the explain-field tests are in `test_semantic_suite.groovy` because that suite has the service fixture, and only the option and help tests are in `test_query_suite.groovy`; the benchmark CSV has a precision@10 column, added for gate 2; a tie rule was applied for the decision (section 10.5).
+
+Test results: semantic suite 125 tests (was 90), query suite 74 (was 68), all other suites unchanged, Python service tests 78 under three interpreters. Of 12 golden outputs, 11 are byte-identical and the twelfth differs only by the new `fusion=rrf weight=5` fields.
 
 ---
 

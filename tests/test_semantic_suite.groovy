@@ -13,6 +13,7 @@ class TestSemanticSuite {
     private static Class MemoryRetrieval
     private static Class EvalRunner
     private static Class GoldSet
+    private static Class SignalFusion
     private static File workspace
     private static File data
     private static Process service
@@ -36,6 +37,7 @@ class TestSemanticSuite {
             testClientBadRequestKeepsCircuitClosed()
             testClientRefusesAnOpenSocketDirectory()
             testRerank()
+            testRerankFusion()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
             testReindexCommand()
@@ -218,6 +220,94 @@ why do exports fail
         verify('too few scored passages degrade to the lexical order', (many.rerank as Map).reason == 'too_few_scored' && ids(many) == ids(lexical))
     }
 
+    private static Map fusedScores(Map result) {
+        return (result.results as List<Map>).collectEntries { Map row -> [(SignalFusion.stableIdOf(row)): row.fused_score] }
+    }
+
+    private static void testRerankFusion() {
+        String question = 'what did we decide about the nginx timeout'
+        Map lexical = search(question)
+        Map base = search(question, [rerank_mode: 'on', rerank_depth: 20])
+        verify('the default weight equals the weight of the rerank signal', Config.RERANK_WEIGHT_DEFAULT == SignalFusion.SIGNAL_WEIGHTS.rerank)
+        verify('the default settings are rrf and weight 5', Config.rerankFusion() == 'rrf' && Config.rerankWeight() == 5)
+        Map explicitDefault = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'rrf', rerank_weight: 5])
+        verify('rrf with weight 5 gives the same order as the default', ids(base) == ids(explicitDefault))
+        verify('the re-rank info names the fusion mode and the weight', (base.rerank as Map).fusion == 'rrf' && (base.rerank as Map).weight == 5)
+
+        Map heavy = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_weight: 40])
+        Map baseScores = fusedScores(base)
+        Map heavyScores = fusedScores(heavy)
+        List<String> shared = (heavy.results as List<Map>).findAll { it.signals?.containsKey('rerank') }.collect { SignalFusion.stableIdOf(it) }.findAll { baseScores.containsKey(it) }
+        verify('a larger weight raises the fused score of every scored row', !shared.isEmpty() && shared.every { (heavyScores[it] as double) > (baseScores[it] as double) })
+        verify('the weight is reported', (heavy.rerank as Map).weight == 40)
+
+        Map cut = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'cut'])
+        List<Double> cutScores = (cut.results as List<Map>).findAll { it.rerank_score != null }.collect { it.rerank_score as double }
+        verify('cut orders the scored rows by model score', cutScores.size() > 1 && cutScores == cutScores.sort(false) { a, b -> b <=> a })
+        verify('cut puts the best scored row first', (cut.results as List<Map>).first().rerank_rank == 1)
+        verify('cut keeps the rerank signal on scored rows', (cut.results as List<Map>).findAll { it.rerank_score != null }.every { it.signals?.containsKey('rerank') })
+        verify('the re-rank info names the cut mode', (cut.rerank as Map).fusion == 'cut' && (cut.rerank as Map).degraded == false)
+
+        Map score = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'score'])
+        verify('score mode keeps the rerank signal and is deterministic', (score.results as List<Map>).any { it.signals?.containsKey('rerank') } && ids(score) == ids(search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'score'])))
+
+        Map invalid = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'bogus', rerank_weight: 500])
+        verify('invalid fusion settings fall back to rrf and weight 5', (invalid.rerank as Map).fusion == 'rrf' && (invalid.rerank as Map).weight == 5 && ids(invalid) == ids(base))
+
+        ['rrf', 'score', 'cut'].each { String fusion ->
+            Map ticket = search('FIX-101 monitoring', [rerank_mode: 'on', rerank_fusion: fusion])
+            verify("the state capsule stays first in ${fusion} mode", ids(ticket).first().endsWith('worklog:state:fix101.md'))
+        }
+
+        Object fake = client()
+        fake.metaClass.rerank = { String q, List p, String m, int d -> [ok: true, status: 200, body: [scored: 1, skipped: 5, model: 'x', device: 'cpu', elapsed_ms: 1, results: []]] }
+        ['rrf', 'score', 'cut'].each { String fusion ->
+            Map degraded = search(question, [rerank_mode: 'on', semantic_client: fake, rerank_fusion: fusion])
+            verify("a degraded re-rank keeps the lexical order in ${fusion} mode", (degraded.rerank as Map).reason == 'too_few_scored' && ids(degraded) == ids(lexical))
+        }
+
+        Map late = search(question, [rerank_mode: 'late', rerank_fusion: 'cut'])
+        verify('the late re-score accepts the fusion setting', (late.rerank as Map).degraded == true || (late.rerank as Map).fusion == 'cut')
+
+        String savedWeight = System.getProperty('ai.memory.rerank_weight')
+        String savedFusion = System.getProperty('ai.memory.rerank_fusion')
+        try {
+            System.setProperty('ai.memory.rerank_weight', '12')
+            verify('the weight setting is read', Config.rerankWeight() == 12)
+            ['0', 'abc', '101', ''].each { String bad ->
+                System.setProperty('ai.memory.rerank_weight', bad)
+                verify("the weight setting '${bad}' is ignored", Config.rerankWeight() == 5)
+            }
+            System.setProperty('ai.memory.rerank_fusion', ' CUT ')
+            verify('the fusion setting is read and folded to lower case', Config.rerankFusion() == 'cut')
+            System.setProperty('ai.memory.rerank_fusion', 'bogus')
+            verify('an unknown fusion setting is ignored', Config.rerankFusion() == 'rrf')
+            System.setProperty('ai.memory.rerank_fusion', 'score')
+            System.setProperty('ai.memory.rerank_weight', '20')
+            Map fromSettings = search(question, [rerank_mode: 'on', rerank_depth: 20])
+            verify('the settings reach the search when no option is given', (fromSettings.rerank as Map).fusion == 'score' && (fromSettings.rerank as Map).weight == 20)
+            Map overridden = search(question, [rerank_mode: 'on', rerank_depth: 20, rerank_fusion: 'cut', rerank_weight: 7])
+            verify('an option wins over the setting', (overridden.rerank as Map).fusion == 'cut' && (overridden.rerank as Map).weight == 7)
+        } finally {
+            if (savedWeight == null) System.clearProperty('ai.memory.rerank_weight') else System.setProperty('ai.memory.rerank_weight', savedWeight)
+            if (savedFusion == null) System.clearProperty('ai.memory.rerank_fusion') else System.setProperty('ai.memory.rerank_fusion', savedFusion)
+        }
+
+        List<Map> rows = ['x', 'y', 'z'].collect { String name -> [origin_db: 'd', source_archive: 'a', file_path: name, fused_score: 0.0d, signals: [:]] as Map }
+        SignalFusion.addScoreSignal(rows, 'rerank', ['d:a:x': 4.0d, 'd:a:y': -4.0d], 10)
+        double high = rows.find { it.file_path == 'x' }.fused_score as double
+        double low = rows.find { it.file_path == 'y' }.fused_score as double
+        verify('the score signal adds more for a higher score and nothing for an unscored row', high > low && low > 0.0d && (rows.find { it.file_path == 'z' }.fused_score as double) == 0.0d)
+        verify('the score signal adds weight over 61 times the logistic of the score', Math.abs(high - (10 / 61.0d) * (1.0d / (1.0d + Math.exp(-4.0d)))) < 1.0e-12d)
+        verify('the score signal stores the rank by score', rows.find { it.file_path == 'x' }.signals.rerank == 1 && rows.find { it.file_path == 'y' }.signals.rerank == 2)
+        List<Map> single = [[origin_db: 'd', source_archive: 'a', file_path: 'x', fused_score: 0.0d, signals: [:]] as Map]
+        SignalFusion.addSignal(single, 'rerank', [single[0]], 10)
+        verify('a weight override replaces the table weight in addSignal', Math.abs((single[0].fused_score as double) - 10 / 61.0d) < 1.0e-12d)
+        List<Map> plain = [[origin_db: 'd', source_archive: 'a', file_path: 'x', fused_score: 0.0d, signals: [:]] as Map]
+        SignalFusion.addSignal(plain, 'rerank', [plain[0]])
+        verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 5 / 61.0d) < 1.0e-12d)
+    }
+
     private static void testFallbackAndSwitches() {
         String question = 'what did we decide about the nginx timeout'
         Map lexical = search(question)
@@ -342,6 +432,9 @@ why do exports fail
         verify('AI_MEMORY_RERANK=0 with --rerank on exits 5 (nothing was re-ranked)', killed.code == 5)
         Map lateCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'late', '--explain', '--limit', '3', '--data-dir', data.absolutePath])
         verify('query --rerank late prints the late re-score line', lateCli.code == 0 && lateCli.out.contains('Re-rank: model=stub-encoder device=late'))
+        verify('the default explain line names the fusion mode and weight', on.out.contains('fusion=rrf weight=5'))
+        Map fusionCli = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--explain', '--limit', '3', '--rerank-fusion', 'cut', '--rerank-weight', '12', '--data-dir', data.absolutePath])
+        verify('query accepts --rerank-fusion and --rerank-weight and prints them', fusionCli.code == 0 && fusionCli.out.contains('fusion=cut weight=12'))
         Map bad = command(['query', 'nginx', '--rerank-depth', '500', '--data-dir', data.absolutePath])
         verify('a bad depth is refused', bad.code == 2 && bad.out.contains('--rerank-depth'))
         Map json = command(['query', 'what did we decide about the nginx timeout', '--rerank', 'on', '--json', '--limit', '2', '--data-dir', data.absolutePath])
@@ -378,6 +471,7 @@ why do exports fail
         MemoryRetrieval = loader.loadClass('MemoryRetrieval')
         EvalRunner = loader.loadClass('EvalRunner')
         GoldSet = loader.loadClass('GoldSet')
+        SignalFusion = loader.loadClass('SignalFusion')
     }
 
     private static void verify(String name, boolean condition) {

@@ -9,7 +9,7 @@ class RerankStage {
      * @param rows Fused candidates with content, best first (the top rerank depth)
      * @param query The question as the user typed it (without a ticket key)
      * @param queryWords Content words of the query, for passage selection
-     * @param options rerank_budget_ms, rerank_model, rerank_min_scored
+     * @param options rerank_budget_ms, rerank_model, rerank_min_scored, rerank_fusion (rrf, score or cut), rerank_weight (1 to 100)
      * @param client Memory service client
      * @param pinTicket Ticket facet (for example kd8130) whose state capsule stays first, or null
      * @return Map with rows (re-ordered copy) and info (model, device, scored, skipped, elapsed_ms, depth, degraded, reason)
@@ -52,7 +52,8 @@ class RerankStage {
                     }
                 }
             }
-            return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+            info << [fusion: fusionMode(options), weight: fusionWeight(options)]
+            return [rows: fuse(rows, best, body.model, pinTicket, options), info: info]
         } catch (RuntimeException ignored) {
             return degraded(rows, info, 'service_down')
         }
@@ -66,9 +67,10 @@ class RerankStage {
      * @param query The question as typed
      * @param client Memory service client
      * @param pinTicket Ticket facet whose state capsule stays first, or null
+     * @param options rerank_fusion and rerank_weight (same meaning as in apply)
      * @return Map with rows and info, as apply returns
      */
-    static Map applyLate(List<Map> rows, String query, SemanticClient client, String pinTicket) {
+    static Map applyLate(List<Map> rows, String query, SemanticClient client, String pinTicket, Map options = [:]) {
         Map info = [depth: rows.size(), degraded: false, reason: null, passages_sent: 0]
         List<Map> keys = rows.collect { Map row -> [origin_db: row.origin_db, source_archive: row.source_archive, file_path: row.file_path] }
         Map reply = client.searchLate(query, 100, [docs: keys])
@@ -85,13 +87,28 @@ class RerankStage {
             }
             info << [model: body.model, device: 'late', scored: best.size(), skipped: rows.size() - best.size(), elapsed_ms: body.elapsed_ms]
             if (best.isEmpty()) return degraded(rows, info, 'too_few_scored')
-            return [rows: fuse(rows, best, body.model, pinTicket), info: info]
+            info << [fusion: fusionMode(options), weight: fusionWeight(options)]
+            return [rows: fuse(rows, best, body.model, pinTicket, options), info: info]
         } catch (RuntimeException ignored) {
             return degraded(rows, info, 'service_down')
         }
     }
 
-    private static List<Map> fuse(List<Map> rows, Map<String, Map> best, Object model, String pinTicket) {
+    private static String fusionMode(Map options) {
+        String mode = (options?.rerank_fusion ?: Config.RERANK_FUSION_DEFAULT).toString().trim().toLowerCase()
+        return mode in Config.RERANK_FUSION_MODES ? mode : Config.RERANK_FUSION_DEFAULT
+    }
+
+    private static int fusionWeight(Map options) {
+        try {
+            int weight = Integer.parseInt((options?.rerank_weight ?: Config.RERANK_WEIGHT_DEFAULT).toString().trim())
+            return (weight >= 1 && weight <= 100) ? weight : Config.RERANK_WEIGHT_DEFAULT
+        } catch (NumberFormatException ignored) {
+            return Config.RERANK_WEIGHT_DEFAULT
+        }
+    }
+
+    private static List<Map> fuse(List<Map> rows, Map<String, Map> best, Object model, String pinTicket, Map options = [:]) {
         List<Map> copies = rows.collect { Map row -> new LinkedHashMap(row) as Map }
         List<Map> scoredRows = copies.findAll { best.containsKey(SignalFusion.stableIdOf(it)) }
         Map<String, Integer> priorRank = [:]
@@ -108,7 +125,22 @@ class RerankStage {
             row.rerank_model = model
             row.best_passage = (hit.passage?.text ?: '').toString()
         }
-        SignalFusion.addSignal(copies, 'rerank', byModel)
+        String mode = fusionMode(options)
+        int weight = fusionWeight(options)
+        if (mode == 'score') {
+            Map<String, Double> scores = [:]
+            byModel.each { Map row -> scores[SignalFusion.stableIdOf(row)] = best[SignalFusion.stableIdOf(row)].score as double }
+            SignalFusion.addScoreSignal(copies, 'rerank', scores, weight)
+        } else if (mode == 'cut') {
+            byModel.eachWithIndex { Map row, int index ->
+                row.signals = new LinkedHashMap((row.signals ?: [:]) as Map)
+                row.signals.rerank = index + 1
+            }
+            Set<String> scoredIds = byModel.collect { SignalFusion.stableIdOf(it) } as Set<String>
+            copies = byModel + copies.findAll { !scoredIds.contains(SignalFusion.stableIdOf(it)) }
+        } else {
+            SignalFusion.addSignal(copies, 'rerank', byModel, weight)
+        }
         if (pinTicket) {
             Closure isCapsule = { Map row -> row.source_archive == 'worklog:state' && row.file_path?.toString() == "${pinTicket}.md".toString() }
             copies = copies.findAll(isCapsule) + copies.findAll { !isCapsule(it) }

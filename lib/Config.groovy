@@ -45,6 +45,9 @@ class Config {
     static final int RERANK_DEPTH = 30
     static final int RERANK_BUDGET_MS = 1200
     static final int RERANK_MIN_SCORED = 10
+    static final int RERANK_WEIGHT_DEFAULT = 5
+    static final String RERANK_FUSION_DEFAULT = 'rrf'
+    static final List<String> RERANK_FUSION_MODES = ['rrf', 'score', 'cut'].asImmutable()
     static final int LATE_TOP_K = 50
     static final String SERVICE_SOCKET_RELATIVE = '.ai-worklog/run/memory-service.sock'
     static final String SERVICE_TOKEN_RELATIVE = '.ai-worklog/run/memory-service.token'
@@ -423,6 +426,33 @@ class Config {
     static boolean rerankEnabled() {
         String value = System.getProperty('ai.memory.rerank') ?: System.getenv('AI_MEMORY_RERANK')
         return value != '0'
+    }
+
+    /**
+     * Weight of the re-rank signal in the rank fusion. AI_MEMORY_RERANK_WEIGHT overrides the default
+     * (a whole number from 1 to 100; anything else is ignored).
+     *
+     * @return Weight of the re-rank signal
+     */
+    static int rerankWeight() {
+        String value = System.getProperty('ai.memory.rerank_weight') ?: System.getenv('AI_MEMORY_RERANK_WEIGHT')
+        try {
+            int parsed = Integer.parseInt(value?.trim() ?: '')
+            return (parsed >= 1 && parsed <= 100) ? parsed : RERANK_WEIGHT_DEFAULT
+        } catch (NumberFormatException ignored) {
+            return RERANK_WEIGHT_DEFAULT
+        }
+    }
+
+    /**
+     * How the model score joins the final order. AI_MEMORY_RERANK_FUSION selects rrf (rank signal, the default),
+     * score (model score signal) or cut (model order for the scored rows); anything else is ignored.
+     *
+     * @return Fusion mode name
+     */
+    static String rerankFusion() {
+        String value = (System.getProperty('ai.memory.rerank_fusion') ?: System.getenv('AI_MEMORY_RERANK_FUSION') ?: '').trim().toLowerCase()
+        return value in RERANK_FUSION_MODES ? value : RERANK_FUSION_DEFAULT
     }
 
     /**

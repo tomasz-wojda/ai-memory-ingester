@@ -44,10 +44,11 @@ class SignalFusion {
      * @param rows Fused candidates
      * @param signal Signal name (its weight comes from SIGNAL_WEIGHTS)
      * @param ranked Candidates in signal order, best first; only these get the signal
+     * @param weightOverride Weight to use instead of the one in SIGNAL_WEIGHTS, or null
      * @return The same rows, re-sorted
      */
-    static List<Map> addSignal(List<Map> rows, String signal, List<Map> ranked) {
-        int weight = SIGNAL_WEIGHTS[signal] ?: 1
+    static List<Map> addSignal(List<Map> rows, String signal, List<Map> ranked, Integer weightOverride = null) {
+        int weight = weightOverride ?: (SIGNAL_WEIGHTS[signal] ?: 1)
         Map<String, Integer> ranks = [:]
         ranked.eachWithIndex { Map row, int index -> ranks[stableIdOf(row)] = index + 1 }
         rows.each { Map row ->
@@ -56,6 +57,37 @@ class SignalFusion {
                 row.signals = new LinkedHashMap((row.signals ?: [:]) as Map)
                 row.signals[signal] = rank
                 row.fused_score = ((row.fused_score ?: 0.0d) as double) + (weight / (RRF_K + rank))
+                row.rrf_score = row.fused_score
+            }
+        }
+        rows.sort(SignalFusion.&compareRanked)
+        return rows
+    }
+
+    /**
+     * Adds one scored signal to candidates that are already fused, then sorts them again. A row gets
+     * weight / (RRF_K + 1) multiplied by the logistic of its score, so a certain top candidate adds what a rank 1
+     * candidate adds in addSignal at the same weight. The stored signal value is the rank by score.
+     *
+     * @param rows Fused candidates
+     * @param signal Signal name (its weight comes from SIGNAL_WEIGHTS)
+     * @param scores Model score by stable id; only these rows get the signal
+     * @param weightOverride Weight to use instead of the one in SIGNAL_WEIGHTS, or null
+     * @return The same rows, re-sorted
+     */
+    static List<Map> addScoreSignal(List<Map> rows, String signal, Map<String, Double> scores, Integer weightOverride = null) {
+        int weight = weightOverride ?: (SIGNAL_WEIGHTS[signal] ?: 1)
+        List<String> ordered = scores.keySet().toList().sort(false) { String a, String b -> (scores[b] as double) <=> (scores[a] as double) ?: a <=> b }
+        Map<String, Integer> ranks = [:]
+        ordered.eachWithIndex { String id, int index -> ranks[id] = index + 1 }
+        rows.each { Map row ->
+            String id = stableIdOf(row)
+            Double score = scores[id]
+            if (score != null) {
+                double logistic = 1.0d / (1.0d + Math.exp(-(score as double)))
+                row.signals = new LinkedHashMap((row.signals ?: [:]) as Map)
+                row.signals[signal] = ranks[id]
+                row.fused_score = ((row.fused_score ?: 0.0d) as double) + (weight / (RRF_K + 1)) * logistic
                 row.rrf_score = row.fused_score
             }
         }

@@ -44,6 +44,8 @@ String rerankMode = 'auto'
 String lateMode = 'auto'
 int rerankDepth = Config.RERANK_DEPTH
 int rerankBudgetMs = Config.RERANK_BUDGET_MS
+Integer rerankWeight = null
+String rerankFusion = null
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -162,6 +164,21 @@ while (i < args.length) {
         rerankBudgetMs = args[i + 1].toInteger()
         if (rerankBudgetMs < 100 || rerankBudgetMs > 10000) {
             println "ERROR: --rerank-budget-ms needs a number from 100 to 10000."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--rerank-weight' && i + 1 < args.length) {
+        String weightText = args[i + 1].trim()
+        if (!weightText.isInteger() || weightText.toInteger() < 1 || weightText.toInteger() > 100) {
+            println "ERROR: --rerank-weight needs a number from 1 to 100."
+            exitApp(2); return
+        }
+        rerankWeight = weightText.toInteger()
+        i += 2
+    } else if (arg == '--rerank-fusion' && i + 1 < args.length) {
+        rerankFusion = args[i + 1].trim().toLowerCase()
+        if (!(rerankFusion in Config.RERANK_FUSION_MODES)) {
+            println "ERROR: --rerank-fusion needs rrf, score or cut."
             exitApp(2); return
         }
         i += 2
@@ -407,7 +424,7 @@ if (!input.isEmpty()) {
                 String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
                 executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             } else {
-                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs])
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs, rerank_weight: rerankWeight, rerank_fusion: rerankFusion])
             }
         }
         exitApp(0); return
@@ -810,7 +827,7 @@ static List<String> semanticLines(Map result) {
     if (rerank) {
         lines << (rerank.degraded
             ? "Re-rank: skipped (${rerank.reason}); lexical order"
-            : "Re-rank: model=${rerank.model} device=${rerank.device} scored=${rerank.scored} skipped=${rerank.skipped} elapsed_ms=${rerank.elapsed_ms} depth=${rerank.depth}")
+            : "Re-rank: model=${rerank.model} device=${rerank.device} scored=${rerank.scored} skipped=${rerank.skipped} elapsed_ms=${rerank.elapsed_ms} depth=${rerank.depth} fusion=${rerank.fusion ?: Config.RERANK_FUSION_DEFAULT} weight=${rerank.weight ?: Config.RERANK_WEIGHT_DEFAULT}")
     }
     if (late) {
         lines << (late.degraded ? "Late pool: skipped (${late.reason})" : "Late pool: hits=${late.hits ?: 0} model=${late.model ?: 'n/a'}")
@@ -935,6 +952,8 @@ static void printQueryUsage() {
     println "      --rerank auto|on|off|late  Re-rank with the memory service (default auto; on and late exit 5 if they cannot; late scores with the late-interaction index; AI_MEMORY_RERANK=0 turns it off)"
     println "      --rerank-depth N        Candidates sent to the service (1 to 100, default 30)"
     println "      --rerank-budget-ms N    Time limit of the call (100 to 10000, default 1200)"
+    println "      --rerank-weight N       Weight of the re-rank signal in the rank fusion (1 to 100, default 5; AI_MEMORY_RERANK_WEIGHT)"
+    println "      --rerank-fusion MODE    How the model score joins the order: rrf (default), score or cut (AI_MEMORY_RERANK_FUSION)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"

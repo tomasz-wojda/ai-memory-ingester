@@ -451,6 +451,35 @@ class TestQuerySuite {
         )
 
         // -------------------------------------------------------------------
+        // Group 14: Re-rank Fusion Options
+        // -------------------------------------------------------------------
+        println ""
+        println "--- Group 14: Re-rank Fusion Options ---"
+        runTest("14.1 Query --help lists the fusion options",
+            ["query", "--help"],
+            { out -> out.contains("--rerank-weight") && out.contains("--rerank-fusion") && out.contains("rrf (default), score or cut") }
+        )
+
+        ['0', 'abc', '101'].each { String badWeight ->
+            runTest("14.2 A weight of '${badWeight}' is refused",
+                ["query", "pipeline", "--rerank-weight", badWeight],
+                { out -> out.contains("--rerank-weight needs a number from 1 to 100") && !out.contains("Found ") },
+                true
+            )
+        }
+
+        runTest("14.3 An unknown fusion mode is refused",
+            ["query", "pipeline", "--rerank-fusion", "bogus"],
+            { out -> out.contains("--rerank-fusion needs rrf, score or cut") && !out.contains("Found ") },
+            true
+        )
+
+        runTest("14.4 Valid fusion options are accepted without the service",
+            ["query", "pipeline", "--rerank", "off", "--rerank-weight", "12", "--rerank-fusion", "cut"],
+            { out -> out.contains("Found ") && !out.contains("ERROR") }
+        )
+
+        // -------------------------------------------------------------------
         // Summary Report
         // -------------------------------------------------------------------
         long totalElapsedMs = System.currentTimeMillis() - suiteStartTime

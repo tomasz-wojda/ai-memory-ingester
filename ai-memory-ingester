@@ -2,13 +2,141 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-GROOVY_BIN="$(command -v groovy)"
-GROOVY_HOME_RESOLVED="$(cd "$(dirname "${GROOVY_BIN}")/.." && pwd -P)"
 APPLICATION_JAR="${ROOT}/dist/ai-memory-ingester.jar"
 
 if [[ ! -f "${APPLICATION_JAR}" ]]; then
   printf 'Missing %s; run build-precompiled.sh first.\n' "${APPLICATION_JAR}" >&2
   exit 1
+fi
+
+REQUIRED_JAVA=27
+if [[ -r "${ROOT}/dist/required-java" ]]; then
+  required_value="$(head -n 1 "${ROOT}/dist/required-java" | tr -d '[:space:]')"
+  case "${required_value}" in
+    ''|*[!0-9]*) ;;
+    *) REQUIRED_JAVA="${required_value}" ;;
+  esac
+fi
+
+resolve_link() {
+  local target="$1" hops=0 link
+  while [[ -L "${target}" && ${hops} -lt 10 ]]; do
+    link="$(readlink "${target}")"
+    case "${link}" in
+      /*) target="${link}" ;;
+      *) target="$(dirname "${target}")/${link}" ;;
+    esac
+    hops=$((hops + 1))
+  done
+  printf '%s\n' "${target}"
+}
+
+home_of_binary() {
+  local binary
+  binary="$(resolve_link "$1")"
+  (cd "$(dirname "${binary}")/.." 2>/dev/null && pwd -P)
+}
+
+java_major() {
+  local home="$1" version="" line
+  if [[ -r "${home}/release" ]]; then
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      case "${line}" in
+        JAVA_VERSION=*) version="${line#JAVA_VERSION=}"; version="${version//\"/}"; break ;;
+      esac
+    done < "${home}/release"
+  fi
+  if [[ -z "${version}" && -x "${home}/bin/java" ]]; then
+    version="$("${home}/bin/java" -version 2>&1 | sed -n '1s/.*version "\([^"]*\)".*/\1/p' || true)"
+  fi
+  case "${version}" in
+    1.*) version="${version#1.}" ;;
+  esac
+  printf '%s\n' "${version%%[!0-9]*}"
+}
+
+CHECKED=""
+CHOSEN_HOME=""
+
+try_home() {
+  local label="$1" home="$2" major
+  [[ -n "${home}" && -d "${home}" ]] || return 1
+  home="$(cd -P "${home}" 2>/dev/null && pwd -P)" || return 1
+  major="$(java_major "${home}")"
+  if [[ -x "${home}/bin/java" && -n "${major}" && "${major}" -ge "${REQUIRED_JAVA}" ]]; then
+    CHOSEN_HOME="${home}"
+    return 0
+  fi
+  CHECKED="${CHECKED}  checked ${label}: ${home} (version ${major:-unknown}, too old or not usable)"$'\n'
+  return 1
+}
+
+PATH_JAVA="$(command -v java 2>/dev/null || true)"
+PATH_HOME=""
+PATH_MAJOR=""
+if [[ -n "${PATH_JAVA}" ]]; then
+  PATH_HOME="$(home_of_binary "${PATH_JAVA}" || true)"
+  [[ -n "${PATH_HOME}" ]] && PATH_MAJOR="$(java_major "${PATH_HOME}")"
+fi
+
+JAVA_SEARCH="${AI_MEMORY_JAVA_SEARCH:-/opt/java}"
+
+if [[ -n "${AI_MEMORY_JAVA_HOME:-}" ]]; then
+  try_home "AI_MEMORY_JAVA_HOME" "${AI_MEMORY_JAVA_HOME}" || true
+else
+  try_home "java on PATH" "${PATH_HOME}" || \
+    try_home "JAVA_HOME" "${JAVA_HOME:-}" || \
+    try_home "${JAVA_SEARCH}/current" "${JAVA_SEARCH}/current" || true
+  if [[ -z "${CHOSEN_HOME}" ]]; then
+    for candidate in $(ls -d "${JAVA_SEARCH}"/openjdk-* 2>/dev/null | sort -t- -k2,2nr || true); do
+      try_home "${candidate}" "${candidate}" && break
+    done
+  fi
+  if [[ -z "${CHOSEN_HOME}" && -x /usr/libexec/java_home ]]; then
+    macos_home="$(/usr/libexec/java_home -v "${REQUIRED_JAVA}+" 2>/dev/null || true)"
+    try_home "java_home" "${macos_home}" || true
+  fi
+fi
+
+if [[ -z "${CHOSEN_HOME}" ]]; then
+  {
+    printf 'ai-memory-ingester: no Java %s or newer found (the jar needs Java %s).\n' "${REQUIRED_JAVA}" "${REQUIRED_JAVA}"
+    printf '%s' "${CHECKED}"
+    printf 'Set AI_MEMORY_JAVA_HOME to a JDK home of version %s or newer.\n' "${REQUIRED_JAVA}"
+  } >&2
+  exit 3
+fi
+
+JAVA_BIN="${CHOSEN_HOME}/bin/java"
+if [[ -n "${PATH_JAVA}" && "${CHOSEN_HOME}" != "${PATH_HOME}" ]]; then
+  printf 'ai-memory-ingester: java %s at %s is older than the required %s; using %s\n' \
+    "${PATH_MAJOR:-unknown}" "${PATH_JAVA}" "${REQUIRED_JAVA}" "${JAVA_BIN}" >&2
+elif [[ -z "${PATH_JAVA}" ]]; then
+  printf 'ai-memory-ingester: no java on PATH; using %s\n' "${JAVA_BIN}" >&2
+fi
+
+GROOVY_HOME_RESOLVED=""
+GROOVY_BIN="$(command -v groovy 2>/dev/null || true)"
+if [[ -n "${GROOVY_HOME:-}" && -d "${GROOVY_HOME}/lib" ]]; then
+  GROOVY_HOME_RESOLVED="$(cd -P "${GROOVY_HOME}" && pwd -P)"
+elif [[ -n "${GROOVY_BIN}" ]]; then
+  candidate="$(cd "$(dirname "${GROOVY_BIN}")/.." 2>/dev/null && pwd -P || true)"
+  if [[ -n "${candidate}" && -d "${candidate}/lib" ]]; then
+    GROOVY_HOME_RESOLVED="${candidate}"
+  else
+    candidate="$(home_of_binary "${GROOVY_BIN}" || true)"
+    if [[ -n "${candidate}" && -d "${candidate}/lib" ]]; then
+      GROOVY_HOME_RESOLVED="${candidate}"
+    fi
+  fi
+fi
+GROOVY_DEFAULT="${AI_MEMORY_GROOVY_DEFAULT:-/opt/groovy/current}"
+if [[ -z "${GROOVY_HOME_RESOLVED}" && -d "${GROOVY_DEFAULT}/lib" ]]; then
+  GROOVY_HOME_RESOLVED="$(cd -P "${GROOVY_DEFAULT}" && pwd -P)"
+fi
+if [[ -z "${GROOVY_HOME_RESOLVED}" ]]; then
+  printf 'ai-memory-ingester: Groovy not found. Put groovy on PATH or set GROOVY_HOME to a Groovy home with a lib folder.\n' >&2
+  exit 3
 fi
 
 cd "${ROOT}"
@@ -18,7 +146,7 @@ case "${1:-}" in
   query|03) JVM_FLAGS=(-XX:TieredStopAtLevel=1 -XX:+UseSerialGC) ;;
 esac
 
-exec java \
+exec "${JAVA_BIN}" \
   ${JVM_FLAGS[@]+"${JVM_FLAGS[@]}"} \
   --enable-native-access=ALL-UNNAMED \
   -cp "${APPLICATION_JAR}:${ROOT}/vendor/*:${GROOVY_HOME_RESOLVED}/lib/*" \

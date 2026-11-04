@@ -72,25 +72,33 @@ Checks: the 12 golden queries through the previous and the new wrapper (identica
 
 ## IMPLEMENTATION CHECKLIST
 
-1. [ ] OWNER: in the failing tab run `java -version`, `echo $JAVA_HOME` and `repos/ai-memory-ingester/ai-memory-ingester datasets 2>&1 | head -3`, and send the output. If it is not `UnsupportedClassVersionError`, return to PLAN.
-2. [ ] Run the Groovy suites, the Python service tests and `pytest repos/ai-vault/tests` and save the pass counts. Stop on any failure.
-3. [ ] Save the current wrapper outside the repository for the comparison. Capture the 12 golden outputs with it.
-4. [ ] Create `dist/required-java` with 27, derived from the class file version of the current jar.
-5. [ ] Change `build-precompiled.sh` to write `dist/required-java` after a successful build.
-6. [ ] Change the wrapper as in section 3.1.
-7. [ ] Create `tests/test_wrapper.sh` with the cases of section 4 and run it under the current bash and `/bin/bash` 3.2.
-8. [ ] Run the 12 golden queries through the saved wrapper and the new one. They must be identical.
-9. [ ] Run all 36 command names with `--help` through both wrappers. They must be identical after removing timing fields.
-10. [ ] Run the new wrapper with `PATH` starting with `/opt/java/openjdk-21/bin`. It must succeed and print the one-line note. Run it with `AI_MEMORY_JAVA_SEARCH` pointing to an empty folder and `PATH` Java 21: it must exit 3 with the message.
-11. [ ] Run `~/.local/bin/sweep-memory` once and confirm it behaves as before.
-12. [ ] Change `record_turn.py` as in section 3.2.
-13. [ ] Extend `tests/test_harness_record_turn.py` with the tests of section 4 and run the whole file and the full `tests/` folder of `repos/ai-vault`.
-14. [ ] Run all Groovy suites and the Python service tests of `ai-memory-ingester` again and compare the counts with step 2.
-15. [ ] Render the commit handoff once for `ai-memory-ingester` (wrapper, `build-precompiled.sh`, `dist/required-java`, `tests/test_wrapper.sh`) and once for `ai-vault` (`record_turn.py`, the test file).
-16. [ ] OWNER: confirm the replay of the 13 stuck payloads, then replay them in order (section 3.3). Check each result line and that each payload file was deleted.
-17. [ ] Record the turn through the governed worklog writer.
+1. [ ] OWNER: in the failing tab run `java -version`, `echo $JAVA_HOME` and `repos/ai-memory-ingester/ai-memory-ingester datasets 2>&1 | head -3`, and send the output. If it is not `UnsupportedClassVersionError`, return to PLAN. _Open: waiting for the owner's output from the failing tab. The cause stays a hypothesis until then._
+2. [x] Run the Groovy suites, the Python service tests and `pytest repos/ai-vault/tests` and save the pass counts. Stop on any failure.
+3. [x] Save the current wrapper outside the repository for the comparison. Capture the 12 golden outputs with it.
+4. [x] Create `dist/required-java` with 27, derived from the class file version of the current jar.
+5. [x] Change `build-precompiled.sh` to write `dist/required-java` after a successful build.
+6. [x] Change the wrapper as in section 3.1.
+7. [x] Create `tests/test_wrapper.sh` with the cases of section 4 and run it under the current bash and `/bin/bash` 3.2. _41 of 41 pass under bash, `/bin/bash` 3.2 and `sh`._
+8. [x] Run the 12 golden queries through the saved wrapper and the new one. They must be identical.
+9. [x] Run all 36 command names with `--help` through both wrappers. They must be identical after removing timing fields. _33 of 36 identical. The other three (`chatlog`, `ingest-chatlog`, `sweep-memory`) really run with `--help` and other tabs were writing, so the state moved between the two runs (for example `appended=2` against `appended=1`). The wrapper is not the cause. `--help` on these commands has side effects: avoid it._
+10. [x] Run the new wrapper with `PATH` starting with `/opt/java/openjdk-21/bin`. It must succeed and print the one-line note. Run it with `AI_MEMORY_JAVA_SEARCH` pointing to an empty folder and `PATH` Java 21: it must exit 3 with the message.
+11. [x] Run `~/.local/bin/sweep-memory` once and confirm it behaves as before.
+12. [x] Change `record_turn.py` as in section 3.2.
+13. [x] Extend `tests/test_harness_record_turn.py` with the tests of section 4 and run the whole file and the full `tests/` folder of `repos/ai-vault`. _`ai-vault`: 113 tests pass (105 before, 8 new)._
+14. [x] Run all Groovy suites and the Python service tests of `ai-memory-ingester` again and compare the counts with step 2.
+15. [x] Render the commit handoff once for `ai-memory-ingester` (wrapper, `build-precompiled.sh`, `dist/required-java`, `tests/test_wrapper.sh`) and once for `ai-vault` (`record_turn.py`, the test file).
+16. [ ] OWNER: confirm the replay of the 13 stuck payloads, then replay them in order (section 3.3). Check each result line and that each payload file was deleted. _Open: needs the owner's confirmation._
+17. [x] Record the turn through the governed worklog writer.
 
 Any deviation from this plan returns to PLAN mode.
+
+## Execution notes (2026-11-04)
+
+- Steps 2 to 15 and 17 are done. Step 1 and step 16 wait for the owner.
+- Small additions to the specification: the variable `AI_MEMORY_GROOVY_DEFAULT` (default `/opt/groovy/current`) for the Groovy fallback, so the missing-Groovy case can be tested.
+- Not in the plan, flagged for the owner: `repos/ai-vault` requires a skill version bump when a skill changes (`VERSIONING.md`). `skills/worklog-chat-memory/SKILL.md` is at 1.5.0. A minor bump to 1.6.0 follows the precedent of the lock change (1.4.0). It was not done because it is outside this plan.
+- `./scripts/validate-skills.sh` in `repos/ai-vault` exits 0 with the changed script.
+- Test notes: the wrapper test suite needs a resolved temporary folder on macOS (`/tmp` is a link to `/private/tmp`), and in POSIX mode a variable set before a function call stays set, so the test resets it.
 
 ---
 

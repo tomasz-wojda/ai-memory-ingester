@@ -49,3 +49,5 @@ groovyc \
   "${ROOT}"/PrecompiledRunner.groovy
 
 jar --create --file "${DIST_DIR}/ai-memory-ingester.jar" -C "${CLASSES_DIR}" .
+
+java -XshowSettings:properties -version 2>&1 | awk '/java.specification.version/ {print $3}' > "${DIST_DIR}/required-java"

@@ -19,7 +19,7 @@ So coverage depends on how much newer text exists, and results from different da
 ## 2. What was checked (2026-11-05, on a throwaway copy)
 
 - The full-text index of `convo.db` is `contentless_delete`. Deleting the chat turns above 9980 and the two excluded turns took 0.4 s, left 9,656 documents and 9,656 index rows, passed `integrity-check`, and left no index hit without a document.
-- Dates: 426 of 1,011 `chat:artifacts` documents have a timestamp field. The 52 `worklog:state` capsules have one, but it is their current regeneration time, not a freeze time. The 628 `worklog:chunks` have none. So only chat turns (by number) and dated artifacts (by timestamp) can be cut. Worklog documents cannot.
+- Dates: all 1,011 `chat:artifacts` documents carry a timestamp with a time zone: 426 in the form `2026-10-06T11:04:53Z` and 585 in the form `Wednesday, Oct 21, 2026, 7:34 PM (UTC+2)`. No artifact has a zone-less timestamp. The 52 `worklog:state` capsules have a timestamp, but it is their current regeneration time, not a freeze time. The 628 `worklog:chunks` have none. So chat turns (by number) and artifacts (by timestamp) can be cut. Worklog documents cannot. (An earlier draft of this plan counted only the first form and wrongly called the other 585 undated.)
 - There are 4 distinct freeze points (tasks A, B, C and D), each with its own turn cutoff and freeze instant.
 
 ## 3. Scope
@@ -43,8 +43,8 @@ Add `freeze_instant` (ISO UTC) to `data/eval/ledger-run/tasks/task_a.py` to `tas
 - **Build.**
   1. Copy `datasets.json`. Copy `worklogs.db` unchanged (no dates to cut by).
   2. `convo.db`: copy with the SQLite backup API, then delete the `chat:turns` documents whose turn number is above the cutoff or is in the excluded set. The delete triggers remove the index rows. Then run the full-text `optimize` command and `VACUUM`.
-  3. `artifacts.db`: copy, then delete the `chat:artifacts` documents whose timestamp field (the first of `timestamp`, `event_time`, `generated_at` in the first 700 characters) is later than the freeze instant. A timestamp without a zone is treated as UTC. Documents without a timestamp stay.
-  4. Write `manifest.json`: the key, the parameters, content fingerprints (as in `bench/snapshot.py`), the number of documents removed per archive, the number of undated artifacts and worklog documents kept, and the folder sizes.
+  3. `artifacts.db`: copy, then delete the `chat:artifacts` documents whose timestamp (the first of `timestamp`, `event_time`, `generated_at` in the first 700 characters, in either of the two forms above, converted to UTC with its own zone) is later than the freeze instant. A document whose timestamp cannot be parsed stays and is counted in the manifest (expected: 0).
+  4. Write `manifest.json`: the key, the parameters, content fingerprints (as in `bench/snapshot.py`), the number of documents removed per archive, the number of artifacts with an unparseable timestamp kept, the number of worklog documents kept (undated), and the folder sizes.
 - **Rules.** Refuse to build into a folder that exists. `ensure(task, snapshot)` returns an existing folder only when its manifest has the same key and the same source fingerprints, otherwise it builds.
 - **Verify** (a function and a command): no chat turn above the cutoff and no excluded turn; document count equals index row count; `integrity-check` passes; no index hit without a document for a probe term; and for 12 probe queries (the golden queries) the lexical first-stage result set of the corpus equals the result set of the full snapshot with the post-freeze documents removed (ranks may differ slightly because the index statistics change). The command prints a table and exits non-zero on any failure.
 
@@ -53,7 +53,7 @@ Add `freeze_instant` (ISO UTC) to `data/eval/ledger-run/tasks/task_a.py` to `tas
 - `common.py`: `connection(origin, data_dir=None)` keeps one connection per (folder, database). `turn_snippet`, `document_snippet`, `full_text`, `turn_texts`, `multi_texts` and `fact_recall` take the corpus folder of the task. `run_engine`, `run_repeated` and `warm_up` take a `data_dir` argument that adds `--data-dir`. A helper `task_data_dir(task, frozen)` returns the folder from `task_corpus.ensure` when frozen, otherwise the base data folder.
 - `three_way.py`, `model_bench.py`: option `--frozen` (also the environment variable `BENCH_FROZEN=1`), off by default so the old behavior and the old numbers stay reproducible. The reports record `frozen`, the corpus keys and their manifests.
 - `ledger_review.py`: `turn_matches` uses the task corpus when frozen. `cold_start.py` is not changed.
-- **Crowding check.** In frozen mode the harness asserts that no chat turn above the cutoff appears in the first 30 rows of any query and prints the count of undated worklog and artifact documents among the top 20. A violation stops the run.
+- **Crowding check.** In frozen mode the harness asserts that no chat turn above the cutoff appears in the first 30 rows of any query and prints the count of worklog documents (which carry no date) among the top 20. A violation stops the run.
 
 ### 4.4 Runs and decisions
 
@@ -73,9 +73,9 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 ### 4.6 Limits that remain (to be stated in the results)
 
 - Worklog documents and the state capsules show today's content: they cannot be cut. The indexed-worklog and all-source branches are therefore not frozen. Only the chat-turn branches are fully frozen.
-- Undated artifacts (585 of 1,011) stay. Zone-less timestamps are treated as UTC, which may be 1 to 2 hours off.
+- Artifact timestamps are the time of writing. An artifact written before the freeze is kept as it is, which is correct for a frozen view.
 - The ledgers were drafted by the benchmark author from the worklog and are not adjudicated by the owner (R02).
-- Disk: one corpus is about 150 to 170 MB (convo about 25 to 110 MB after the cut, artifacts 47 MB, worklogs 9 MB). Four corpora are about 600 MB under `data/eval/snapshots/` (git-ignored). The owner can delete that folder at any time. The tool rebuilds it.
+- Disk: one corpus is about 150 to 170 MB (convo about 25 to 110 MB after the cut, artifacts 47 MB, worklogs 9 MB). Four corpora are about 600 MB under `data/eval/snapshots/` (git-ignored). 273 GiB are free on the volume. The owner can delete that folder at any time. The tool rebuilds it.
 
 ## 5. Regression scope
 
@@ -87,7 +87,7 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 1. [ ] Save the reference results (the four files above) and run `python3 -m py_compile bench/*.py`.
 2. [ ] Add `freeze_instant` to the four task files (section 4.1).
 3. [ ] Create `bench/task_corpus.py` with `build`, `ensure` and `verify` (section 4.2).
-4. [ ] Build the four corpora from the snapshot `20261104` and print their manifests (sizes, documents removed per archive, undated counts).
+4. [ ] Build the four corpora from the snapshot `20261104` and print their manifests (sizes, documents removed per archive, unparseable artifact timestamps, worklog documents kept).
 5. [ ] Run `verify` on each corpus. Stop on any failure.
 6. [ ] Rebuild one corpus into a second folder (inside the job's temporary folder) and compare content fingerprints: they must be identical.
 7. [ ] Change `bench/common.py` and its callers for the per-task folder and add `--frozen` and `BENCH_FROZEN` (section 4.3).

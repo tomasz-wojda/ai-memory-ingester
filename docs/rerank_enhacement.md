@@ -550,7 +550,7 @@ Against lexical (33.6) all three modes are significant (+18.7, +20.5, +17.7).
 
 - **D-35 (weight), rule (a): met.** Weight 12 raises mean cov@10 by 9.7 over lexical (needs 5); no task falls by more than 3 against weight 5 (worst -1.4); the interval against weight 5 is not below zero. Recommendation: keep 12 and close D-35 as "kept". Caveats: the interval of weight 12 against lexical includes zero (-0.25), and task B is 3.7 below lexical. Only weight 5 is significant against lexical. The gate 5 test (interval excludes zero, or 75% wins) is not met by any weight with 10 queries.
 - **Neighbor default: no winner.** No mode passes the gates against `adjacent`: task C falls by 7.7 in every mode (more than the 3-point limit), `after` and `off` also fall on D by 17.5 and 27.5, and no interval excludes zero (wins at most 4 of 10). `adjacent` stays the default. The mean gain of `scored` (+10.8) is the largest effect in this benchmark and is the first thing to re-test on a larger benchmark (R03).
-- Both outcomes are recommendations. The owner decides.
+- Owner decision, 2026-11-05: keep weight 12 (D-35 closed as "kept"). The neighbor default is still open.
 
 ### 12.5 Limits
 

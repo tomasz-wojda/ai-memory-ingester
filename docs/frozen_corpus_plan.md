@@ -19,7 +19,7 @@ So coverage depends on how much newer text exists, and results from different da
 ## 2. What was checked (2026-11-05, on a throwaway copy)
 
 - The full-text index of `convo.db` is `contentless_delete`. Deleting the chat turns above 9980 and the two excluded turns took 0.4 s, left 9,656 documents and 9,656 index rows, passed `integrity-check`, and left no index hit without a document.
-- Dates: all 1,011 `chat:artifacts` documents carry a timestamp with a time zone: 426 in the form `2026-10-06T11:04:53Z` and 585 in the form `Wednesday, Oct 21, 2026, 7:34 PM (UTC+2)`. No artifact has a zone-less timestamp. The 52 `worklog:state` capsules have a timestamp, but it is their current regeneration time, not a freeze time. The 628 `worklog:chunks` have none. So chat turns (by number) and artifacts (by timestamp) can be cut. Worklog documents cannot. (An earlier draft of this plan counted only the first form and wrongly called the other 585 undated.)
+- Dates: all 1,011 `chat:artifacts` documents are of three kinds: 426 with a timestamp in the form `2026-10-06T11:04:53Z`, 495 in the form `Wednesday, Oct 21, 2026, 7:34 PM (UTC+2)`, and 90 with the literal text `unknown`. The 90 have no date: they cannot be cut and stay in every corpus (reported in the manifest as `artifacts_unparseable_kept`). No artifact has a zone-less timestamp. The 52 `worklog:state` capsules have a timestamp, but it is their current regeneration time, not a freeze time. The 628 `worklog:chunks` have none. So chat turns (by number) and artifacts (by timestamp) can be cut. Worklog documents cannot. (Earlier drafts of this plan were wrong twice: one counted only the first form and called 585 artifacts undated; the next said all artifacts were dated. The counts above are from the build.)
 - There are 4 distinct freeze points (tasks A, B, C and D), each with its own turn cutoff and freeze instant.
 
 ## 3. Scope
@@ -46,7 +46,7 @@ Add `freeze_instant` (ISO UTC) to `data/eval/ledger-run/tasks/task_a.py` to `tas
   3. `artifacts.db`: copy, then delete the `chat:artifacts` documents whose timestamp (the first of `timestamp`, `event_time`, `generated_at` in the first 700 characters, in either of the two forms above, converted to UTC with its own zone) is later than the freeze instant. A document whose timestamp cannot be parsed stays and is counted in the manifest (expected: 0).
   4. Write `manifest.json`: the key, the parameters, content fingerprints (as in `bench/snapshot.py`), the number of documents removed per archive, the number of artifacts with an unparseable timestamp kept, the number of worklog documents kept (undated), and the folder sizes.
 - **Rules.** Refuse to build into a folder that exists. `ensure(task, snapshot)` returns an existing folder only when its manifest has the same key and the same source fingerprints, otherwise it builds.
-- **Verify** (a function and a command): no chat turn above the cutoff and no excluded turn; document count equals index row count; `integrity-check` passes; no index hit without a document for a probe term; and for 12 probe queries (the golden queries) the lexical first-stage result set of the corpus equals the result set of the full snapshot with the post-freeze documents removed (ranks may differ slightly because the index statistics change). The command prints a table and exits non-zero on any failure.
+- **Verify** (a function and a command): no chat turn above the cutoff and no excluded turn; document count equals index row count; `integrity-check` passes; no index hit without a document for a probe term; and for 12 probe queries the lexical first-stage result set (FTS5 SQL on `convo.db` and `artifacts.db`, not engine queries) of the corpus equals the result set of the full snapshot with the post-freeze documents removed (ranks may differ slightly because the index statistics change). The command prints a table and exits non-zero on any failure.
 
 ### 4.3 Harness changes (`bench/common.py` and callers)
 
@@ -75,7 +75,7 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 - Worklog documents and the state capsules show today's content: they cannot be cut. The indexed-worklog and all-source branches are therefore not frozen. Only the chat-turn branches are fully frozen.
 - Artifact timestamps are the time of writing. An artifact written before the freeze is kept as it is, which is correct for a frozen view.
 - The ledgers were drafted by the benchmark author from the worklog and are not adjudicated by the owner (R02).
-- Disk: one corpus is about 150 to 170 MB (convo about 25 to 110 MB after the cut, artifacts 47 MB, worklogs 9 MB). Four corpora are about 600 MB under `data/eval/snapshots/` (git-ignored). 273 GiB are free on the volume. The owner can delete that folder at any time. The tool rebuilds it.
+- Disk: one corpus is about 150 to 170 MB (convo about 25 to 110 MB after the cut, artifacts 47 MB, worklogs 9 MB). Four corpora are about 360 MB (127, 118, 57 and 57 MB) under `data/eval/snapshots/` (git-ignored). 273 GiB are free on the volume. The owner can delete that folder at any time. The tool rebuilds it.
 
 ## 5. Regression scope
 
@@ -84,25 +84,27 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 
 ## IMPLEMENTATION CHECKLIST
 
-1. [ ] Save the reference results (the four files above) and run `python3 -m py_compile bench/*.py`.
-2. [ ] Add `freeze_instant` to the four task files (section 4.1).
-3. [ ] Create `bench/task_corpus.py` with `build`, `ensure` and `verify` (section 4.2).
-4. [ ] Build the four corpora from the snapshot `20261104` and print their manifests (sizes, documents removed per archive, unparseable artifact timestamps, worklog documents kept).
-5. [ ] Run `verify` on each corpus. Stop on any failure.
-6. [ ] Rebuild one corpus into a second folder (inside the job's temporary folder) and compare content fingerprints: they must be identical.
-7. [ ] Change `bench/common.py` and its callers for the per-task folder and add `--frozen` and `BENCH_FROZEN` (section 4.3).
-8. [ ] Run the unfrozen `three_way.py` and `model_bench.py` and confirm identical coverage fields against the references of step 1.
-9. [ ] Run the frozen baseline (4.4 item 1) and confirm that the crowding check passes (0 post-freeze chat turns in the window) for every query.
-10. [ ] Repeat the frozen baseline once and confirm identical coverage fields.
-11. [ ] Run the frozen weight sweep and its paired statistics (4.4 item 2).
-12. [ ] Run the frozen neighbor sweep and its paired statistics (4.4 item 3).
-13. [ ] Repeat steps 11 and 12 once and confirm identical coverage fields.
-14. [ ] Apply the rules of 4.4 items 4 and 5 and write the tables and the outcome (4.5).
+1. [x] Save the reference results (the four files above) and run `python3 -m py_compile bench/*.py`.
+2. [x] Add `freeze_instant` to the four task files (section 4.1).
+3. [x] Create `bench/task_corpus.py` with `build`, `ensure` and `verify` (section 4.2).
+4. [x] Build the four corpora from the snapshot `20261104` and print their manifests (sizes, documents removed per archive, unparseable artifact timestamps, worklog documents kept).
+5. [x] Run `verify` on each corpus. Stop on any failure.
+6. [x] Rebuild one corpus into a second folder (inside the job's temporary folder) and compare content fingerprints: they must be identical.
+7. [x] Change `bench/common.py` and its callers for the per-task folder and add `--frozen` and `BENCH_FROZEN` (section 4.3).
+8. [x] Run the unfrozen `three_way.py` and `model_bench.py` and confirm identical coverage fields against the references of step 1.
+9. [x] Run the frozen baseline (4.4 item 1) and confirm that the crowding check passes (0 post-freeze chat turns in the window) for every query.
+10. [x] Repeat the frozen baseline once and confirm identical coverage fields.
+11. [x] Run the frozen weight sweep and its paired statistics (4.4 item 2).
+12. [x] Run the frozen neighbor sweep and its paired statistics (4.4 item 3).
+13. [x] Repeat steps 11 and 12 once and confirm identical coverage fields.
+14. [x] Apply the rules of 4.4 items 4 and 5 and write the tables and the outcome (4.5).
 15. [ ] Update `rerank_enhacement.md`, `comparison.md`, `decision-log.md` and the tranche 2 plan (4.5).
 16. [ ] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
 17. [ ] Render the commit handoff once for `ai-memory-ingester` (the changed and new `bench/` files and the documents).
 18. [ ] Record the turn through the governed worklog writer.
 19. [ ] Report the D-35 and neighbor recommendations to the owner for decision.
+
+_Execution note: steps 7 to 14 are done on 2026-11-05. Results: section 12 of rerank_enhacement.md._
 
 Any deviation from this plan returns to PLAN mode.
 

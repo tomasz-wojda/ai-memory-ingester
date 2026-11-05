@@ -63,10 +63,31 @@ def manifest_checksums():
     return {name: entry['folder_checksum'] for name, entry in data['models'].items()}
 
 
-def connection(origin):
-    if origin not in CONNECTIONS:
-        CONNECTIONS[origin] = sqlite3.connect(f"file:{DATA_DIR / origin}?mode=ro", uri=True)
-    return CONNECTIONS[origin]
+FROZEN = os.environ.get('BENCH_FROZEN') == '1'
+TASK_FOLDERS = {}
+
+
+def set_frozen(value=True):
+    global FROZEN
+    FROZEN = bool(value)
+
+
+def task_data_dir(task):
+    if not FROZEN:
+        return None
+    key = task['key']
+    if key not in TASK_FOLDERS:
+        import task_corpus
+        TASK_FOLDERS[key] = task_corpus.ensure(DATA_DIR, task)
+    return TASK_FOLDERS[key]
+
+
+def connection(origin, data_dir=None):
+    folder = Path(data_dir) if data_dir else DATA_DIR
+    key = (str(folder), origin)
+    if key not in CONNECTIONS:
+        CONNECTIONS[key] = sqlite3.connect(f"file:{folder / origin}?mode=ro", uri=True)
+    return CONNECTIONS[key]
 
 
 def number(name):
@@ -74,22 +95,22 @@ def number(name):
     return int(found.group(1)) if found else None
 
 
-def turn_snippet(doc_id):
-    row = connection('convo.db').execute(
+def turn_snippet(doc_id, data_dir=None):
+    row = connection('convo.db', data_dir).execute(
         "SELECT file_name, substr(content, instr(content, char(10) || '---') + 5, ?) FROM documents WHERE id = ?",
         (SNIPPET, doc_id)).fetchone()
     return row
 
 
-def document_snippet(origin, doc_id):
-    row = connection(origin).execute(
+def document_snippet(origin, doc_id, data_dir=None):
+    row = connection(origin, data_dir).execute(
         "SELECT substr(content, CASE WHEN instr(content, char(10) || '---') > 0 THEN instr(content, char(10) || '---') + 5 ELSE 1 END, ?) FROM documents WHERE id = ?",
         (SNIPPET, doc_id)).fetchone()
     return row[0] if row and row[0] else ''
 
 
-def full_text(origin, doc_id):
-    row = connection(origin).execute('SELECT content FROM documents WHERE id = ?', (doc_id,)).fetchone()
+def full_text(origin, doc_id, data_dir=None):
+    row = connection(origin, data_dir).execute('SELECT content FROM documents WHERE id = ?', (doc_id,)).fetchone()
     return (row[0] or '') if row else ''
 
 
@@ -123,10 +144,10 @@ def top_rows(task, rows, limit=20):
     return picked
 
 
-def turn_texts(rows, mode='head'):
+def turn_texts(rows, mode='head', data_dir=None):
     texts, size, fallbacks = [], 0, 0
     for row in rows:
-        fetched = turn_snippet(row['id'])
+        fetched = turn_snippet(row['id'], data_dir)
         if not fetched:
             continue
         text = fetched[1] or ''
@@ -141,10 +162,10 @@ def turn_texts(rows, mode='head'):
     return texts, size, fallbacks
 
 
-def multi_texts(rows, mode='head'):
+def multi_texts(rows, mode='head', data_dir=None):
     texts, fallbacks = [], 0
     for row in rows:
-        text = document_snippet(row['origin_db'], row['id'])
+        text = document_snippet(row['origin_db'], row['id'], data_dir)
         if mode == 'best_passage':
             passage = row.get('best_passage')
             if passage:
@@ -198,9 +219,9 @@ def percentile(values, share):
     return ordered[index]
 
 
-def fact_recall(task, rows):
+def fact_recall(task, rows, data_dir=None):
     kept = [row for row in rows if eligible_row(task, row)]
-    texts = [full_text(row['origin_db'], row['id']).lower() for row in kept]
+    texts = [full_text(row['origin_db'], row['id'], data_dir).lower() for row in kept]
     weights = {fact: weight for fact, weight, _, _ in task['ledger']}
     ranks = {}
     for fact, groups in task['strict'].items():
@@ -317,12 +338,14 @@ def stop_service(process):
         os.killpg(process.pid, signal.SIGKILL)
 
 
-def run_engine(query, rerank, depth, budget_ms, socket_path, archive='chat:turns', extra_args=()):
+def run_engine(query, rerank, depth, budget_ms, socket_path, archive='chat:turns', extra_args=(), data_dir=None):
     command = ['./ai-memory-ingester', 'query', query, '--limit', '300', '--json', '--late', 'off', '--relax', 'auto',
                '--rerank', rerank, '--rerank-depth', str(depth), '--rerank-budget-ms', str(budget_ms), *extra_args]
     if archive:
         command += ['-A', archive]
-    if os.environ.get('BENCH_DATA_DIR'):
+    if data_dir:
+        command += ['--data-dir', str(data_dir)]
+    elif os.environ.get('BENCH_DATA_DIR'):
         command += ['--data-dir', str(DATA_DIR)]
     env = dict(os.environ)
     if socket_path is not None:
@@ -335,12 +358,12 @@ def run_engine(query, rerank, depth, budget_ms, socket_path, archive='chat:turns
     return chat_rows(rows), rows, wall, done.returncode
 
 
-def run_repeated(query, rerank, depth, budget_ms, socket_path, archive='chat:turns', extra_args=(), repeats=1):
-    first = run_engine(query, rerank, depth, budget_ms, socket_path, archive, extra_args)
+def run_repeated(query, rerank, depth, budget_ms, socket_path, archive='chat:turns', extra_args=(), repeats=1, data_dir=None):
+    first = run_engine(query, rerank, depth, budget_ms, socket_path, archive, extra_args, data_dir)
     walls = [first[2]]
     degraded = 1 if rerank == 'on' and not any(r.get('rerank_score') is not None for r in first[1]) else 0
     for _ in range(max(repeats, 1) - 1):
-        _, rows, wall, _ = run_engine(query, rerank, depth, budget_ms, socket_path, archive, extra_args)
+        _, rows, wall, _ = run_engine(query, rerank, depth, budget_ms, socket_path, archive, extra_args, data_dir)
         walls.append(wall)
         if rerank == 'on' and not any(r.get('rerank_score') is not None for r in rows):
             degraded += 1
@@ -351,9 +374,9 @@ def run_repeated(query, rerank, depth, budget_ms, socket_path, archive='chat:tur
             'cached_p95': round(percentile(cached, 0.95), 2) if cached else None}
 
 
-def warm_up(socket_path, query):
+def warm_up(socket_path, query, data_dir=None):
     for _ in range(12):
-        _, rows, _, _ = run_engine(query, 'on', 5, 10000, socket_path)
+        _, rows, _, _ = run_engine(query, 'on', 5, 10000, socket_path, data_dir=data_dir)
         if any(row.get('rerank_score') is not None for row in rows):
             return True
         time.sleep(2)
@@ -364,3 +387,18 @@ def case_queries(task):
     cases = [('question', task['forms']['question'])]
     cases += list(task['extra_queries'].items())
     return cases
+
+
+def corpus_manifests(tasks):
+    out = {}
+    for key, task in tasks.items():
+        folder = task_data_dir(task)
+        if folder:
+            out[key] = json.loads((Path(folder) / 'manifest.json').read_text(encoding='utf-8'))
+    return out
+
+
+def assert_no_crowding(task, rows, depth=30):
+    for row in rows[:depth]:
+        if not eligible_row(task, row):
+            raise RuntimeError(f"post-freeze turn {row.get('file_name')} in the first {depth} rows of task {task['key']}")

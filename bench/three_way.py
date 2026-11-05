@@ -36,7 +36,10 @@ def journal_branches(entries, task, parse_s):
 def chat_branch(task, run, mode, rerank, depth, order='engine'):
     rows = run['rows'] if order == 'engine' else common.model_only_order(run['rows'])
     top = common.frozen_top(task, common.chat_rows(rows))
-    texts, size, fallbacks = common.turn_texts(top, mode)
+    dd = common.task_data_dir(task)
+    if dd:
+        common.assert_no_crowding(task, common.chat_rows(run['rows']), depth)
+    texts, size, fallbacks = common.turn_texts(top, mode, dd)
     return {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'cold_s': run['cold_wall'], 'cached_p50': run['cached_p50'], 'cached_p95': run['cached_p95'], 'selected': len(top), 'bytes': size,
             'scored': sum(1 for r in run['rows'][:depth] if r.get('rerank_score') is not None),
             'degraded': rerank and not any(r.get('rerank_score') is not None for r in run['rows']),
@@ -45,7 +48,7 @@ def chat_branch(task, run, mode, rerank, depth, order='engine'):
 
 def multi_branch(task, run, mode, depth, with_mix):
     top = common.top_rows(task, run['rows'])
-    texts, size, fallbacks = common.multi_texts(top, mode)
+    texts, size, fallbacks = common.multi_texts(top, mode, common.task_data_dir(task))
     out = {'time_s': run['p50'], 'time_p50': run['p50'], 'time_p95': run['p95'], 'cold_s': run['cold_wall'], 'cached_p50': run['cached_p50'], 'cached_p95': run['cached_p95'], 'selected': len(top), 'bytes': size,
            'degraded_runs': run['degraded_runs'], 'evidence_fallbacks': fallbacks,
            'undated': sum(1 for r in top if r.get('source_archive') != 'chat:turns' and not r.get('event_time')),
@@ -68,7 +71,9 @@ def main():
     parser.add_argument('--max-tokens', type=int, default=512)
     parser.add_argument('--tasks', default='')
     parser.add_argument('--tag', default='')
+    parser.add_argument('--frozen', action='store_true')
     args = parser.parse_args()
+    common.set_frozen(args.frozen)
     tasks = common.load_tasks()
     if args.tasks:
         tasks = {key: task for key, task in tasks.items() if key in args.tasks.split(',')}
@@ -80,14 +85,15 @@ def main():
     process, socket_path = common.start_service(work)
     report = {'model': args.model, 'depth': args.depth, 'budget_ms': args.budget_ms, 'repeats': args.repeats, 'evidence': args.evidence,
               'engine_args': args.engine_args, 'journal_entries': len(entries), 'journal_parse_s': round(parse_s, 2),
-              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'tasks': {}}
+              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'corpora': common.corpus_manifests(tasks), 'tasks': {}}
     rows_csv = []
     try:
-        report['service_warm'] = common.warm_up(socket_path, next(iter(tasks.values()))['forms']['question'])
+        report['service_warm'] = common.warm_up(socket_path, next(iter(tasks.values()))['forms']['question'], common.task_data_dir(next(iter(tasks.values()))))
         for key, task in tasks.items():
             entry = {'name': task['name'], 'september': task['ledger_sept'], 'branches': journal_branches(entries, task, parse_s)}
             query = task['forms']['question']
-            repeat = {'repeats': args.repeats}
+            repeat = {'repeats': args.repeats, 'data_dir': common.task_data_dir(task)}
+            dd = repeat['data_dir']
             plain = common.run_repeated(query, 'off', args.depth, args.budget_ms, None, **repeat)
             entry['branches']['fts5'] = chat_branch(task, plain, args.evidence, False, args.depth)
             ranked = common.run_repeated(query, 'on', args.depth, args.budget_ms, socket_path, extra_args=extra, **repeat)
@@ -101,10 +107,10 @@ def main():
             if doc_form:
                 legacy = common.run_repeated(doc_form, 'off', args.depth, args.budget_ms, None, **repeat)
                 entry['branches']['fts5 (September query form)'] = {**chat_branch(task, legacy, args.evidence, False, args.depth), 'query': doc_form}
-            first_stage_chat = common.run_engine(query, 'off', 30, args.budget_ms, None)
-            first_stage_all = common.run_engine(query, 'off', 30, args.budget_ms, None, archive=None)
-            entry['fact_recall'] = {'chat_turns': common.fact_recall(task, first_stage_chat[1]),
-                                    'all_sources': common.fact_recall(task, first_stage_all[1])}
+            first_stage_chat = common.run_engine(query, 'off', 30, args.budget_ms, None, data_dir=dd)
+            first_stage_all = common.run_engine(query, 'off', 30, args.budget_ms, None, archive=None, data_dir=dd)
+            entry['fact_recall'] = {'chat_turns': common.fact_recall(task, first_stage_chat[1], dd),
+                                    'all_sources': common.fact_recall(task, first_stage_all[1], dd)}
             report['tasks'][key] = entry
             for name, branch in entry['branches'].items():
                 rows_csv.append({'task': key, 'branch': name, **{field: branch.get(field) for field in CSV_FIELDS[2:]}})

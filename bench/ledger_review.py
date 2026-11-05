@@ -26,7 +26,7 @@ def locate(groups, lines):
 
 
 def turn_matches(task, groups):
-    cursor = common.connection('convo.db').execute("SELECT file_name, content FROM documents WHERE source_archive = 'chat:turns'")
+    cursor = common.connection('convo.db', common.task_data_dir(task)).execute("SELECT file_name, content FROM documents WHERE source_archive = 'chat:turns'")
     count = 0
     for name, content in cursor:
         number = common.number(name)
@@ -50,7 +50,9 @@ def describe(result):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('task')
+    parser.add_argument('--frozen', action='store_true')
     args = parser.parse_args()
+    common.set_frozen(args.frozen)
     tasks = common.load_tasks()
     task = tasks[args.task.upper()]
     sources = {path: load_lines(path) for path in task.get('review_sources', [])}

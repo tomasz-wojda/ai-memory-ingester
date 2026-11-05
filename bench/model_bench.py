@@ -36,7 +36,7 @@ def parse_settings(text):
 
 def coverage_by_cut(task, ordered_chat, mode):
     top = common.frozen_top(task, ordered_chat)
-    texts, _, fallbacks = common.turn_texts(top, mode)
+    texts, _, fallbacks = common.turn_texts(top, mode, common.task_data_dir(task))
     result = {'top20_turns': [common.number(row.get('file_name')) for row in top], 'evidence_fallbacks': fallbacks}
     for cut in common.CUTS:
         result[f'cov@{cut}'] = common.strict_score(task, common.present(task['strict'], texts[:cut]))[0]
@@ -49,6 +49,8 @@ def coverage_by_cut(task, ordered_chat, mode):
 def score_case(task, run, depth, mode):
     rows = run['rows']
     window = rows[:depth]
+    if common.task_data_dir(task):
+        common.assert_no_crowding(task, common.chat_rows(rows), depth or 30)
     result = {
         'scored': sum(1 for row in window if row.get('rerank_score') is not None),
         'post_cutoff_in_depth': sum(1 for row in window if (common.number(row.get('file_name')) or 0) > task['cutoff_turn']),
@@ -100,7 +102,9 @@ def main():
     parser.add_argument('--max-tokens', type=int, default=512)
     parser.add_argument('--tasks', default='')
     parser.add_argument('--tag', default='')
+    parser.add_argument('--frozen', action='store_true')
     args = parser.parse_args()
+    common.set_frozen(args.frozen)
     wanted = args.systems.split(',')
     depths = [int(value) for value in args.depths.split(',')]
     settings = parse_settings(args.settings)
@@ -119,7 +123,7 @@ def main():
             workspace = work / system
             common.write_config(workspace, folder, checksums[folder], args.device, args.max_tokens)
             process, socket_path = common.start_service(workspace)
-            if not common.warm_up(socket_path, cases[0][2]):
+            if not common.warm_up(socket_path, cases[0][2], common.task_data_dir(tasks[cases[0][0]])):
                 common.stop_service(process)
                 results[system] = {'error': 'service did not score a warm-up request'}
                 continue
@@ -131,7 +135,7 @@ def main():
                     results[name][depth] = {}
                     for key, label, query in cases:
                         run = common.run_repeated(query, 'on' if folder else 'off', depth or 30, args.budget_ms, socket_path,
-                                                  extra_args=extra, repeats=args.repeats)
+                                                  extra_args=extra, repeats=args.repeats, data_dir=common.task_data_dir(tasks[key]))
                         case = score_case(tasks[key], run, depth, args.evidence)
                         results[name][depth][f'{key}/{label}'] = case
                         print(name, depth, key, label, [case[order][f'cov@{cut}'] for order in common.ORDERS for cut in common.CUTS], flush=True)
@@ -141,7 +145,7 @@ def main():
                 common.stop_service(process)
     shutil.rmtree(work, ignore_errors=True)
     report = {'cases': [{'task': key, 'form': label, 'query': query} for key, label, query in cases], 'device': args.device,
-              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'results': results,
+              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'corpora': common.corpus_manifests(tasks), 'results': results,
               'summary': summarize({k: v for k, v in results.items() if 'error' not in v})}
     common.OUT_DIR.mkdir(parents=True, exist_ok=True)
     (common.OUT_DIR / f'model-bench{args.tag}.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')

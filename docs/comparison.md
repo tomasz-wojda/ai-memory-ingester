@@ -1442,4 +1442,28 @@ The re-ranker adds about 0.8 to 1.0 s to a cold whole-command time, which includ
 - On the all-source branch, weight 12 gives a lower top-10 coverage than weight 5 on tasks B, C and D (47.9 against 56.2, 17.9 against 41.0, 40.0 against 45.0) and the same on task A. Over all 20 results the coverage is identical for all four tasks.
 - Results are in `three-way-t2-w12-a.json`, `three-way-t2-w5-a.json` and `model-bench-t2-a.json` in `data/eval/ledger-run/` (git-ignored).
 
+## Frozen per-task corpus (2026-11-05)
+
+Each task has its own copy of snapshot `20261104` (chat turns after the cutoff and artifacts after the freeze instant deleted). Details, tables and decision rules: section 12 of [rerank_enhacement.md](rerank_enhacement.md).
+
+| System (mean cov@10, chat turns) | Unfrozen | Frozen |
+|---|---|---|
+| lexical | 33.7 | 33.6 |
+| mmarco, weight 12 | 36.5 | 43.3 |
+| mmarco, weight 5 | 36.4 | 41.3 |
+
+Frozen per task, chat-turn branch, cov@10 (fts5, then fts5 + re-rank at weight 12):
+
+| Task | fts5 | fts5 + rerank, weight 12 | fts5 + rerank, weight 5 |
+|---|---|---|---|
+| A | 33.3 | 55.6 | 55.6 |
+| B | 75.0 | 75.0 | 75.0 |
+| C | 0.0 | 28.2 | 12.8 |
+| D | 17.5 | 45.0 | 32.5 |
+
+- The earlier statement that weight 12 is lower than weight 5 on the all-source branch for tasks B, C and D does not hold on frozen corpora: weight 12 gives 60.4, 17.9 and 45.0 against 52.1, 17.9 and 40.0, and 86.1 on A for both.
+- Weight 12 stays the recommended default (D-35, rule (a) met). No neighbor mode wins; `adjacent` stays.
+- Indexed worklogs and all-source branches are not fully frozen (worklog documents carry no date).
+
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

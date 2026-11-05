@@ -506,6 +506,59 @@ Needed to make the benchmark reproducible and to remove candidate crowding. Not 
 
 Test results: semantic suite 157 tests (was 125), query suite 80 (was 74), Python service tests 83 under three interpreters (was 78); the other suites are unchanged (see the close-out of the plan). Of 12 golden queries, 11 are identical between the saved jar and the new jar, and the twelfth differs only by the new `Neighbors:` explain line.
 
+## 12. Frozen per-task corpus results (plan: [frozen_corpus_plan.md](frozen_corpus_plan.md))
+
+Date: 2026-11-05. Snapshot `20261104`, mmarco on MPS, depth 30, 10 queries over tasks A to D. Each task has its own copy of the snapshot (`bench/task_corpus.py`, `--frozen`): chat turns after the task's cutoff and the excluded turns are deleted, artifacts written after the freeze instant are deleted, and the full-text index is rebuilt. The crowding check (no post-freeze turn in the first 30 rows) passed in every frozen run. Every run was done twice; the two runs are identical in all non-timing fields. Unfrozen runs reproduce the saved snapshot results with 0 differences.
+
+### 12.1 Effect of freezing (mean cov@10, chat turns, 10 queries)
+
+| System | Unfrozen | Frozen |
+|---|---|---|
+| lexical | 33.7 | 33.6 |
+| mmarco, weight 12 | 36.5 | 43.3 |
+| mmarco, weight 5 | 36.4 | 41.3 |
+
+The lexical result does not change. The re-ranker results rise, because turns after the freeze no longer fill the re-rank window. Median wall time is unchanged (1.7 to 1.8 s for weight 12, 0.9 s for weight 5; no case over the byte budget, no degraded case).
+
+### 12.2 Weight sweep, frozen (cov@10, paired bootstrap, 10,000 resamples)
+
+| Setting | Mean | Against lexical (difference, interval) | Against weight 12 (difference) |
+|---|---|---|---|
+| lexical | 33.6 | | -9.7 |
+| rrf:5 | 41.3 | +7.6 [0.97, 14.4], significant | -2.0 |
+| rrf:8 | 41.6 | +8.0 [-1.3, 17.3] | -1.7 |
+| rrf:12 (default) | 43.3 | +9.7 [-0.25, 19.4] | |
+| rrf:20 | 42.5 | +8.8 [-2.0, 19.3] | -0.8 |
+| rrf:40 | 43.1 | +9.5 [-0.6, 19.3] | -0.2 |
+| score:5 / 12 / 20 | 40.4 / 40.1 / 40.1 | +6.7 / +6.5 / +6.5, not significant | -3.0 / -3.2 / -3.2 |
+| cut | 42.3 | +8.7 [-0.9, 18.0] | -1.0 |
+
+Weight 12 against weight 5: difference +2.0, interval [-2.9, 6.9], not significant. Per task: A -1.4, B -0.5, C +15.4, D +12.5. On the all-source branch (not fully frozen, see 12.5) weight 12 is now equal to or higher than weight 5: A 86.1 and 86.1, B 60.4 and 52.1, C 17.9 and 17.9, D 45.0 and 40.0. The unfrozen result (lower on B, C, D) is not reproduced.
+
+### 12.3 Neighbor sweep, frozen (cov@10)
+
+| Mode | Mean | Against adjacent (difference, interval) | Per task against adjacent (A, B, C, D) |
+|---|---|---|---|
+| adjacent (default) | 43.3 | | |
+| after | 52.4 | +9.1 [-3.6, 23.9] | -0.7, +29.7, -7.7, -17.5 |
+| scored | 54.1 | +10.8 [-0.9, 24.7] | -0.7, +29.7, -7.7, 0.0 |
+| off | 51.4 | +8.1 [-5.7, 23.5] | -0.7, +29.7, -7.7, -27.5 |
+
+Against lexical (33.6) all three modes are significant (+18.7, +20.5, +17.7).
+
+### 12.4 Outcome of the decision rules
+
+- **D-35 (weight), rule (a): met.** Weight 12 raises mean cov@10 by 9.7 over lexical (needs 5); no task falls by more than 3 against weight 5 (worst -1.4); the interval against weight 5 is not below zero. Recommendation: keep 12 and close D-35 as "kept". Caveats: the interval of weight 12 against lexical includes zero (-0.25), and task B is 3.7 below lexical. Only weight 5 is significant against lexical. The gate 5 test (interval excludes zero, or 75% wins) is not met by any weight with 10 queries.
+- **Neighbor default: no winner.** No mode passes the gates against `adjacent`: task C falls by 7.7 in every mode (more than the 3-point limit), `after` and `off` also fall on D by 17.5 and 27.5, and no interval excludes zero (wins at most 4 of 10). `adjacent` stays the default. The mean gain of `scored` (+10.8) is the largest effect in this benchmark and is the first thing to re-test on a larger benchmark (R03).
+- Both outcomes are recommendations. The owner decides.
+
+### 12.5 Limits
+
+- Worklog documents and state capsules show today's content and cannot be cut; 90 artifacts have no date and stay. The indexed-worklog and all-source branches are therefore not frozen. Only the chat-turn branches are fully frozen.
+- The ledgers are drafted by the benchmark author and not adjudicated by the owner (R02). The benchmark still has 10 queries; an interval that includes zero is "not significant".
+- Corpora: four, 127, 118, 57 and 57 MB under `data/eval/snapshots/20261104/tasks/` (git-ignored); the tool rebuilds them.
+- Results are in `three-way-fza-w12.json`, `three-way-fza-w5.json`, `model-bench-fza.json`, `model-bench-fz-sweep-a.json` and `model-bench-fz-nb-a.json` (and the `b` runs) in `data/eval/ledger-run/` (git-ignored).
+
 ---
 
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tasks and results refer to internal tickets and memory content: share this document only with people allowed to see them.

@@ -178,9 +178,9 @@ Any deviation from this plan returns to PLAN mode.
 
 ---
 
-## Amendment proposal A1 (not approved, not built)
+## Amendment A1 (approved and done 2026-11-05)
 
-Found during step 7: the benchmark is not reproducible across days and loses coverage as the corpus grows, because turns after a task's freeze point crowd the 30-document re-rank window. The fix is a frozen corpus per task (a copy of the snapshot's `convo.db` with the later chat turns deleted), described in `rerank_enhacement.md` section 11.5. It is outside this plan, so it needs the owner's approval and a plan of its own. Until then, the weight decision (D-35) and the neighbor default stay open.
+Found during step 7: the benchmark is not reproducible across days and loses coverage as the corpus grows, because turns after a task's freeze point crowd the 30-document re-rank window. The fix is a frozen corpus per task (a copy of the snapshot's `convo.db` with the later chat turns deleted), described in `rerank_enhacement.md` section 11.5. It is outside this plan, so it needs the owner's approval and a plan of its own. Result: section 12 of rerank_enhacement.md. D-35 recommendation: keep 12. Neighbor default: no winner, `adjacent` stays. The owner decides.
 
 ## Execution notes (2026-11-04)
 

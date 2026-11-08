@@ -1,6 +1,6 @@
 # R44 proposal: IP Legal confirmation of licences
 
-Status: proposal, 2026-11-08. Nothing is sent. This document collects the evidence and a ready request. It is not a legal opinion. The owner decides the scope and sends the request. The licence policy is [security-privacy.md](semantic-retrieval/security-privacy.md) section 5.
+Status: scope decided by the owner on 2026-11-08 (section 2); the request (section 6) covers the two models only; nothing is sent. This document collects the evidence and a ready request. It is not a legal opinion. The owner decides the scope and sends the request. The licence policy is [security-privacy.md](semantic-retrieval/security-privacy.md) section 5.
 
 ## 1. Why and what it blocks
 
@@ -10,11 +10,11 @@ Policy 5.1 allows Apache-2.0, BSD and ISC only after IP Legal has confirmed them
 
 | Group | Items | Proposal |
 |---|---|---|
-| A. Models for use | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (default), `BAAI/bge-reranker-v2-m3` (opt-in) | Ask for confirmation |
-| B. Models for benchmarks only | `cross-encoder/ms-marco-MiniLM-L-6-v2`, `cross-encoder/ms-marco-MiniLM-L-12-v2` | Put in the same request. If IP Legal declines, delete the weights and drop them from the benchmark |
-| C. Excluded model | `sdadas/polish-reranker-roberta-v3` (Gemma terms) | Do not ask. Delete the weights (see section 5) unless the owner wants IP Legal to review the Gemma terms |
-| D. Python packages | 41 packages pinned in `service/requirements/models.txt` (section 4) | Ask for confirmation of the licence classes. Two entries need a decision: `tqdm` (MPL-2.0 AND MIT) and `regex` (Apache-2.0 AND CNRI-Python) |
-| E. Java libraries in the repository | 6 jars in `vendor/` (section 4) | Same request. They are committed to git (finding F4 of the production plan) |
+| A. Models for use | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (default), `BAAI/bge-reranker-v2-m3` (opt-in) | **Owner decision 2026-11-08: both stay. Ask IP Legal (section 6).** |
+| B. Models for benchmarks only | `cross-encoder/ms-marco-MiniLM-L-6-v2`, `cross-encoder/ms-marco-MiniLM-L-12-v2` | **Owner decision 2026-11-08: not used, will be removed. Not in the request.** The files, the manifest entries and the benchmark systems are still in place (section 5) |
+| C. Excluded model | `sdadas/polish-reranker-roberta-v3` (Gemma terms) | Open: the owner has not decided (section 5). Not in the request |
+| D. Python packages | 41 packages pinned in `service/requirements/models.txt` (section 4) | **Owner decision 2026-11-08: stay as they are, no issue. Not in the request.** Section 4 stays as a record |
+| E. Java libraries in the repository | 6 jars in `vendor/` (section 4) | **Owner decision 2026-11-08: no issue. Not in the request.** Section 4 stays as a record |
 
 ## 3. Models: evidence
 
@@ -34,7 +34,9 @@ Questions that IP Legal should answer, not me (from my general knowledge, not ve
 - The `ms-marco-*` models and `mmarco` were trained on MS MARCO or its translation (mMARCO). I recall that the MS MARCO data has research-use terms. The model cards say Apache-2.0. Does the data licence limit internal business use of the weights?
 - `bge-reranker-v2-m3` is an XLM-RoBERTa derivative. Do the base-model terms add duties?
 
-## 4. Packages: evidence from the installed environment (2026-11-08)
+## 4. Packages and Java libraries: evidence from the installed environment (2026-11-08)
+
+For the record only. By the owner's decision of 2026-11-08 these items are not part of the IP Legal request.
 
 All 41 pinned packages are installed with the pinned version. The licence is read from each package's own metadata (`License-Expression`, else the `License` field, else the classifier).
 
@@ -103,32 +105,32 @@ Java libraries in `vendor/` (licence files read from inside each jar, 2026-11-08
 
 ## 5. Findings for the owner (not for IP Legal)
 
-1. The Gemma-licensed Polish model is on disk (`.../models/polish-reranker-roberta-v3`, 1.7 GB) and was loaded for a benchmark on 2026-11-03. Policy 5.1 excludes custom licences and says such a model is never loaded on the company laptop. I recommend: delete the folder and the manifest entry, or ask IP Legal. I did not delete anything.
+1. Open: the Gemma-licensed Polish model is on disk (`.../models/polish-reranker-roberta-v3`, 1.7 GB) and was loaded for a benchmark on 2026-11-03. Policy 5.1 excludes custom licences and says such a model is never loaded on the company laptop. I recommend: delete the folder and the manifest entry, or ask IP Legal. I did not delete anything.
 2. Store the licence text and model card next to each model that stays (policy 5.2 item 4). I can do this if the host is reachable or if you give me the files.
 3. No model or package was downloaded or changed for this proposal.
+4. Removal of the two MiniLM models (decided 2026-11-08) needs: delete the folders `ms-marco-MiniLM-L-6-v2` and `ms-marco-MiniLM-L-12-v2` (about 224 MB), delete their entries in `models.manifest.json`, and remove the systems `msmarco-l6` and `msmarco-l12` from `bench/common.py`. Old benchmark reports that name them stay as history. I have not done this: deleting weights cannot be undone if the model host stays unreachable.
 
 ## 6. Draft request (ready to send; the owner edits and sends it)
 
-Subject: Licence confirmation for internal retrieval tool (models and libraries)
+Subject: Licence confirmation for two AI models in an internal retrieval tool
 
 Hello,
 
-We use a local search tool for internal work notes. It runs on company laptops and processes internal business information. It uses third-party software. Please confirm that we may use the items below for internal use under the stated licences. We do not sell or give them to third parties.
+We use a local search tool for internal work notes. It runs on company laptops and processes internal business information. It uses two third-party AI models to rank search results. The weights stay on the laptop. We do not sell or give them to third parties. Please confirm that we may use them for internal use under the licence stated on the model cards.
 
-1. Two AI models (weights stay on the laptop, used for ranking search results): `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` and `BAAI/bge-reranker-v2-m3`. Licence on the model card: Apache-2.0. Two English benchmark-only models, `cross-encoder/ms-marco-MiniLM-L-6-v2` and `cross-encoder/ms-marco-MiniLM-L-12-v2` (Apache-2.0), are included for the same question.
-2. 41 Python packages (list and licences in the attached table). Please look at `tqdm` (MPL-2.0 AND MIT, used unmodified) and `regex` (Apache-2.0 AND CNRI-Python).
-3. Six Java libraries stored in our repository (commons-logging, fontbox, pdfbox, slf4j-api, slf4j-nop, sqlite-jdbc; Apache-2.0, MIT and BSD-style).
+1. `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (commit 1427fd65, weights 470,592,698 bytes). Licence on the model card: Apache-2.0. Default model.
+2. `BAAI/bge-reranker-v2-m3` (commit 953dc6f6, weights 2,271,071,852 bytes). Licence on the model card: Apache-2.0. Optional model.
 
-Questions: (a) Is Apache-2.0 acceptable for these items, with the licence text and notices kept next to them? (b) Is the MPL-2.0 part of `tqdm` acceptable for unmodified use? (c) The models were trained on MS MARCO-type data. Does the data licence limit internal business use of the weights? (d) Do the base-model terms of `bge-reranker-v2-m3` add duties?
+Questions: (a) Is Apache-2.0 acceptable for these two models, with the licence text and notices kept next to the weights? (b) The first model was trained on a translation of MS MARCO (mMARCO). We understand that the MS MARCO data has research-use terms. Does the data licence limit internal business use of the weights? (c) The second model is based on XLM-RoBERTa. Do the base-model terms add duties?
 
-Attached: the licence table (section 4 of this document) and the model manifest.
+Attached: the model manifest (`models.manifest.json`, entries for the two models).
 
 Thank you.
 
 ## 7. Next steps
 
-1. Owner: choose the scope (section 2) and send the request (section 6). I cannot send it.
-2. Owner: decide about the Gemma model (finding 1).
+1. Owner: send the request (section 6). I cannot send it. The scope is decided.
+2. Owner: decide about the Gemma model (finding 1) and confirm that I may remove the two MiniLM models (finding 4).
 3. After the answer: record it in `decision-log.md`, update the statuses in `security-privacy.md` 5.3, and tick R44. R50 and any model change are then free to proceed.
 
 ---

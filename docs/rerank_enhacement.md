@@ -227,7 +227,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 - [ ] **R41 [ING] Run the model bake-off on the larger benchmark** (mmarco, bge-reranker-v2-m3, and any new Apache-2.0 or MIT candidate). Accept: a model replaces the default only when it wins on the gates and fits the budget.
 - [ ] **R42 [ING] Test a cascade**: mmarco on 50 passages, then bge-reranker-v2-m3 on the top 10 (about 0.3 s plus 0.6 s on MPS, an estimate). Accept: gates pass within budget on MPS, and a documented CPU fallback.
 - [ ] **R43 OWNER Decide on fine-tuning only after labels exist.** At least a few hundred graded pairs from the owner's real questions, split into dev and test, are needed. Accept: a written decision.
-- [ ] **R44 OWNER IP Legal confirms Apache-2.0** for the chosen models and the 41 packages (`tqdm` is MPL-2.0 AND MIT). No model changes before this.
+- [ ] **R44 OWNER IP Legal confirms Apache-2.0** for the chosen models and the 41 packages (`tqdm` is MPL-2.0 AND MIT). No model changes before this. _Proposal and draft request written 2026-11-08: [r44_ip_legal_proposal.md](r44_ip_legal_proposal.md); waiting for the owner to send it._
 - [ ] **R45 [ING] Implement the model fallback queue** if wanted (see the earlier design): ordered models, a fallback on load failure, a cost-based passage cut on slowness, and a lexical end of the queue for Polish queries. Accept: tests for each failure case.
 
 ### Phase H: operation and speed

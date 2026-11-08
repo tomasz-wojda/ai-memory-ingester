@@ -147,7 +147,7 @@ The tuning steps below are only safe when the measurement is sound. These steps 
 
 - [x] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
 - [ ] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`.
-- [ ] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less.
+- [x] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less. _Done 2026-11-08: 15 tasks, 43 queries, ledgers E to O not yet adjudicated (section 13)._
 - [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks.
 - [x] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
 - [x] **R06 [ING] Add paired statistics.** Report per-query differences against the lexical baseline, a bootstrap interval, and a win/loss count. Accept: a change counts as an improvement only when the interval excludes zero or it wins on a clear majority without any large loss.
@@ -587,6 +587,67 @@ Outcome of the rules, unchanged from 12.4:
 - **D-35:** rule (a) is met (+16.9 over lexical; worst task against weight 5 is -1.1; the interval against weight 5 is not below zero). Weight 12 stays. Weight 8 is 1.0 higher with an interval that starts at 0.0 and 9 ties: not significant.
 - **Neighbor default:** no mode passes the gates. Task C falls by 7.7 and task A by 5.5 in every mode (limit 3), and no interval excludes zero. `adjacent` stays. In this run `scored` and `off` give the same result.
 - Limits of 12.5 apply. Results are in `*-tma*`, `*-tmb*`, `model-bench-tm-sweep-*` and `model-bench-tm-nb-*` files in `data/eval/ledger-run/` (git-ignored).
+
+## 13. R03 results: 43 queries over 15 tasks (plan: [r03_benchmark_plan.md](r03_benchmark_plan.md))
+
+Date: 2026-11-08. Snapshot `20261104`, time-based frozen corpora, mmarco on MPS, depth 30, `model_bench.py`, 43 queries (tasks A to D: 10 queries; tasks E to O: 3 queries each: `summary of <KEY>`, a keyword form and a Polish paraphrase). Each run was done twice and the two runs match in all non-timing fields. Tasks A to D give the same results as in section 12.6 (0 differences).
+
+**Status: provisional.** The ledgers of tasks E to O were drafted by a model from the state capsule and the worklog of each ticket. They are not adjudicated (`adjudicated` is false for all 15 tasks, so `--adjudicated-only` selects none). Each passes `bench/ledger_check.py` (strict anchors found in the sources, at most 1% false matches on 3,000 unrelated turns, all strict weight present in some turn). Strict facts: E 17, F 16, G 17, H 16, I 16, J 17, K 18, L 15, M 15, N 15, O 13. Review packs: `review/task_e.md` to `task_o.md` (git-ignored).
+
+### 13.1 Baseline (mean over 43 queries, chat turns)
+
+| System | cov@10 | precision@10 | Against lexical (difference, interval, wins/losses/ties) |
+|---|---|---|---|
+| lexical | 30.6 | 53.5 | |
+| mmarco, weight 12 | 32.8 | 55.8 | +2.2 [-1.8, 6.2], 17/17/9, not significant |
+| mmarco, weight 5 | 33.2 | 54.4 | +2.6 [-0.8, 6.1], 18/13/12, not significant |
+| re-ranker order alone (weight 12 run) | 37.5 | | +6.9 [2.5, 11.7], 25/14/4, significant |
+
+Weight 5 against weight 12: +0.4, interval [-1.3, 2.0]. Bytes at the top 20 stay under the budget (about 17,700 against 22,000); no degraded case. Median wall time: lexical 0.94 s, weight 12 1.73 s (later settings in a run use the score cache, so their wall times are lower).
+
+### 13.2 Where the gain is (weight 12 against lexical, cov@10)
+
+| Subset | Queries | lexical | weight 12 | Difference, interval |
+|---|---|---|---|---|
+| Tasks A to D | 10 | 23.1 | 40.0 | +16.9 [11.5, 22.1] |
+| New tasks E to O | 33 | 32.8 | 30.6 | -2.2 [-6.0, 1.6] |
+| Long tickets E, F, G, H | 12 | 25.4 | 24.1 | -1.3 [-4.2, 2.3] |
+| Medium I, J, K | 9 | 35.5 | 34.9 | -0.6 [-8.4, 7.0] |
+| Short L, M, N, O | 12 | 38.2 | 33.9 | -4.3 [-12.2, 3.5] |
+| E to O, form `summary of <KEY>` | 11 | 32.8 | 25.9 | -6.9 [-13.5, -0.35], significant loss |
+| E to O, keyword form | 11 | 35.3 | 32.9 | -2.4 [-8.5, 3.3] |
+| E to O, Polish form | 11 | 30.4 | 32.9 | +2.6 [-2.5, 8.7] |
+
+Per task against lexical (weight 12): A +21.6, B +12.5, C +20.5, D +12.5, E 0.0, F -1.9, G -1.8, H -1.7, I +10.5, J -8.4, K -4.1, L -13.3, M -2.0, N +4.9, O -6.9. The gain found on tasks A to D is not found on the new tasks. Weight 12 against weight 5 on E to O: -0.9 [-2.7, 1.1].
+
+### 13.3 Neighbor sweep (against `adjacent`, 32.8)
+
+| Mode | Mean | Difference, interval, wins/losses/ties | Tasks below -3 against `adjacent` |
+|---|---|---|---|
+| after | 37.6 | +4.8 [0.9, 9.0], 24/11/8, significant | A -5.6, C -7.7, D -7.5, I -6.1 |
+| off | 36.8 | +4.1 [0.3, 8.0], 21/9/13, significant | A -5.6, C -7.7, I -6.1, K -3.3 |
+| scored | 35.2 | +2.4 [-0.7, 5.8], 16/8/19 | A -5.6, C -7.7, I -9.6, K -3.3 |
+
+Biggest gains: B +19.8 in all modes, N +29.4 (after), +21.6 (off), +6.9 (scored). Against lexical: after +7.0 [2.4, 11.9], off +6.3 [1.6, 11.2], scored +4.7 [0.02, 9.6]; all significant.
+
+### 13.4 Outcome of the decision rules
+
+- **D-35 (weight): stays closed.** The reopen rule (weight 5 beats weight 12 with an interval fully above zero) is not met (+0.4, [-1.3, 2.0]). Caveat for the owner: on this larger set weight 12 is not shown to beat lexical (+2.2, not significant), and on the new tasks it is lower (-2.2), significantly lower on the ticket-key form (-6.9). Rule (a) of section 12.4 (at least +5 over lexical) would not be met on all 43 queries. The result depends on the ledgers of E to O being adjudicated.
+- **Neighbor default: no mode wins under the rules.** Every mode has a task that falls by more than 3 points against `adjacent` (gate 1). The rule of section 6 allows a pass through the interval clause of gate 5, and `after` and `off` have intervals above zero, but the per-task limit is the owner's open question R10(c). `after` has the best mean (+4.8) and the best win count (24 of 43).
+- Proposed decision D-36 is in `decision-log.md`. It is the owner's decision.
+
+### 13.5 Observations (not verified causes)
+
+- With `adjacent` the fused order trails the re-ranker's own order by 4.7 points (32.8 against 37.5). With `after` or `off` the gap disappears (37.6 and 36.8 against 37.5 and 36.2). This is consistent with unscored neighbor rows taking top-10 slots, as found earlier.
+- The re-ranker alone beats lexical significantly (+6.9). The fused result at weight 12 with `adjacent` neighbors does not. The fusion, not the model, is where the gain is lost on this set.
+
+### 13.6 Limits
+
+- Ledgers E to O are unadjudicated and were drafted from the same worklogs and capsules that the indexed-worklog branch reads; the strict anchors had to occur in some chat turn before the freeze.
+- The keyword and Polish forms have 11 queries each; task O has a small corpus (646 unrelated turns for the false-match check).
+- Evidence for a turn is its first 1,050 characters (`--evidence head`); the best-passage mode was not run here.
+- Only the chat-turn branch was run (model-bench). The indexed-worklog and all-source branches were not part of this plan.
+- Results are in `model-bench-r3-base-{a,b}` and `model-bench-r3-nb-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
 
 ---
 

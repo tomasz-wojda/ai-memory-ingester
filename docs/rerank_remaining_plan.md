@@ -28,7 +28,7 @@ This plan puts the unimplemented items of [rerank_enhacement.md](rerank_enhaceme
 - R03: tasks E to O, steps 1 to 17 of `r03_benchmark_plan.md`.
 - R04: add nDCG@10 and recall@k against graded facts to the harness (latency percentiles, recall and the precision proxy exist). Claim precision, freshness, temporal correctness and contradictions stay manual and are reported as such.
 - Outcome: the neighbor default (R39 depends on it) and a check of weight 12.
-- Exit: 15 tasks, 43 queries, results recorded in `rerank_enhacement.md` section 13.
+- Exit: 15 tasks, 43 queries, results recorded in `rerank_enhacement.md` section 13. _R03 done 2026-11-08; R04 (nDCG@10 and recall@k) is not done._
 
 ### Phase 2: candidate set and query side (cheap, evidence exists)
 

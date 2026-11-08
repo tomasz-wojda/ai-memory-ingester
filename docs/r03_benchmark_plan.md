@@ -140,20 +140,22 @@ Checklist of option 1 (done): (a) change `task_corpus.py` and `common.eligible_r
 1. [x] Re-run `bench/candidates.py` on the snapshot and confirm the 11 tickets and their turn counts.
 2. [x] Write `bench/ledger_check.py` with checks (a), (b) and (c) of section 3.4. Test it on tasks C and D.
 3. [x] For each ticket, list its turns with number and timestamp, check that turn numbers and times agree around the freeze instant, and set `freeze_instant`, `cutoff_turn` and `journal_cutoff` (section 3.2). Stop on a conflict.
-4. [ ] Add the field `adjudicated` and the option `--adjudicated-only` to `three_way.py`, `model_bench.py` and `common.load_tasks` (default `False`; tasks A to D keep their current status in the report).
-5. [ ] Draft the ledger, the strict set, the three query forms and `review_sources` for task E. Run `ledger_check.py`. Repeat for tasks F to O, one task at a time. Drop and report a task that fails section 3.4.
-6. [ ] Build the review packs with `ledger_review.py --frozen` for all surviving new tasks.
-7. [ ] Build and verify the frozen corpora (`task_corpus.py build` and `verify`). Stop on any failure.
-8. [ ] Run the regression of section 5 (tasks A to D, frozen and unfrozen).
-9. [ ] Run the baseline of 3.6 item 1, twice. Compare the two runs.
-10. [ ] Run the neighbor sweep, twice. Compare the two runs.
-11. [ ] Compute the statistics and breakdowns of 3.6 items 3 and 4.
-12. [ ] Apply the rules of 3.7 and write the tables and the outcome.
-13. [ ] Update `rerank_enhacement.md` (new section 13), `comparison.md`, `decision-log.md` (a proposed row for the neighbor default if a mode wins) and mark R03 in the checklist of `rerank_enhacement.md`.
-14. [ ] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
+4. [x] Add the field `adjudicated` and the option `--adjudicated-only` to `three_way.py`, `model_bench.py` and `common.load_tasks` (default `False`; tasks A to D keep their current status in the report).
+5. [x] Draft the ledger, the strict set, the three query forms and `review_sources` for task E. Run `ledger_check.py`. Repeat for tasks F to O, one task at a time. Drop and report a task that fails section 3.4.
+6. [x] Build the review packs with `ledger_review.py --frozen` for all surviving new tasks.
+7. [x] Build and verify the frozen corpora (`task_corpus.py build` and `verify`). Stop on any failure.
+8. [x] Run the regression of section 5 (tasks A to D, frozen and unfrozen).
+9. [x] Run the baseline of 3.6 item 1, twice. Compare the two runs.
+10. [x] Run the neighbor sweep, twice. Compare the two runs.
+11. [x] Compute the statistics and breakdowns of 3.6 items 3 and 4.
+12. [x] Apply the rules of 3.7 and write the tables and the outcome.
+13. [x] Update `rerank_enhacement.md` (new section 13), `comparison.md`, `decision-log.md` (a proposed row for the neighbor default if a mode wins) and mark R03 in the checklist of `rerank_enhacement.md`.
+14. [x] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
 15. [ ] Render the commit handoff once for `ai-memory-ingester`.
 16. [ ] Record the turn through the governed worklog writer.
 17. [ ] Hand the review packs and the recommendations to the owner. Results stay provisional until the packs are adjudicated.
+
+_Execution note, 2026-11-08: steps 4 to 13 are done. Results: section 13 of rerank_enhacement.md. The ledgers of tasks E to O were drafted by four parallel agents, one batch each, and re-checked with `ledger_check.py` by the main session. All tasks stay unadjudicated until the owner reviews the packs._
 
 Any deviation from this plan returns to PLAN mode.
 

@@ -74,9 +74,7 @@ def main():
     common.add_freeze_arguments(parser)
     args = parser.parse_args()
     common.apply_freeze_arguments(args)
-    tasks = common.load_tasks()
-    if args.tasks:
-        tasks = {key: task for key, task in tasks.items() if key in args.tasks.split(',')}
+    tasks = common.select_tasks(common.load_tasks(), args.tasks, args.adjudicated_only)
     extra = tuple(args.engine_args.split())
     folder = dict(common.SYSTEMS)[args.model]
     entries, parse_s = common.parse_journal()
@@ -85,7 +83,7 @@ def main():
     process, socket_path = common.start_service(work)
     report = {'model': args.model, 'depth': args.depth, 'budget_ms': args.budget_ms, 'repeats': args.repeats, 'evidence': args.evidence,
               'engine_args': args.engine_args, 'journal_entries': len(entries), 'journal_parse_s': round(parse_s, 2),
-              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'freeze_by': common.FREEZE_BY if args.frozen else None, 'corpora': common.corpus_manifests(tasks), 'tasks': {}}
+              'cutoffs': {k: t['journal_cutoff'].isoformat() for k, t in tasks.items()}, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'adjudicated_only': args.adjudicated_only, 'adjudicated': {k: t['adjudicated'] for k, t in tasks.items()}, 'frozen': args.frozen, 'freeze_by': common.FREEZE_BY if args.frozen else None, 'corpora': common.corpus_manifests(tasks), 'tasks': {}}
     rows_csv = []
     try:
         report['service_warm'] = common.warm_up(socket_path, next(iter(tasks.values()))['forms']['question'], common.task_data_dir(next(iter(tasks.values()))))

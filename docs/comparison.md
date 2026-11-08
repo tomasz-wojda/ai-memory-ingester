@@ -1471,4 +1471,9 @@ Frozen per task, chat-turn branch, cov@10 (fts5, then fts5 + re-rank at weight 1
 The corpora are now cut by timestamp, because turn numbers follow the order of ingestion (details: section 12.6 of [rerank_enhacement.md](rerank_enhacement.md)). Mean cov@10 on chat turns: lexical 23.1, weight 12 40.0, weight 5 38.8 (number cutoff: 33.6, 43.3, 41.3). Weight 12 against lexical: +16.9, significant. D-35 (weight 12) and the neighbor default (`adjacent`) are unchanged. The tables above this note use the number cutoff.
 
 
+### Larger benchmark: 15 tasks, 43 queries (2026-11-08)
+
+Section 13 of [rerank_enhacement.md](rerank_enhacement.md). Provisional: the ledgers of the 11 new tasks are not adjudicated. Mean cov@10, chat turns: lexical 30.6, weight 12 32.8, weight 5 33.2, re-ranker order alone 37.5. Weight 12 against lexical: +2.2 (interval [-1.8, 6.2], not significant); on tasks A to D +16.9, on the 33 new queries -2.2, on the new tasks' ticket-key form -6.9 (significant). Neighbor modes against `adjacent`: `after` +4.8 and `off` +4.1 (both significant), `scored` +2.4; each loses more than 3 points on some task, so no mode passes the per-task gate (proposed decision D-36). D-35 stays closed.
+
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

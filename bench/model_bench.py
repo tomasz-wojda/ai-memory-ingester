@@ -108,9 +108,7 @@ def main():
     wanted = args.systems.split(',')
     depths = [int(value) for value in args.depths.split(',')]
     settings = parse_settings(args.settings)
-    tasks = common.load_tasks()
-    if args.tasks:
-        tasks = {key: task for key, task in tasks.items() if key in args.tasks.split(',')}
+    tasks = common.select_tasks(common.load_tasks(), args.tasks, args.adjudicated_only)
     cases = [(key, label, query) for key, task in tasks.items() for label, query in common.case_queries(task)]
     checksums = common.manifest_checksums()
     results, rows_csv = {}, []
@@ -145,7 +143,7 @@ def main():
                 common.stop_service(process)
     shutil.rmtree(work, ignore_errors=True)
     report = {'cases': [{'task': key, 'form': label, 'query': query} for key, label, query in cases], 'device': args.device,
-              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'freeze_by': common.FREEZE_BY if args.frozen else None, 'corpora': common.corpus_manifests(tasks), 'results': results,
+              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'adjudicated_only': args.adjudicated_only, 'adjudicated': {k: t['adjudicated'] for k, t in tasks.items()}, 'frozen': args.frozen, 'freeze_by': common.FREEZE_BY if args.frozen else None, 'corpora': common.corpus_manifests(tasks), 'results': results,
               'summary': summarize({k: v for k, v in results.items() if 'error' not in v})}
     common.OUT_DIR.mkdir(parents=True, exist_ok=True)
     (common.OUT_DIR / f'model-bench{args.tag}.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')

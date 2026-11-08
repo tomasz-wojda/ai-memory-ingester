@@ -49,6 +49,7 @@ def load_tasks(directory=None):
         task = dict(module.TASK)
         task['key'] = path.stem.split('_', 1)[1].upper()
         task.setdefault('excluded', set())
+        task.setdefault('adjudicated', False)
         task.setdefault('extra_queries', {})
         task.setdefault('ledger_sept', {})
         task.setdefault('journal_keys', None)
@@ -82,6 +83,7 @@ def set_freeze_by(value):
 
 def add_freeze_arguments(parser):
     parser.add_argument('--frozen', action='store_true')
+    parser.add_argument('--adjudicated-only', action='store_true')
     parser.add_argument('--freeze-by', choices=['time', 'number'], default=None)
 
 
@@ -89,6 +91,14 @@ def apply_freeze_arguments(args):
     set_frozen(args.frozen)
     if args.freeze_by:
         set_freeze_by(args.freeze_by)
+
+
+def select_tasks(tasks, keys='', adjudicated_only=False):
+    if keys:
+        tasks = {key: task for key, task in tasks.items() if key in keys.split(',')}
+    if adjudicated_only:
+        tasks = {key: task for key, task in tasks.items() if task['adjudicated']}
+    return tasks
 
 
 def frozen_by_time():

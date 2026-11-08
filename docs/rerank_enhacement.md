@@ -186,7 +186,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 - [x] **R16 [ING] Measure recall of the first stage.** For each ledger fact, find the rank of the first passage that carries it in the first-stage list. Accept: a table of recall@10, 30, 50, 100 per task. Evidence: facts that never enter the first 30 cannot be repaired by re-ranking.
 - [ ] **R17 [ING] Make the passage cap depend on the time budget.** Today the cap is a fixed 100 passages and 3 per document. On MPS, mmarco needs about 5.7 ms per passage (measured up to depth 50), so 200 passages is about 1.1 s (an estimate, to be measured). Choose the number of passages from a measured cost per passage and the remaining budget. Accept: p95 stays inside the budget on MPS and on CPU, and the degraded rate stays below 2%.
-- [ ] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30.
+- [ ] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30. _Partly done 2026-11-04: depth 50 was tested and not adopted; depths 100 and 200 with a raised passage cap were not tested._
 - [ ] **R19 [ING] Use a partial result when the deadline is near.** Score the highest-ranked passages first, and use the scored subset instead of dropping the whole re-rank when the time runs out. Accept: the degraded rate falls without a quality loss.
 - [ ] **R20 [ING] Test a cheap first re-rank stage.** English-only models are not suitable as a cheap first stage. Test mmarco at depth 100 followed by a second model on the top 10 (see R42). Accept: gates pass within budget.
 
@@ -217,7 +217,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 ### Phase F: evidence assembly
 
-- [ ] **R37 [ING] Use the best passage as the snippet** in the engine output and in the packed context, with a link to the full document. Hypothesis H2. Accept: coverage under a fixed budget rises (R05). _Evaluated 2026-11-04: the condition was not met (section 10.6), not built._
+- [x] **R37 [ING] Use the best passage as the snippet** in the engine output and in the packed context, with a link to the full document. Hypothesis H2. Accept: coverage under a fixed budget rises (R05). _Evaluated 2026-11-04: the condition was not met (section 10.6), not built. Closed._
 - [ ] **R38 [ING] Pack the context by gain, not by rank.** Choose items by new facts per byte (a diversity rule such as MMR) and skip items that repeat content. Accept: coverage per byte rises.
 - [ ] **R39 [ING] Expand neighbors only after the packed set is chosen**, and measure whether the expansion adds facts or noise. Accept: gates pass.
 
@@ -234,7 +234,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 - [x] **R46 [ING] Cache scores** by hash of (model revision, query, passage). Accept: a repeated query is served from the cache with identical results.
 - [ ] **R47 [ING] Tune the batch size and threading** for MPS and CPU, and report the effect. Accept: lower latency at the same scores.
-- [ ] **R48 [ING] Report latency percentiles in the service** (p50, p95, degraded rate, reason counts) so the gates can be watched in daily use.
+- [ ] **R48 [ING] Report latency percentiles in the service** (p50, p95, degraded rate, reason counts) so the gates can be watched in daily use. _Partly done: `warmed` and `warm_ms` are in the health reply; p50, p95, degraded rate and reason counts are not._
 - [ ] **R49 OWNER Decide how the service starts.** Today the engine does not start it, so `--rerank auto` does nothing unless it runs. Options: a launcher, a login item, or a documented manual start.
 - [ ] **R50 [ING] Write the default model into the service config** (`.ai-worklog/memory-service.json`) with the folder checksum, after R40 and R44.
 

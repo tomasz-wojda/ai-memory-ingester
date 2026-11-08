@@ -98,11 +98,11 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 12. [x] Run the frozen neighbor sweep and its paired statistics (4.4 item 3).
 13. [x] Repeat steps 11 and 12 once and confirm identical coverage fields.
 14. [x] Apply the rules of 4.4 items 4 and 5 and write the tables and the outcome (4.5).
-15. [ ] Update `rerank_enhacement.md`, `comparison.md`, `decision-log.md` and the tranche 2 plan (4.5).
-16. [ ] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
-17. [ ] Render the commit handoff once for `ai-memory-ingester` (the changed and new `bench/` files and the documents).
-18. [ ] Record the turn through the governed worklog writer.
-19. [ ] Report the D-35 and neighbor recommendations to the owner for decision.
+15. [x] Update `rerank_enhacement.md`, `comparison.md`, `decision-log.md` and the tranche 2 plan (4.5).
+16. [x] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
+17. [x] Render the commit handoff once for `ai-memory-ingester` (the changed and new `bench/` files and the documents).
+18. [x] Record the turn through the governed worklog writer.
+19. [x] Report the D-35 and neighbor recommendations to the owner for decision.
 
 _Execution note, 2026-11-06: the cut is now by timestamp (`--freeze-by time`, default); the number cutoff described above stays available as `--freeze-by number` (section 12.6 of rerank_enhacement.md). Steps 7 to 14 are done on 2026-11-05. Results: section 12 of rerank_enhacement.md._
 

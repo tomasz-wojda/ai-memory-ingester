@@ -77,7 +77,7 @@ R03 and R04 come first, because every later gate uses them. R10 gates phases 3 a
 
 ## IMPLEMENTATION CHECKLIST
 
-1. [ ] Update the stale boxes in the checklist of `rerank_enhacement.md` (R18 partly, R37 evaluated, R46 built, R48 partly) without changing other text.
+1. [x] Update the stale boxes in the checklist of `rerank_enhacement.md` (R18 partly, R37 evaluated, R46 built, R48 partly) without changing other text.
 2. [ ] Phase 0: send the owner the four inputs of section 2 and record the answers (or "defaults apply") in `decision-log.md`.
 3. [ ] Phase 1: execute `r03_benchmark_plan.md` steps 1 to 17, and add R04 (nDCG@10 and recall@k) to the harness.
 4. [ ] Phase 1 close-out: record the neighbor default and the weight check.

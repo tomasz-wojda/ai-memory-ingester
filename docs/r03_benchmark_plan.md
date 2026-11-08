@@ -151,9 +151,9 @@ Checklist of option 1 (done): (a) change `task_corpus.py` and `common.eligible_r
 12. [x] Apply the rules of 3.7 and write the tables and the outcome.
 13. [x] Update `rerank_enhacement.md` (new section 13), `comparison.md`, `decision-log.md` (a proposed row for the neighbor default if a mode wins) and mark R03 in the checklist of `rerank_enhacement.md`.
 14. [x] Check that no ledger text, snapshot or corpus is tracked by Git, and run `python3 -m py_compile bench/*.py`.
-15. [ ] Render the commit handoff once for `ai-memory-ingester`.
-16. [ ] Record the turn through the governed worklog writer.
-17. [ ] Hand the review packs and the recommendations to the owner. Results stay provisional until the packs are adjudicated.
+15. [x] Render the commit handoff once for `ai-memory-ingester`.
+16. [x] Record the turn through the governed worklog writer.
+17. [x] Hand the review packs and the recommendations to the owner. Results stay provisional until the packs are adjudicated.
 
 _Execution note, 2026-11-08: steps 4 to 13 are done. Results: section 13 of rerank_enhacement.md. The ledgers of tasks E to O were drafted by four parallel agents, one batch each, and re-checked with `ledger_check.py` by the main session. All tasks stay unadjudicated until the owner reviews the packs._
 

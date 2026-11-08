@@ -1466,4 +1466,9 @@ Frozen per task, chat-turn branch, cov@10 (fts5, then fts5 + re-rank at weight 1
 - Indexed worklogs and all-source branches are not fully frozen (worklog documents carry no date).
 
 
+### Time-based freeze (2026-11-06)
+
+The corpora are now cut by timestamp, because turn numbers follow the order of ingestion (details: section 12.6 of [rerank_enhacement.md](rerank_enhacement.md)). Mean cov@10 on chat turns: lexical 23.1, weight 12 40.0, weight 5 38.8 (number cutoff: 33.6, 43.3, 41.3). Weight 12 against lexical: +16.9, significant. D-35 (weight 12) and the neighbor default (`adjacent`) are unchanged. The tables above this note use the number cutoff.
+
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

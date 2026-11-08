@@ -64,12 +64,35 @@ def manifest_checksums():
 
 
 FROZEN = os.environ.get('BENCH_FROZEN') == '1'
+FREEZE_BY = os.environ.get('BENCH_FREEZE_BY') or 'time'
 TASK_FOLDERS = {}
 
 
 def set_frozen(value=True):
     global FROZEN
     FROZEN = bool(value)
+
+
+def set_freeze_by(value):
+    global FREEZE_BY
+    if value not in ('time', 'number'):
+        raise ValueError(f'unknown freeze mode {value}')
+    FREEZE_BY = value
+
+
+def add_freeze_arguments(parser):
+    parser.add_argument('--frozen', action='store_true')
+    parser.add_argument('--freeze-by', choices=['time', 'number'], default=None)
+
+
+def apply_freeze_arguments(args):
+    set_frozen(args.frozen)
+    if args.freeze_by:
+        set_freeze_by(args.freeze_by)
+
+
+def frozen_by_time():
+    return FROZEN and FREEZE_BY == 'time'
 
 
 def task_data_dir(task):
@@ -114,18 +137,23 @@ def full_text(origin, doc_id, data_dir=None):
     return (row[0] or '') if row else ''
 
 
+def in_scope(task, name):
+    turn = number(name)
+    if frozen_by_time():
+        return turn not in task['excluded']
+    return turn is not None and turn <= task['cutoff_turn'] and turn not in task['excluded']
+
+
 def eligible_row(task, row):
     if row.get('source_archive') != 'chat:turns':
         return True
-    turn = number(row.get('file_name') or row.get('file_path'))
-    return turn is not None and turn <= task['cutoff_turn'] and turn not in task['excluded']
+    return in_scope(task, row.get('file_name') or row.get('file_path'))
 
 
 def frozen_top(task, rows, limit=20):
     picked = []
     for row in rows:
-        turn = number(row.get('file_name') or row.get('file_path'))
-        if turn is None or turn > task['cutoff_turn'] or turn in task['excluded']:
+        if not in_scope(task, row.get('file_name') or row.get('file_path')):
             continue
         picked.append(row)
         if len(picked) == limit:

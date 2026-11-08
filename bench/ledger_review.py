@@ -29,8 +29,7 @@ def turn_matches(task, groups):
     cursor = common.connection('convo.db', common.task_data_dir(task)).execute("SELECT file_name, content FROM documents WHERE source_archive = 'chat:turns'")
     count = 0
     for name, content in cursor:
-        number = common.number(name)
-        if number is None or number > task['cutoff_turn'] or number in task['excluded']:
+        if not common.in_scope(task, name):
             continue
         text = (content or '').lower()
         if all(re.search(g, text) for g in groups):
@@ -50,9 +49,9 @@ def describe(result):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('task')
-    parser.add_argument('--frozen', action='store_true')
+    common.add_freeze_arguments(parser)
     args = parser.parse_args()
-    common.set_frozen(args.frozen)
+    common.apply_freeze_arguments(args)
     tasks = common.load_tasks()
     task = tasks[args.task.upper()]
     sources = {path: load_lines(path) for path in task.get('review_sources', [])}

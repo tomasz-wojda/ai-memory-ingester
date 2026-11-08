@@ -53,7 +53,7 @@ def score_case(task, run, depth, mode):
         common.assert_no_crowding(task, common.chat_rows(rows), depth or 30)
     result = {
         'scored': sum(1 for row in window if row.get('rerank_score') is not None),
-        'post_cutoff_in_depth': sum(1 for row in window if (common.number(row.get('file_name')) or 0) > task['cutoff_turn']),
+        'post_cutoff_in_depth': sum(1 for row in window if not common.eligible_row(task, row)),
         'wall_s': run['p50'], 'wall_p50': run['p50'], 'wall_p95': run['p95'], 'wall_cold': run['cold_wall'], 'degraded_runs': run['degraded_runs'],
         'fused': coverage_by_cut(task, common.chat_rows(rows), mode),
         'model_only': coverage_by_cut(task, common.chat_rows(common.model_only_order(rows)), mode),
@@ -102,9 +102,9 @@ def main():
     parser.add_argument('--max-tokens', type=int, default=512)
     parser.add_argument('--tasks', default='')
     parser.add_argument('--tag', default='')
-    parser.add_argument('--frozen', action='store_true')
+    common.add_freeze_arguments(parser)
     args = parser.parse_args()
-    common.set_frozen(args.frozen)
+    common.apply_freeze_arguments(args)
     wanted = args.systems.split(',')
     depths = [int(value) for value in args.depths.split(',')]
     settings = parse_settings(args.settings)
@@ -145,7 +145,7 @@ def main():
                 common.stop_service(process)
     shutil.rmtree(work, ignore_errors=True)
     report = {'cases': [{'task': key, 'form': label, 'query': query} for key, label, query in cases], 'device': args.device,
-              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'corpora': common.corpus_manifests(tasks), 'results': results,
+              'depths': depths, 'evidence': args.evidence, 'repeats': args.repeats, 'data_dir': str(common.DATA_DIR), 'snapshot': snapshot.manifest(), 'frozen': args.frozen, 'freeze_by': common.FREEZE_BY if args.frozen else None, 'corpora': common.corpus_manifests(tasks), 'results': results,
               'summary': summarize({k: v for k, v in results.items() if 'error' not in v})}
     common.OUT_DIR.mkdir(parents=True, exist_ok=True)
     (common.OUT_DIR / f'model-bench{args.tag}.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')

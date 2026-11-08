@@ -45,6 +45,23 @@ All 11 worklog files and capsules exist (checked 2026-11-05). Turn counts are fr
 - `cutoff_turn` = the highest turn number whose timestamp is at or before the freeze instant, among the turns of the ticket and the turns around them. I do not know yet whether turn numbers rise with time without exceptions (undated turns exist). Step 3 checks this on the snapshot and stops on a conflict.
 - `journal_cutoff` = freeze instant (same rule as tasks C and D).
 - Active tickets (SCTASK1759003, KD-6919) are frozen at the capsule date. Later work is not part of the task.
+- Amendment B1 (below) replaces the number rule for chat turns: turns are cut by their timestamp, and `cutoff_turn` only serves undated turns.
+
+Freeze table (step 3, 2026-11-06). `freeze_instant` is the capsule's `authoritative_through`, or for DEVOPS-849 the last dated ACTION LOG entry (2026-10-07 13:59 local, 11:59Z; the capsule shows the invalid 2035-05-22). `cutoff_turn` is the fallback number for undated turns: the number just before the first run of 20 consecutive dated turns after the freeze. On tasks A to D this rule gives 2885, 2895, 9979 and 10440 (the tasks use 2884, 2884, 9980 and 10467).
+
+| Task | Ticket | `freeze_instant` | `cutoff_turn` |
+|---|---|---|---:|
+| E | DEVOPS-849 | 2026-10-07T11:59:00Z | 7015 |
+| F | KD-6919 | 2026-11-01T01:53:00Z | 10116 |
+| G | CWP-11649 | 2026-09-26T01:59:00Z | 6014 |
+| H | SCTASK1280900 | 2026-10-15T21:59:59Z | 7836 |
+| I | SCTASK1759003 | 2026-11-03T21:48:00Z | 10491 |
+| J | KD-7242 | 2026-09-25T21:59:59Z | 5989 |
+| K | KD-7136 | 2026-10-15T19:25:00Z | 7749 |
+| L | KD-7172 | 2026-10-16T21:59:59Z | 7903 |
+| M | SCTASK1541060 | 2026-10-08T21:59:59Z | 7091 |
+| N | KD-6863 | 2026-10-24T21:59:59Z | 8889 |
+| O | DEVOPS-796 | 2026-06-01T21:59:59Z | 740 |
 
 ### 3.3 Queries (three per task, 33 in total)
 
@@ -100,7 +117,7 @@ All runs: snapshot `20261104`, `--frozen`, mmarco on MPS, depth 30, twice (deter
 - `python3 -m py_compile bench/*.py`, `git status` (no ledger, snapshot or corpus tracked), and a test of `ledger_check.py` on tasks C and D (the strict anchors of those two tasks must pass checks (a) and (b), or the failure list is reported).
 - The engine, the jar and the service are not touched.
 
-## Amendment B1 (proposal, not approved): time-based freeze
+## Amendment B1 (approved 2026-11-06 and done): time-based freeze
 
 Found in step 3 on 2026-11-06. Execution stopped there, as the plan requires on a conflict. Steps 1 and 2 are done: the candidate table is identical on the snapshot, and `bench/ledger_check.py` exists. Test on the existing tasks: task D passes; task C fails check (b) for one anchor (C10, 1.40% false matches on 3,000 unrelated turns, limit 1%). The ledgers of C and D are not changed: they belong to R02.
 
@@ -114,13 +131,15 @@ Options:
 1. **Time-based freeze (recommended).** `task_corpus.build` and `common.eligible_row` cut chat turns by their timestamp (`parse_instant`): a turn is kept when its time is at or before `freeze_instant`. Undated turns (737) are kept only when their number is at or below a per-task fallback number (the highest number of a dated turn at or before the freeze, taken from the live sequence). `cutoff_turn` stays in the task files for the excluded-turn rule and for reports. The four existing corpora are rebuilt, and tasks A to D are re-run (baseline and sweeps, twice), because about 1,400 to 2,400 turns per task come back. The decisions D-35 (weight 12) and the neighbor default were taken on the number-based corpora: they are re-checked on the rerun, and reopened as a recommendation if the outcome changes.
 2. **Keep the number cutoff.** Simplest and consistent with A to D. Cost: each new task loses 5 to 30% of its own turns, so check (c) may mark real facts "source only", and DEVOPS-796 needs a hand-set cutoff.
 
-Checklist if option 1 is approved (inserted before step 3): (a) change `task_corpus.py` and `common.eligible_row` for time-based cuts, with `verify` extended (no turn dated after the freeze; undated turns above the fallback number removed); (b) rebuild the four corpora and verify them; (c) re-run tasks A to D (frozen baseline and sweeps, twice) and compare with section 12 of `rerank_enhacement.md`; (d) record the outcome and any change to D-35 or the neighbor default; then continue with step 3.
+Result: option 1 was built and checked (items a to d). Outcome in section 12.6 of `rerank_enhacement.md`: D-35 and the neighbor default are unchanged. Steps 3 and later now use the time-based rule: `freeze_instant` is set for each task, and `cutoff_turn` is the fallback number for undated turns (highest number of a dated turn at or before the freeze in the live sequence), not a cut by number.
+
+Checklist of option 1 (done): (a) change `task_corpus.py` and `common.eligible_row` for time-based cuts, with `verify` extended (no turn dated after the freeze; undated turns above the fallback number removed); (b) rebuild the four corpora and verify them; (c) re-run tasks A to D (frozen baseline and sweeps, twice) and compare with section 12 of `rerank_enhacement.md`; (d) record the outcome and any change to D-35 or the neighbor default; then continue with step 3.
 
 ## IMPLEMENTATION CHECKLIST
 
 1. [x] Re-run `bench/candidates.py` on the snapshot and confirm the 11 tickets and their turn counts.
 2. [x] Write `bench/ledger_check.py` with checks (a), (b) and (c) of section 3.4. Test it on tasks C and D.
-3. [ ] For each ticket, list its turns with number and timestamp, check that turn numbers and times agree around the freeze instant, and set `freeze_instant`, `cutoff_turn` and `journal_cutoff` (section 3.2). Stop on a conflict.
+3. [x] For each ticket, list its turns with number and timestamp, check that turn numbers and times agree around the freeze instant, and set `freeze_instant`, `cutoff_turn` and `journal_cutoff` (section 3.2). Stop on a conflict.
 4. [ ] Add the field `adjudicated` and the option `--adjudicated-only` to `three_way.py`, `model_bench.py` and `common.load_tasks` (default `False`; tasks A to D keep their current status in the report).
 5. [ ] Draft the ledger, the strict set, the three query forms and `review_sources` for task E. Run `ledger_check.py`. Repeat for tasks F to O, one task at a time. Drop and report a task that fails section 3.4.
 6. [ ] Build the review packs with `ledger_review.py --frozen` for all surviving new tasks.

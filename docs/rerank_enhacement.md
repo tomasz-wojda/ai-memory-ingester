@@ -559,6 +559,35 @@ Against lexical (33.6) all three modes are significant (+18.7, +20.5, +17.7).
 - Corpora: four, 127, 118, 57 and 57 MB under `data/eval/snapshots/20261104/tasks/` (git-ignored); the tool rebuilds them.
 - Results are in `three-way-fza-w12.json`, `three-way-fza-w5.json`, `model-bench-fza.json`, `model-bench-fz-sweep-a.json` and `model-bench-fz-nb-a.json` (and the `b` runs) in `data/eval/ledger-run/` (git-ignored).
 
+### 12.6 Re-run on time-based corpora (amendment B1 of the R03 plan, 2026-11-06)
+
+Turn numbers follow the order of ingestion, not time (539 date resets in number order, 737 undated turns). The number cutoff of 12.1 to 12.4 deleted turns that were written before the freeze: 1,416 (A), 1,435 (B), 2,205 (C) and 2,357 (D). The corpora are now cut by timestamp (`--freeze-by time`, the default of `--frozen`): a turn stays when its date is at or before `freeze_instant`; an undated turn stays when its number is at or below `cutoff_turn`. Kept turns: A 4,044, B 4,062, C 11,859, D 12,466 (number cutoff: 2,629, 2,629, 9,658 and 10,145). `--freeze-by number` rebuilds the old corpora; it reproduces `model-bench-fza.json` with 0 non-timing differences. Unfrozen runs still reproduce `model-bench-s8.json` with 0 differences. All time-based runs were done twice and match in all non-timing fields. Verification passes on all four corpora.
+
+Mean cov@10, chat turns, 10 queries:
+
+| System | Number cutoff (12.1) | Time cutoff |
+|---|---|---|
+| lexical | 33.6 | 23.1 |
+| mmarco, weight 12 | 43.3 | 40.0 |
+| mmarco, weight 5 | 41.3 | 38.8 |
+
+More pre-freeze turns compete for the top 10, so the first-stage result falls and the re-ranker gains more. Weight 12 against lexical: +16.9, interval [11.5, 22.1], significant, 9 wins, 0 losses, 1 tie (number cutoff: +9.7, interval [-0.25, 19.4]). Median wall time is unchanged (1.63 s for weight 12, 0.93 s for weight 5).
+
+Weight sweep (against weight 12): rrf:5 38.8 (-1.2, [-4.8, 2.3]); rrf:8 41.0 (+1.0, [0.0, 3.1], 1 win and 9 ties); rrf:20 37.7 (-2.3); rrf:40 37.8 (-2.2); score:5, 12, 20 35.9, 34.4 and 34.4 (score:12 and score:20 are significantly lower, about -5.6); cut 37.8 (-2.2). Weight 12 against weight 5: +1.2, interval [-2.3, 4.8], per task A +3.5, B -1.1, C 0.0, D +2.5.
+
+Neighbor sweep (against `adjacent`, 40.0):
+
+| Mode | Mean | Difference, interval | Per task (A, B, C, D) |
+|---|---|---|---|
+| after | 44.2 | +4.2 [-6.2, 14.9] | -5.5, +19.8, -7.7, -7.5 |
+| off | 44.9 | +4.9 [-5.3, 15.3] | -5.5, +19.8, -7.7, 0.0 |
+| scored | 44.9 | +4.9 [-5.3, 15.3] | -5.5, +19.8, -7.7, 0.0 |
+
+Outcome of the rules, unchanged from 12.4:
+- **D-35:** rule (a) is met (+16.9 over lexical; worst task against weight 5 is -1.1; the interval against weight 5 is not below zero). Weight 12 stays. Weight 8 is 1.0 higher with an interval that starts at 0.0 and 9 ties: not significant.
+- **Neighbor default:** no mode passes the gates. Task C falls by 7.7 and task A by 5.5 in every mode (limit 3), and no interval excludes zero. `adjacent` stays. In this run `scored` and `off` give the same result.
+- Limits of 12.5 apply. Results are in `*-tma*`, `*-tmb*`, `model-bench-tm-sweep-*` and `model-bench-tm-nb-*` files in `data/eval/ledger-run/` (git-ignored).
+
 ---
 
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tasks and results refer to internal tickets and memory content: share this document only with people allowed to see them.

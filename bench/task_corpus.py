@@ -55,7 +55,8 @@ def corpus_key(task):
     excluded = sorted(task['excluded'])
     marker = hashlib.md5(','.join(map(str, excluded)).encode()).hexdigest()[:8] if excluded else 'none'
     freeze = parse_freeze(task).strftime('%Y%m%dT%H%MZ')
-    return f"t{task['cutoff_turn']}-x{marker}-f{freeze}"
+    key = f"t{task['cutoff_turn']}-x{marker}-f{freeze}"
+    return key + '-time' if common.FREEZE_BY == 'time' else key
 
 
 def snapshot_manifest(snapshot_dir):
@@ -79,6 +80,30 @@ def backup(source, target):
 def turn_number_function(name):
     found = re.search(r'turn-(\d+)\.md$', name or '')
     return int(found.group(1)) if found else None
+
+
+def classify_turns(rows, task):
+    freeze = parse_freeze(task)
+    remove, counts = [], {'after_freeze': 0, 'undated_above_cutoff': 0, 'excluded': 0, 'kept_dated': 0, 'kept_undated': 0}
+    for doc_id, name, head in rows:
+        number = turn_number_function(name)
+        if number in task['excluded']:
+            counts['excluded'] += 1
+            remove.append(doc_id)
+            continue
+        instant = parse_instant(head)
+        if instant is None:
+            if number is not None and number > task['cutoff_turn']:
+                counts['undated_above_cutoff'] += 1
+                remove.append(doc_id)
+            else:
+                counts['kept_undated'] += 1
+        elif instant > freeze:
+            counts['after_freeze'] += 1
+            remove.append(doc_id)
+        else:
+            counts['kept_dated'] += 1
+    return remove, counts
 
 
 def finish(connection):
@@ -119,9 +144,15 @@ def build(snapshot_dir, task, root=None):
     convo = sqlite3.connect(target / 'convo.db')
     convo.create_function('turnno', 1, turn_number_function)
     before = convo.execute("SELECT count(*) FROM documents WHERE source_archive = 'chat:turns'").fetchone()[0]
-    marks = ','.join('?' * len(task['excluded']))
-    clause = f"turnno(file_name) > ?{f' OR turnno(file_name) IN ({marks})' if task['excluded'] else ''}"
-    convo.execute(f"DELETE FROM documents WHERE source_archive = 'chat:turns' AND ({clause})", [task['cutoff_turn'], *sorted(task['excluded'])])
+    turn_counts = None
+    if common.FREEZE_BY == 'time':
+        rows = convo.execute("SELECT id, file_name, substr(content, 1, 700) FROM documents WHERE source_archive = 'chat:turns'").fetchall()
+        remove, turn_counts = classify_turns(rows, task)
+        delete_ids(convo, remove)
+    else:
+        marks = ','.join('?' * len(task['excluded']))
+        clause = f"turnno(file_name) > ?{f' OR turnno(file_name) IN ({marks})' if task['excluded'] else ''}"
+        convo.execute(f"DELETE FROM documents WHERE source_archive = 'chat:turns' AND ({clause})", [task['cutoff_turn'], *sorted(task['excluded'])])
     removed['chat:turns'] = before - convo.execute("SELECT count(*) FROM documents WHERE source_archive = 'chat:turns'").fetchone()[0]
     finish(convo)
     convo.close()
@@ -142,7 +173,8 @@ def build(snapshot_dir, task, root=None):
     fingerprints = {name: snapshot.content_fingerprint(target / name) for name in ('convo.db', 'worklogs.db', 'artifacts.db')}
     manifest = {
         'key': key,
-        'parameters': {'cutoff_turn': task['cutoff_turn'], 'excluded': sorted(task['excluded']), 'freeze_instant': parse_freeze(task).isoformat()},
+        'parameters': {'cutoff_turn': task['cutoff_turn'], 'excluded': sorted(task['excluded']), 'freeze_instant': parse_freeze(task).isoformat(), 'freeze_by': common.FREEZE_BY},
+        'turns': turn_counts,
         'source_content_sha256': source_fingerprints(snapshot_dir),
         'removed': removed,
         'artifacts_kept_dated': kept,
@@ -180,10 +212,25 @@ def hits(path, query, only_chat_turns=False):
         connection.close()
 
 
-def eligible(task, pair):
+def turn_status(snapshot_dir):
+    connection = sqlite3.connect(f'file:{Path(snapshot_dir) / "convo.db"}?mode=ro', uri=True)
+    try:
+        return {path: parse_instant(head) for path, head in connection.execute("SELECT file_path, substr(content, 1, 700) FROM documents WHERE source_archive = 'chat:turns'")}
+    finally:
+        connection.close()
+
+
+def eligible(task, pair, status=None):
     if pair[0] != 'chat:turns':
         return True
     number = turn_number_function(pair[1])
+    if status is not None:
+        if number in task['excluded']:
+            return False
+        instant = status.get(pair[1])
+        if instant is None:
+            return number is None or number <= task['cutoff_turn']
+        return instant <= parse_freeze(task)
     return number is None or (number <= task['cutoff_turn'] and number not in task['excluded'])
 
 
@@ -197,8 +244,23 @@ def verify(snapshot_dir, task):
 
     convo = sqlite3.connect(f'file:{folder / "convo.db"}?mode=ro', uri=True)
     convo.create_function('turnno', 1, turn_number_function)
-    above = convo.execute("SELECT count(*) FROM documents WHERE source_archive = 'chat:turns' AND turnno(file_name) > ?", (task['cutoff_turn'],)).fetchone()[0]
-    check('no chat turn above the cutoff', above == 0, str(above))
+    status = None
+    if common.FREEZE_BY == 'time':
+        status = turn_status(snapshot_dir)
+        freeze_now = parse_freeze(task)
+        late_dated = undated_above = 0
+        for name, head in convo.execute("SELECT file_name, substr(content, 1, 700) FROM documents WHERE source_archive = 'chat:turns'"):
+            instant = parse_instant(head)
+            number = turn_number_function(name)
+            if instant is not None and instant > freeze_now:
+                late_dated += 1
+            if instant is None and number is not None and number > task['cutoff_turn']:
+                undated_above += 1
+        check('no chat turn dated after the freeze instant', late_dated == 0, str(late_dated))
+        check('no undated chat turn above the cutoff number', undated_above == 0, str(undated_above))
+    else:
+        above = convo.execute("SELECT count(*) FROM documents WHERE source_archive = 'chat:turns' AND turnno(file_name) > ?", (task['cutoff_turn'],)).fetchone()[0]
+        check('no chat turn above the cutoff', above == 0, str(above))
     if task['excluded']:
         marks = ','.join('?' * len(task['excluded']))
         found = convo.execute(f"SELECT count(*) FROM documents WHERE source_archive = 'chat:turns' AND turnno(file_name) IN ({marks})", sorted(task['excluded'])).fetchone()[0]
@@ -230,7 +292,7 @@ def verify(snapshot_dir, task):
             cut = hits(folder / db, query)
             full = {pair for pair in hits(snapshot_dir / db, query)}
             if db == 'convo.db':
-                full = {pair for pair in full if eligible(task, pair)}
+                full = {pair for pair in full if eligible(task, pair, status)}
             else:
                 connection = sqlite3.connect(f'file:{snapshot_dir / db}?mode=ro', uri=True)
                 dated = {}
@@ -249,7 +311,10 @@ def main():
     parser.add_argument('command', choices=['build', 'verify', 'manifest'])
     parser.add_argument('--snapshot', default=None)
     parser.add_argument('--tasks', default='')
+    parser.add_argument('--freeze-by', choices=['time', 'number'], default=None)
     args = parser.parse_args()
+    if args.freeze_by:
+        common.set_freeze_by(args.freeze_by)
     snapshot_dir = Path(args.snapshot) if args.snapshot else common.DATA_DIR
     tasks = common.load_tasks()
     if args.tasks:
@@ -259,7 +324,7 @@ def main():
         if args.command == 'build':
             folder = ensure(snapshot_dir, task)
             manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
-            print(key, folder.name, 'removed', manifest['removed'], 'sizes MB', {k: round(v / 1e6) for k, v in manifest['sizes_bytes'].items()},
+            print(key, folder.name, 'removed', manifest['removed'], 'turns', manifest.get('turns'), 'sizes MB', {k: round(v / 1e6) for k, v in manifest['sizes_bytes'].items()},
                   'artifacts unparseable', manifest['artifacts_unparseable_kept'])
         elif args.command == 'manifest':
             print(key, corpus_key(task))

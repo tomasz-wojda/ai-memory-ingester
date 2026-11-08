@@ -104,7 +104,7 @@ All runs use the snapshot `20261104`, mmarco on MPS, depth 30, and run twice for
 18. [ ] Record the turn through the governed worklog writer.
 19. [ ] Report the D-35 and neighbor recommendations to the owner for decision.
 
-_Execution note: steps 7 to 14 are done on 2026-11-05. Results: section 12 of rerank_enhacement.md._
+_Execution note, 2026-11-06: the cut is now by timestamp (`--freeze-by time`, default); the number cutoff described above stays available as `--freeze-by number` (section 12.6 of rerank_enhacement.md). Steps 7 to 14 are done on 2026-11-05. Results: section 12 of rerank_enhacement.md._
 
 Any deviation from this plan returns to PLAN mode.
 

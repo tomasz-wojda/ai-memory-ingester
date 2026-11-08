@@ -34,8 +34,7 @@ def chat_turn_texts(task, data_dir):
     cursor = common.connection('convo.db', data_dir).execute("SELECT file_name, content FROM documents WHERE source_archive = 'chat:turns'")
     out = []
     for name, content in cursor:
-        number = common.number(name)
-        if number is None or number > task['cutoff_turn'] or number in task['excluded']:
+        if not common.in_scope(task, name):
             continue
         out.append((content or '').lower())
     return out
@@ -67,10 +66,10 @@ def check_turn_presence(task, turns):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('task')
-    parser.add_argument('--frozen', action='store_true')
+    common.add_freeze_arguments(parser)
     parser.add_argument('--sample', type=int, default=3000)
     args = parser.parse_args()
-    common.set_frozen(args.frozen)
+    common.apply_freeze_arguments(args)
     task = common.load_tasks()[args.task.upper()]
     data_dir = common.task_data_dir(task)
     blobs = read_sources(task)

@@ -51,6 +51,11 @@ class Config {
     static final String NEIGHBOR_MODE_DEFAULT = 'adjacent'
     static final List<String> NEIGHBOR_MODES = ['adjacent', 'after', 'scored', 'off'].asImmutable()
     static final int NEIGHBOR_ANCHORS_DEFAULT = 10
+    static final String TICKET_SELECT_DEFAULT = 'off'
+    static final List<String> TICKET_SELECT_MODES = ['off', 'gate', 'coverage'].asImmutable()
+    static final Set<String> GENERIC_QUERY_WORDS = (
+        'summary of status overview state about for the what is on ticket current latest update updates tell me give show'
+            .tokenize(' ') as Set<String>).asImmutable()
     static final int LATE_TOP_K = 50
     static final String SERVICE_SOCKET_RELATIVE = '.ai-worklog/run/memory-service.sock'
     static final String SERVICE_TOKEN_RELATIVE = '.ai-worklog/run/memory-service.token'
@@ -468,6 +473,18 @@ class Config {
     static String neighborMode() {
         String value = (System.getProperty('ai.memory.neighbors') ?: System.getenv('AI_MEMORY_NEIGHBORS') ?: '').trim().toLowerCase()
         return value in NEIGHBOR_MODES ? value : NEIGHBOR_MODE_DEFAULT
+    }
+
+    /**
+     * How a query with a ticket facet and only generic terms is handled. AI_MEMORY_TICKET_SELECT selects off (the default),
+     * gate (no re-rank for such a query) or coverage (gate, and the ticket's chat turns are chosen by coverage of
+     * informative tokens). Anything else is ignored.
+     *
+     * @return Ticket selection mode name
+     */
+    static String ticketSelect() {
+        String value = (System.getProperty('ai.memory.ticket_select') ?: System.getenv('AI_MEMORY_TICKET_SELECT') ?: '').trim().toLowerCase()
+        return value in TICKET_SELECT_MODES ? value : TICKET_SELECT_DEFAULT
     }
 
     /**

@@ -1476,4 +1476,8 @@ The corpora are now cut by timestamp, because turn numbers follow the order of i
 Section 13 of [rerank_enhacement.md](rerank_enhacement.md). Provisional: the ledgers of the 11 new tasks are not adjudicated. Mean cov@10, chat turns: lexical 30.6, weight 12 32.8, weight 5 33.2, re-ranker order alone 37.5. Weight 12 against lexical: +2.2 (interval [-1.8, 6.2], not significant); on tasks A to D +16.9, on the 33 new queries -2.2, on the new tasks' ticket-key form -6.9 (significant). Neighbor modes against `adjacent`: `after` +4.8 and `off` +4.1 (both significant), `scored` +2.4; each loses more than 3 points on some task, so no mode passes the per-task gate (proposed decision D-36). D-35 stays closed.
 
 
+### Ticket coverage selection (2026-11-08)
+
+Section 14 of [rerank_enhacement.md](rerank_enhacement.md). For a ticket key with generic words (`summary of KD-6919`) the re-ranker scored passages against `summary of`, and the candidates were the newest turns of the ticket. New setting `--ticket-select coverage` (off by default) chooses the ticket's turns by coverage of informative tokens. Mean cov@10 over 43 queries: lexical 30.6, default 32.8, `coverage` 38.3, `coverage` + `neighbors=after` 41.0. On the 12 ticket-key queries: lexical 31.1, default 25.9, `coverage` 45.7 (held-out tasks gain as much as development tasks). The other 31 queries do not change. All five gates pass for `coverage` against the default. Proposed decision D-37. Provisional: the new ledgers are not adjudicated.
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

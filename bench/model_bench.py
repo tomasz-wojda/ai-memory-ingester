@@ -26,6 +26,9 @@ def parse_settings(text):
             if part.startswith('neighbors='):
                 extra += ['--neighbors', part.partition('=')[2]]
                 continue
+            if part.startswith('ticketselect='):
+                extra += ['--ticket-select', part.partition('=')[2]]
+                continue
             fusion, _, weight = part.partition(':')
             extra += ['--rerank-fusion', fusion]
             if weight:

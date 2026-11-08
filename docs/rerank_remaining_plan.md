@@ -42,6 +42,8 @@ The frozen results show where coverage is lost: task C (0.0 at first stage), art
 
 Exit per item: pass the gates, or recorded as not built.
 
+_Status 2026-11-08: R28 done (ticket coverage selection, [ticket_coverage_plan.md](ticket_coverage_plan.md), section 14 of `rerank_enhacement.md`; proposed decision D-37). R29 is partly covered for ticket queries with generic words only. R30 to R36 are not started._
+
 ### Phase 3: passages and depth (needs R10)
 
 Order matters: measure before changing.

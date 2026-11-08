@@ -1013,6 +1013,17 @@ class MemoryEngine {
      * @param sourceArchive Archive name
      * @param visitor Closure called with a map of id, source_archive, file_path, file_name, content
      */
+    /**
+     * Count and highest id of an archive, as one stamp that changes when the archive is replaced.
+     *
+     * @param sourceArchive Archive name
+     * @return Text of the form count:maxId
+     */
+    String archiveStamp(String sourceArchive) {
+        def row = sql.firstRow('SELECT count(*) AS total, coalesce(max(id), 0) AS top FROM documents WHERE source_archive = ?', [sourceArchive])
+        return "${row.total}:${row.top}".toString()
+    }
+
     void eachDocument(String sourceArchive, Closure visitor) {
         sql.eachRow('SELECT id, source_archive, file_path, file_name, content, is_compressed FROM documents WHERE source_archive = ? ORDER BY id', [sourceArchive]) { row ->
             String text = (row.is_compressed == 1) ? decompressText(row.content) : (row.content?.toString() ?: '')

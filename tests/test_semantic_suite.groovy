@@ -42,6 +42,7 @@ class TestSemanticSuite {
             testRerank()
             testRerankFusion()
             testNeighborModes()
+            testTicketCoverage()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
             testReindexCommand()
@@ -312,6 +313,54 @@ why do exports fail
         verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 12 / 61.0d) < 1.0e-12d)
     }
 
+    private static void testTicketCoverage() {
+        Class coverage = loader.loadClass('TicketCoverage')
+        verify('a query of generic words is generic', coverage.genericTerms('summary of') && coverage.genericTerms('Status of the ticket'))
+        verify('a query with a topic word or no word is not generic', !coverage.genericTerms('summary of nginx timeout') && !coverage.genericTerms('') && !coverage.genericTerms(null))
+        verify('a token with a digit, a joiner or seven characters is informative', ['kd-6919', 'a_b', 'abc1', 'timeout'].every { coverage.informative(it) })
+        verify('a short plain token is not informative', !coverage.informative('abc') && !coverage.informative('nginx'))
+        Set<String> found = coverage.tokens('see kd-6919 and a_b, v1.2.3 now') as Set<String>
+        verify('identifiers stay one token', found.contains('kd-6919') && found.contains('a_b') && found.contains('v1.2.3'))
+        String head = coverage.headText("---\nk: v\n---\n\nHELLO there") as String
+        verify('the head text starts after the front matter and is lowercase', head.contains('hello there') && !head.contains('k: v'))
+        List<Map> turns = [
+            [content: "---\nk: v\n---\n\nrareid-1 rareid-2", sequence: 1L],
+            [content: "---\nk: v\n---\n\nrareid-1", sequence: 2L],
+            [content: "---\nk: v\n---\n\ncommon_thing", sequence: 3L]
+        ]
+        List<Map> chosen = coverage.select(turns, 100, ['rareid-1': 1, 'common_thing': 50], 3) as List<Map>
+        verify('the turn with most new rare tokens is chosen first', chosen && chosen[0].sequence == 1L)
+        verify('a turn that adds no new token is never chosen', chosen*.sequence == [1L, 3L])
+        verify('no turns give no selection', coverage.select([], 100, [:], 3) == [])
+        List<Map> tied = [[content: "---\nk: v\n---\n\nalpha-1", sequence: 1L], [content: "---\nk: v\n---\n\nbeta-1", sequence: 5L]]
+        verify('the recency prior breaks a tie toward the newer turn', coverage.select(tied, 100, ['alpha-1': 1, 'beta-1': 1], 2)*.sequence == [5L, 1L])
+        String saved = System.getProperty('ai.memory.ticket_select')
+        try {
+            System.clearProperty('ai.memory.ticket_select')
+            verify('the ticket select mode is off by default', Config.ticketSelect() == 'off')
+            System.setProperty('ai.memory.ticket_select', 'coverage')
+            verify('the property sets the ticket select mode', Config.ticketSelect() == 'coverage')
+            System.setProperty('ai.memory.ticket_select', 'nonsense')
+            verify('an unknown ticket select mode gives off', Config.ticketSelect() == 'off')
+        } finally {
+            if (saved == null) System.clearProperty('ai.memory.ticket_select') else System.setProperty('ai.memory.ticket_select', saved)
+        }
+        Map off = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20])
+        verify('the mode off keeps the re-rank for a generic ticket query', (off.ticket_select as Map).mode == 'off' && (off.rerank as Map).reason != 'generic_ticket_query')
+        Map gate = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20, ticket_select: 'gate'])
+        verify('the gate skips the re-rank for a generic ticket query', (gate.rerank as Map).reason == 'generic_ticket_query' && (gate.rerank as Map).depth == 0 && gate.degraded == false)
+        Map topic = search('nginx timeout FIX-101', [rerank_mode: 'on', rerank_depth: 20, ticket_select: 'gate'])
+        verify('the gate leaves a query with a topic alone', (topic.rerank as Map).reason != 'generic_ticket_query')
+        Map selected = search('summary of FIX-101', [ticket_select: 'coverage'])
+        Map info = selected.ticket_select as Map
+        verify('coverage reports that it was applied to the four turns of the ticket', info.applied == true && info.candidates == 4 && (info.selected as int) >= 1)
+        List<Map> chatRows = (selected.results as List<Map>).findAll { it.source_archive == 'chat:turns' }
+        verify('coverage puts the ticket turns first', chatRows.take(info.selected as int).every { it.file_path.toString().startsWith('fix101/') })
+        verify('coverage adds no neighbor rows', (selected.neighbors as Map).added == 0)
+        Map plainTopic = search('nginx timeout FIX-101', [ticket_select: 'coverage'])
+        verify('coverage is not applied to a query with a topic', (plainTopic.ticket_select as Map).applied == false)
+    }
+
     private static void testNeighborModes() {
         String question = 'what did we decide about the nginx timeout'
         Map adjacent = search(question, [rerank_mode: 'on', rerank_depth: 20])
@@ -542,7 +591,7 @@ why do exports fail
         loader = new GroovyClassLoader(TestSemanticSuite.classLoader)
         Thread.currentThread().contextClassLoader = loader
         ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
-         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'MemoryRetrieval', 'FederatedEngine',
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'MemoryRetrieval', 'FederatedEngine',
          'EvalMetrics', 'GoldSet', 'SemanticStore', 'EvalRunner'].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         loader.parseClass(new File('tests/SemanticFixtureBuilder.groovy'))
         Config = loader.loadClass('Config')

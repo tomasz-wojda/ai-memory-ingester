@@ -68,12 +68,17 @@ class MemoryRetrieval {
         } else if (semanticQuery) {
             lateInfo = [used: false, degraded: true, reason: 'rerank_off']
         }
-        boolean rerankWanted = semanticQuery && rerankAllowed(options)
+        String ticketSelect = (options.ticket_select ?: Config.ticketSelect()).toString().trim().toLowerCase()
+        if (!(ticketSelect in Config.TICKET_SELECT_MODES)) ticketSelect = Config.TICKET_SELECT_DEFAULT
+        boolean genericTicket = ticketSelect != 'off' && parsed.ticket && TicketCoverage.genericTerms(parsed.terms)
+        Map ticketSelectInfo = [mode: ticketSelect, applied: false, candidates: 0, selected: 0]
+        boolean rerankWanted = semanticQuery && rerankAllowed(options) && !genericTicket
         int depth = (options.rerank_depth ?: Config.RERANK_DEPTH) as int
         int fuseLimit = rerankWanted ? Math.max(Math.max(limit * 2, limit), depth) : Math.max(limit * 2, limit)
         List<Map> fused = SignalFusion.fuse(pools, fuseLimit)
         Map rerankInfo = [degraded: !semanticQuery ? false : true, reason: semanticQuery ? 'rerank_off' : null, depth: 0]
         if (rerankWanted && !fused) rerankInfo = [degraded: false, reason: null, depth: 0]
+        if (genericTicket) rerankInfo = [degraded: false, reason: 'generic_ticket_query', depth: 0]
         boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
         String neighborMode = (options.neighbors ?: Config.neighborMode()).toString().trim().toLowerCase()
         if (!(neighborMode in Config.NEIGHBOR_MODES)) neighborMode = Config.NEIGHBOR_MODE_DEFAULT
@@ -100,7 +105,16 @@ class MemoryRetrieval {
                 neighborsScored = !preNeighbors.isEmpty()
             }
         }
-        if (neighborMode != 'off' && !neighborsScored) {
+        boolean coverageApplied = false
+        if (genericTicket && ticketSelect == 'coverage') {
+            Map coverage = coverageSelection(databases, parsed, fused, Math.max(limit * 2, limit))
+            ticketSelectInfo = [mode: ticketSelect] + (coverage.info as Map)
+            if (coverage.rows) {
+                fused = coverage.rows as List<Map>
+                coverageApplied = true
+            }
+        }
+        if (neighborMode != 'off' && !neighborsScored && !coverageApplied) {
             fused = NeighborExpansion.expand(fused, dataDir, allowMeta, 1)
             if (neighborMode == 'after') {
                 fused = fused.findAll { it.pool != 'neighbor' } + fused.findAll { it.pool == 'neighbor' }
@@ -127,6 +141,7 @@ class MemoryRetrieval {
                 relax_error: relaxError
             ],
             rerank: rerankInfo,
+            ticket_select: ticketSelectInfo,
             neighbors: [mode: neighborMode, added: fused.count { it.pool == 'neighbor' }, scored: fused.count { it.pool == 'neighbor' && it.rerank_score != null }],
             late: lateInfo,
             degraded: rerankInfo.degraded == true,
@@ -135,6 +150,41 @@ class MemoryRetrieval {
             pools: options.show_signals ? pools.collectEntries { k, v -> [k, v.size()] } : null,
             total_duration_ms: elapsedMs
         ]
+    }
+
+    private static Map coverageSelection(List<File> databases, ParsedQuery parsed, List<Map> fused, int count) {
+        File conversation = databases.find { it.name == Config.CONVERSATION_DB_NAME }
+        Map info = [applied: false, candidates: 0, selected: 0]
+        if (conversation == null) return [rows: null, info: info]
+        List<Map> turns = []
+        MemoryEngine engine = new MemoryEngine(conversation.absolutePath)
+        try {
+            engine.filterByPathFacets(parsed.facets(), 5000, TicketCoverage.CHAT_TURNS).each { Map row ->
+                turns << enrichDocumentRow(row, conversation.name) + [pool: 'coverage']
+            }
+        } finally {
+            engine.close()
+        }
+        if (!turns) return [rows: null, info: info]
+        Map<String, Object> frequency = TicketCoverage.documentFrequency(conversation)
+        List<Map> chosen = TicketCoverage.select(turns, frequency.documents as int, frequency.df as Map<String, Integer>, count)
+        if (!chosen) return [rows: null, info: info + [candidates: turns.size()]]
+        Set<String> chosenIds = chosen.collect { SignalFusion.stableIdOf(it) } as Set<String>
+        List<Map> ordered = []
+        Iterator<Map> next = chosen.iterator()
+        fused.each { Map row ->
+            if (row.source_archive != TicketCoverage.CHAT_TURNS) {
+                ordered << row
+            } else if (next.hasNext()) {
+                ordered << next.next()
+            }
+        }
+        next.each { ordered << it }
+        Set<String> placed = ordered.collect { SignalFusion.stableIdOf(it) } as Set<String>
+        fused.each { Map row ->
+            if (row.source_archive == TicketCoverage.CHAT_TURNS && !placed.contains(SignalFusion.stableIdOf(row))) ordered << row
+        }
+        return [rows: ordered, info: [applied: true, candidates: turns.size(), selected: chosen.size()]]
     }
 
     private static List<Map> applyFilters(List<Map> rows, Map options) {

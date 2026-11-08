@@ -202,7 +202,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 ### Phase D: query side
 
-- [ ] **R28 [ING] Route ticket-key queries.** When the query holds a ticket key, restrict or boost that ticket's documents and keep its capsule first (the pin exists for facets). Evidence: task D. Accept: ticket-key tasks improve without a loss on others.
+- [x] **R28 [ING] Route ticket-key queries.** When the query holds a ticket key, restrict or boost that ticket's documents and keep its capsule first (the pin exists for facets). Evidence: task D. Accept: ticket-key tasks improve without a loss on others. _Done 2026-11-08 behind `--ticket-select coverage` (off by default); evaluated in section 14: ticket-key queries +19.9 over the default, the other 31 queries unchanged._
 - [ ] **R29 [ING] Handle short and vague queries.** Add query expansion from the ticket vocabulary, or a minimum information rule that sends such a query to the relaxed path and the re-ranker with a larger depth. Evidence: "Trace in Konto" scored 5.1 with plain FTS5. Accept: short-query tasks improve.
 - [ ] **R30 [ING] Keep the diacritics path.** Check that the passages and the query keep their diacritics up to the model, and measure the ASCII-only case (3.2). Accept: a test that fails if diacritics are stripped before scoring.
 - [ ] **R31 [ING] Test language-aware handling.** Detect Polish and English queries, and test a model or setting per language only if the benchmark shows a gain. Accept: documented result, no change without a gain.
@@ -663,6 +663,64 @@ nDCG@10 gives the same direction as cov@10. With nDCG the loss on single tasks i
 - Evidence for a turn is its first 1,050 characters (`--evidence head`); the best-passage mode was not run here.
 - Only the chat-turn branch was run (model-bench). The indexed-worklog and all-source branches were not part of this plan.
 - Results are in `model-bench-r3-base-{a,b}` and `model-bench-r3-nb-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
+
+## 14. Ticket coverage selection (plan: [ticket_coverage_plan.md](ticket_coverage_plan.md))
+
+Date: 2026-11-08. Same benchmark as section 13 (43 queries, 15 tasks, frozen time-based corpora, mmarco, depth 30). Every run was done twice; the two runs match in all non-timing fields. With the setting off, the run reproduces `model-bench-r3-ndcg.json` (0 differences). Provisional: the ledgers are not adjudicated.
+
+### 14.1 Cause found in the code
+
+For `summary of KD-6919` the parser removes the ticket key. The ticket facet is `kd6919` and the terms are `summary of`. The candidate pools then come from the path facet, ordered by authority and recency (limit 50). The re-ranker scores passages against the query `summary of`, which names no topic. On 12 ticket-key queries (tasks D to O) lexical gets 31.1 cov@10, the 10 newest turns of the ticket get 30.7, and weight 12 gets 25.9.
+
+### 14.2 What was built
+
+New setting `ticket_select` (option `--ticket-select off|gate|coverage`, environment `AI_MEMORY_TICKET_SELECT`, default `off`):
+- `gate`: for a ticket query with only generic words (`summary of`, `status of`, `overview`, and similar), the re-rank is skipped (reason `generic_ticket_query`).
+- `coverage`: the gate, and the ticket's chat turns are chosen greedily: each step takes the turn that adds the most idf-weighted informative tokens (identifiers, numbers, long words) not yet covered, with a mild recency prior. Neighbor expansion is skipped. The idf comes from a sidecar `term-df.tsv` in the data folder (terms and counts), built on first use (about 1 s once per data folder) and rebuilt when the chat-turn archive changes.
+- Code: `lib/TicketCoverage.groovy` (new), `Config`, `MemoryRetrieval.searchTopic`, `03_query_memory.groovy`, `MemoryEngine.archiveStamp`. 20 new tests; all suites pass (semantic 177, query 80, query plan 119, retrieval 31, eval 27, chatlog 100, journal 25, worklog 42, reconciliation 33, shadow validation 44, memory lock 36, Python service 83 on three interpreters, wrapper 41). The jar is rebuilt.
+- The design was fixed on an offline prototype with variants chosen before the run; development tasks D to I, held-out tasks J to O (plan section 2).
+
+### 14.3 Results over 43 queries
+
+| Setting | cov@10 | Against lexical | Against default (weight 12, `adjacent`) | nDCG@10 |
+|---|---|---|---|---|
+| lexical | 30.6 | | | 29.6 |
+| default | 32.8 | +2.2 [-1.8, 6.2] | | 32.5 |
+| `gate` | 34.2 | +3.7 [0.5, 7.0] | +1.5 [-0.4, 3.6] | 34.0 |
+| `coverage` | 38.3 | +7.8 [3.3, 12.5] | +5.6 [2.0, 10.0], 9 wins, 1 loss, 33 ties | 38.0 |
+| `neighbors=after` | 37.6 | +7.0 [2.4, 11.9] | +4.8 [0.9, 9.0] | 35.2 |
+| `coverage` + `after` | 41.0 | +10.5 [5.5, 15.8] | +8.3 [3.4, 13.4] | 39.5 |
+
+`coverage` leaves the other 31 queries unchanged (31 of 31 equal). `coverage` + `after` against `after` alone: +3.5 [0.9, 6.5].
+
+### 14.4 The 12 ticket-key queries (cov@10)
+
+| Subset | lexical | default | `coverage` | `coverage` against lexical | `coverage` against default |
+|---|---|---|---|---|---|
+| Development D to I | 22.6 | 26.6 | 37.3 | +14.7 [2.1, 28.4] | +10.6 [0.8, 21.1] |
+| Held-out J to O | 39.7 | 25.1 | 54.2 | +14.6 [-0.4, 32.5] | +29.1 [14.2, 45.1] |
+| All 12 | 31.1 | 25.9 | 45.7 | +14.6 [4.6, 25.9], 9/2/1 | +19.9 [9.5, 31.4] |
+
+The gain on the held-out tasks equals the gain on the development tasks. Per task (lexical, default, `coverage`): D 12.5, 25.0, 52.5; E 19.0, 33.3, 33.3; F 22.9, 25.7, 54.3; G 16.2, 13.5, 8.1; H 33.3, 33.3, 38.5; I 31.6, 28.9, 36.8; J 41.7, 19.4, 47.2; K 24.4, 12.2, 56.1; L 68.6, 45.7, 62.9; M 57.6, 36.4, 60.6; N 14.7, 5.9, 67.6; O 31.0, 31.0, 31.0.
+
+### 14.5 Gates against the current default (section 6)
+
+- `coverage`: mean +5.6 over the default and +7.8 over lexical (gate 1, at least 5 over lexical); no task falls by more than 3 against the default (gate 1); precision@10 +2.1, worst task mean -3.3 (gate 2, limit -5); wall time for ticket-key queries 1.31 s median in the second run against 1.86 s for the default and 1.42 s for lexical, no case over the budget, no degraded query (the 12 gate cases count as "scored 0" in the report by design; the engine reports `degraded: false`) (gate 3); reproducible (gate 4); interval above zero (gate 5). All five gates pass.
+- `coverage` + `after`: it passes gate 5, but tasks A, C and I fall by more than 3 against the default (gate 1), the same tasks as for `after` alone (D-36).
+
+### 14.6 Recommendation (owner decides)
+
+Make `coverage` the default for ticket queries with generic words (D-37). It changes only those queries, passes all gates and costs no time. The neighbor default (D-36) stays a separate decision; `coverage` + `after` is the best result (+8.3 over the default) if the per-task loss on A, C and I is accepted (R10 c).
+
+### 14.7 Limits
+
+- Ledgers are unadjudicated; D to O are drafted from the same worklogs and capsules.
+- Only 12 of 43 queries are ticket-key queries. Keyword and Polish forms are not changed.
+- The selection rewards distinct identifiers and numbers. It can favour turns with logs or tables. The benchmark counts facts in the first 1,050 characters of a turn, not readability.
+- Task G falls (13.5 to 8.1) and task O is unchanged; the held-out interval against lexical alone includes zero (n = 6).
+- The generic-word list is fixed (`Config.GENERIC_QUERY_WORDS`). A query with any other word keeps the old path.
+- The sidecar holds terms from private conversations and stays in the data folder (git-ignored).
+- Results are in `model-bench-tc-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
 
 ---
 

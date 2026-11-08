@@ -47,6 +47,7 @@ int rerankBudgetMs = Config.RERANK_BUDGET_MS
 Integer rerankWeight = null
 String rerankFusion = null
 String neighborMode = null
+String ticketSelectMode = null
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -187,6 +188,13 @@ while (i < args.length) {
         neighborMode = args[i + 1].trim().toLowerCase()
         if (!(neighborMode in Config.NEIGHBOR_MODES)) {
             println "ERROR: --neighbors needs adjacent, after, scored or off."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--ticket-select' && i + 1 < args.length) {
+        ticketSelectMode = args[i + 1].trim().toLowerCase()
+        if (!(ticketSelectMode in Config.TICKET_SELECT_MODES)) {
+            println "ERROR: --ticket-select needs off, gate or coverage."
             exitApp(2); return
         }
         i += 2
@@ -432,7 +440,7 @@ if (!input.isEmpty()) {
                 String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
                 executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             } else {
-                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs, rerank_weight: rerankWeight, rerank_fusion: rerankFusion, neighbors: neighborMode])
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs, rerank_weight: rerankWeight, rerank_fusion: rerankFusion, neighbors: neighborMode, ticket_select: ticketSelectMode])
             }
         }
         exitApp(0); return
@@ -844,6 +852,10 @@ static List<String> semanticLines(Map result) {
     if (neighbors) {
         lines << "Neighbors: mode=${neighbors.mode} added=${neighbors.added} scored=${neighbors.scored}"
     }
+    Map ticketSelect = (result.ticket_select ?: [:]) as Map
+    if (ticketSelect && ticketSelect.mode && ticketSelect.mode != 'off') {
+        lines << "Ticket select: mode=${ticketSelect.mode} applied=${ticketSelect.applied} candidates=${ticketSelect.candidates} selected=${ticketSelect.selected}"
+    }
     return lines
 }
 
@@ -967,6 +979,7 @@ static void printQueryUsage() {
     println "      --rerank-weight N       Weight of the re-rank signal in the rank fusion (1 to 100, default 12; AI_MEMORY_RERANK_WEIGHT)"
     println "      --rerank-fusion MODE    How the model score joins the order: rrf (default), score or cut (AI_MEMORY_RERANK_FUSION)"
     println "      --neighbors MODE        Where neighbor turns go: adjacent (default), after, scored or off (AI_MEMORY_NEIGHBORS)"
+    println "      --ticket-select MODE    For a ticket key with only generic words: off (default), gate (no re-rank) or coverage (gate, and choose the ticket's turns by coverage) (AI_MEMORY_TICKET_SELECT)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"

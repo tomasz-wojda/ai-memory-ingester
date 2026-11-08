@@ -148,7 +148,7 @@ The tuning steps below are only safe when the measurement is sound. These steps 
 - [x] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
 - [ ] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`.
 - [x] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less. _Done 2026-11-08: 15 tasks, 43 queries, ledgers E to O not yet adjudicated (section 13)._
-- [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks.
+- [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks. _Partly done 2026-11-08: nDCG@10 added (section 13.7); recall@k is cov@k; the four manual dimensions are not scored._
 - [x] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
 - [x] **R06 [ING] Add paired statistics.** Report per-query differences against the lexical baseline, a bootstrap interval, and a win/loss count. Accept: a change counts as an improvement only when the interval excludes zero or it wins on a clear majority without any large loss.
 - [x] **R07 [ING] Add a cutoff for worklog and artifact documents** in the all-source branch (by document date, or a frozen database copy). Accept: no document newer than the freeze point enters the scored set.
@@ -640,6 +640,21 @@ Biggest gains: B +19.8 in all modes, N +29.4 (after), +21.6 (off), +6.9 (scored)
 
 - With `adjacent` the fused order trails the re-ranker's own order by 4.7 points (32.8 against 37.5). With `after` or `off` the gap disappears (37.6 and 36.8 against 37.5 and 36.2). This is consistent with unscored neighbor rows taking top-10 slots, as found earlier.
 - The re-ranker alone beats lexical significantly (+6.9). The fused result at weight 12 with `adjacent` neighbors does not. The fusion, not the model, is where the gain is lost on this set.
+
+### 13.7 nDCG@10 added (R04, 2026-11-08)
+
+`bench/common.py` now computes nDCG@10 per query. The gain of a fact is its weight. A fact counts once, at the first turn (in the evidence text, first 1,050 characters) that holds its strict anchors; the gain of a turn is the weight of the facts it adds. The ideal list is built greedily over all turns of the task's frozen corpus. Recall at k against the graded facts is the existing cov@k (weighted share of strict facts in the top k). The coverage fields of the new run are identical to section 13.1 and 13.3 (0 differences).
+
+| System | nDCG@10 | Against lexical (difference, interval) | Against `adjacent` (difference, interval) | Tasks below -3 against `adjacent` |
+|---|---|---|---|---|
+| lexical | 29.6 | | | |
+| weight 12, `adjacent` | 32.5 | +2.9 [-1.9, 7.6], not significant | | |
+| weight 5 | 33.0 | +3.4 [-0.3, 7.1], not significant | | |
+| `after` | 35.2 | +5.6 [0.9, 10.4], significant | +2.7 [0.16, 5.3], significant | D, I, O |
+| `off` | 34.8 | +5.2 [0.4, 10.1], significant | +2.3 [-0.09, 4.8] | I |
+| `scored` | 33.9 | +4.3 [-0.6, 9.3] | +1.4 [-0.8, 3.5] | I |
+
+nDCG@10 gives the same direction as cov@10. With nDCG the loss on single tasks is smaller (cov@10: A, C, D, I below -3 for `after`; nDCG@10: D, I, O). R04 is only partly done: claim precision, freshness, temporal correctness and contradictions are manual and are not scored.
 
 ### 13.6 Limits
 

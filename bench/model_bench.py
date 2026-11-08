@@ -10,7 +10,7 @@ from pathlib import Path
 import common
 import snapshot
 
-CSV_FIELDS = ['system', 'setting', 'depth', 'task', 'query', 'order', 'cov@5', 'cov@10', 'cov@20', 'bytes@20', 'prec@10', 'scored',
+CSV_FIELDS = ['system', 'setting', 'depth', 'task', 'query', 'order', 'cov@5', 'cov@10', 'cov@20', 'bytes@20', 'prec@10', 'ndcg@10', 'scored',
               'wall_p50', 'wall_p95', 'wall_cold', 'degraded_runs', 'evidence_fallbacks']
 
 
@@ -43,6 +43,7 @@ def coverage_by_cut(task, ordered_chat, mode):
         result[f'bytes@{cut}'] = sum(len(t.encode('utf-8')) for t in texts[:cut])
     useful = common.coverage_for(task, texts[:10])
     result['prec@10'] = round(100.0 * useful['useful_items'] / useful['items'], 1) if useful['items'] else 0.0
+    result['ndcg@10'] = common.ndcg_at(task, texts, 10)
     return result
 
 
@@ -73,6 +74,7 @@ def summarize(results):
                 for cut in common.CUTS:
                     entry[f'{order}_cov@{cut}'] = round(statistics.mean(case[order][f'cov@{cut}'] for case in cases.values()), 1)
                 entry[f'{order}_prec@10'] = round(statistics.mean(case[order]['prec@10'] for case in cases.values()), 1)
+                entry[f'{order}_ndcg@10'] = round(statistics.mean(case[order]['ndcg@10'] for case in cases.values()), 1)
             table[f'{name}@{depth}'] = entry
     return table
 
@@ -84,7 +86,7 @@ def csv_rows(system, setting, depth, results):
         for order in common.ORDERS:
             rows.append({'system': system, 'setting': setting, 'depth': depth, 'task': task_key, 'query': query, 'order': order,
                          'cov@5': case[order]['cov@5'], 'cov@10': case[order]['cov@10'], 'cov@20': case[order]['cov@20'],
-                         'bytes@20': case[order]['bytes@20'], 'prec@10': case[order]['prec@10'], 'scored': case['scored'], 'wall_p50': case['wall_p50'],
+                         'bytes@20': case[order]['bytes@20'], 'prec@10': case[order]['prec@10'], 'ndcg@10': case[order]['ndcg@10'], 'scored': case['scored'], 'wall_p50': case['wall_p50'],
                          'wall_p95': case['wall_p95'], 'wall_cold': case['wall_cold'], 'degraded_runs': case['degraded_runs'],
                          'evidence_fallbacks': case[order]['evidence_fallbacks']})
     return rows

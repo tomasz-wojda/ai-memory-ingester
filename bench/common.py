@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -224,6 +225,57 @@ def strict_score(task, flags):
     total = sum(weights[fact] for fact in task['strict'])
     got = sum(weights[fact] for fact in task['strict'] if flags[fact])
     return round(100.0 * got / total, 1), got, total
+
+
+IDEAL_CACHE = {}
+
+
+def head_texts_in_scope(task):
+    data_dir = task_data_dir(task)
+    cursor = connection('convo.db', data_dir).execute(
+        "SELECT file_name, substr(content, instr(content, char(10) || '---') + 5, ?) FROM documents WHERE source_archive = 'chat:turns'", (SNIPPET,))
+    return [(content or '').lower() for name, content in cursor if in_scope(task, name)]
+
+
+def fact_weights(task):
+    weights = {fact: weight for fact, weight, _, _ in task['ledger']}
+    return {fact: weights[fact] for fact in task['strict']}
+
+
+def facts_in_text(task, text):
+    return {fact for fact, groups in task['strict'].items() if all(re.search(group, text) for group in groups)}
+
+
+def dcg_of(task, texts, k):
+    weights = fact_weights(task)
+    seen, total = set(), 0.0
+    for rank, text in enumerate(texts[:k], 1):
+        new = facts_in_text(task, text.lower()) - seen
+        seen |= new
+        total += sum(weights[fact] for fact in new) / math.log2(rank + 1)
+    return total
+
+
+def ideal_dcg(task, k):
+    key = (task['key'], k, FROZEN, FREEZE_BY)
+    if key not in IDEAL_CACHE:
+        weights = fact_weights(task)
+        holders = [found for found in (facts_in_text(task, text) for text in head_texts_in_scope(task)) if found]
+        remaining, total = set(weights), 0.0
+        for rank in range(1, k + 1):
+            best = max(holders, key=lambda found: sum(weights[f] for f in found & remaining), default=set())
+            gain = sum(weights[f] for f in best & remaining)
+            if gain == 0:
+                break
+            remaining -= best
+            total += gain / math.log2(rank + 1)
+        IDEAL_CACHE[key] = total
+    return IDEAL_CACHE[key]
+
+
+def ndcg_at(task, texts, k=10):
+    ideal = ideal_dcg(task, k)
+    return round(min(100.0, 100.0 * dcg_of(task, texts, k) / ideal), 1) if ideal else 0.0
 
 
 def coverage_for(task, texts, cuts=CUTS):

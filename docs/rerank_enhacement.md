@@ -186,7 +186,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 - [x] **R16 [ING] Measure recall of the first stage.** For each ledger fact, find the rank of the first passage that carries it in the first-stage list. Accept: a table of recall@10, 30, 50, 100 per task. Evidence: facts that never enter the first 30 cannot be repaired by re-ranking.
 - [ ] **R17 [ING] Make the passage cap depend on the time budget.** Today the cap is a fixed 100 passages and 3 per document. On MPS, mmarco needs about 5.7 ms per passage (measured up to depth 50), so 200 passages is about 1.1 s (an estimate, to be measured). Choose the number of passages from a measured cost per passage and the remaining budget. Accept: p95 stays inside the budget on MPS and on CPU, and the degraded rate stays below 2%.
-- [ ] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30. _Partly done 2026-11-04: depth 50 was tested and not adopted; depths 100 and 200 with a raised passage cap were not tested._
+- [x] **R18 [ING] Test depth against documents scored.** Run depths 30, 50, 100 and 200 with the passage cap raised, and report how many documents are scored, the coverage and the time. Accept: a depth that gains at least 3 points inside the budget, or a documented decision to keep 30. _Done 2026-11-09: depths 30, 50 and 100, with and without a raised passage cap, tested on the adjudicated set (section 17.4): no gain (-0.6), not adopted. Depth 200 was not tested: the first stage returns about 50 rows._
 - [ ] **R19 [ING] Use a partial result when the deadline is near.** Score the highest-ranked passages first, and use the scored subset instead of dropping the whole re-rank when the time runs out. Accept: the degraded rate falls without a quality loss.
 - [ ] **R20 [ING] Test a cheap first re-rank stage.** English-only models are not suitable as a cheap first stage. Test mmarco at depth 100 followed by a second model on the top 10 (see R42). Accept: gates pass within budget.
 
@@ -194,8 +194,8 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 
 - [ ] **R21 [ING] Measure truncation.** Count how many passages exceed `max_tokens` (256 by default) for each model tokenizer, and the effect on the score. Evidence: an engine window of about 1,000 characters (900 plus the prefix) is 246 tokens for mmarco and 308 for polish-roberta, so a larger window is truncated unless `max_tokens` rises. Accept: a table of truncated passages per model and window size.
 - [ ] **R22 [ING] Test window sizes.** Windows of 600, 900 (current), 1,500 and 2,400 characters, with `max_tokens` set to fit (256 to 512), stride at 75% of the window. Report coverage, time per passage and truncation. Evidence for the cost: time rises with the number of tokens. Accept: the best size wins on the gates, or the current size is kept with evidence.
-- [ ] **R23 [ING] Test passages per document.** Test 1, 3 and 5 per document, with the selection by word overlap, and with all passages scored when the budget allows. Accept: gates pass.
-- [ ] **R24 [ING] Replace the word-overlap passage filter.** Candidates for the filter: BM25 score of the passage inside the document, or scoring every passage of the top documents. Reason: a passage with no shared word, for example a Polish inflection or a paraphrase, is invisible to the model today. Accept: coverage rises on paraphrase and Polish queries without a time loss.
+- [x] **R23 [ING] Test passages per document.** Test 1, 3 and 5 per document, with the selection by word overlap, and with all passages scored when the budget allows. Accept: gates pass. _Done 2026-11-09: 1, 3 and 5 passages per document tested (section 17.4): 1 gives -1.2, 5 gives -0.7; not adopted. The setting `--passages-per-doc` stays, default 3._
+- [x] **R24 [ING] Replace the word-overlap passage filter.** Candidates for the filter: BM25 score of the passage inside the document, or scoring every passage of the top documents. Reason: a passage with no shared word, for example a Polish inflection or a paraphrase, is invisible to the model today. Accept: coverage rises on paraphrase and Polish queries without a time loss. _Done 2026-11-09: BM25 choice inside the document tested (section 17.4): -0.3; not adopted. The setting `--passage-select bm25` stays, default overlap._
 - [ ] **R25 [ING] Test structure-aware chunking.** Cut at sections, headings, turn boundaries and sentences instead of fixed windows. Keep the document title, ticket key and section name as a prefix (a prefix exists today). Accept: gates pass.
 - [ ] **R26 [ING] Test a two-level chunk (small to find, large to read).** Score small windows, then return or score the larger parent window. Accept: coverage under the byte budget rises (links with R32).
 - [ ] **R27 [ING] Rebuild or invalidate the stored passages when the chunking changes.** The late-interaction index and `semantic.db` depend on the passage split. Accept: a documented migration and a test.
@@ -203,7 +203,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 ### Phase D: query side
 
 - [x] **R28 [ING] Route ticket-key queries.** When the query holds a ticket key, restrict or boost that ticket's documents and keep its capsule first (the pin exists for facets). Evidence: task D. Accept: ticket-key tasks improve without a loss on others. _Done 2026-11-08 behind `--ticket-select coverage` (off by default); evaluated in section 14: ticket-key queries +19.9 over the default, the other 31 queries unchanged._
-- [ ] **R29 [ING] Handle short and vague queries.** Add query expansion from the ticket vocabulary, or a minimum information rule that sends such a query to the relaxed path and the re-ranker with a larger depth. Evidence: "Trace in Konto" scored 5.1 with plain FTS5. Accept: short-query tasks improve.
+- [x] **R29 [ING] Handle short and vague queries.** Add query expansion from the ticket vocabulary, or a minimum information rule that sends such a query to the relaxed path and the re-ranker with a larger depth. Evidence: "Trace in Konto" scored 5.1 with plain FTS5. Accept: short-query tasks improve. _Done 2026-11-09 in a different form: not query expansion but topic routing (section 17): a query about a ticket topic goes to the dominant ticket (`--topic-route on`, off by default, guarded for narrow queries). +3.9 over the default on 35 queries, +5.9 on the 23 non-ticket queries; the gates are not met (+4.5 over lexical, task K falls). Decision D-41 is open._
 - [ ] **R30 [ING] Keep the diacritics path.** Check that the passages and the query keep their diacritics up to the model, and measure the ASCII-only case (3.2). Accept: a test that fails if diacritics are stripped before scoring.
 - [ ] **R31 [ING] Test language-aware handling.** Detect Polish and English queries, and test a model or setting per language only if the benchmark shows a gain. Accept: documented result, no change without a gain.
 
@@ -772,6 +772,67 @@ What this means:
 Candidate work for phase 2, from this evidence (not a plan): (1) query expansion from the ticket vocabulary for keyword and Polish queries (R29, R31) to raise the pool; (2) ordering inside the window: depth, passage choice and evidence (R18, R23, R24, R37 reopened only if the numbers support it); (3) the neighbor setting (D-36, deferred).
 
 Limit: this uses the full text of each turn, while the benchmark scores the first 1,050 characters. The ceiling for the benchmark is therefore lower than shown.
+
+## 17. Topic routing and window ordering (plan: [topic_routing_plan.md](topic_routing_plan.md), 2026-11-09)
+
+Same set as section 15: adjudicated ledgers only (13 tasks, 35 queries), frozen time-based corpora, mmarco, depth 30, `model_bench`. The runs were done twice and match in all non-timing fields. With the new settings off, the run reproduces `model-bench-adj-a.json` (35 of 35 queries equal). Suites: all pass (see the commit message).
+
+### 17.1 What was built
+
+- `--topic-route off|on` (`AI_MEMORY_TOPIC_ROUTE`, default `off`). For a query without a ticket key: take the ticket folder that holds most of the first 10 chat rows of the first stage (at least 3 of 10, `AI_MEMORY_TOPIC_ROUTE_MIN`); unless the query is specific (see below), skip the re-rank and choose that ticket's turns by coverage, as for ticket-key queries. New class `lib/TopicRoute.groovy`.
+- Specificity guard: the share of the query's content words (3 or more letters, no stop words) found in the first 10 chat rows (evidence head). At 0.8 or more the query counts as specific and keeps the first-stage order (`AI_MEMORY_TOPIC_ROUTE_COVERED`).
+- Passage settings, all with the old values as defaults: `--passages-per-doc` (1 to 5, default 3), `--max-passages` (default 100), `--passage-select overlap|bm25` (default overlap). Benchmark tokens `topicroute=`, `ppd=`, `maxpass=`, `psel=` and the option `--config-extra`.
+- Needle test (`bench/needles.py`): 39 narrow queries built from single facts of the accepted ledgers (the anchor words of the fact); metric: the fact is in the first 10 turns.
+
+### 17.2 Design choice from measurements (made on the development tasks E to J)
+
+- Routing without a guard (replace the list by the ticket's coverage turns) lowers the needle hit rate from 89.7% to 69.2% (9 of 39 needles lost). By the plan rule (loss above 5 points) the guard became necessary.
+- A blend that keeps the first k lexical rows cannot meet the rule on the development tasks (needle loss of at least 16 points for every k below 10).
+- A rule on the number of query words (at most 4) keeps the needles, but needle queries are short by construction, so it would pass for the wrong reason. A rule on identifier tokens does not separate the query types (9 of 23 summary-type queries contain hyphenated names).
+- The coverage of the query words by the first 10 rows keeps the needles and does not depend on query length. It was chosen on the development tasks (tie of 0.8 and 1.0; 0.8 taken) and then checked on the held-out tasks.
+
+### 17.3 Results
+
+Needle test (39 needles): lexical 87.2%, default 89.7%, default + routing with the guard 89.7% (no needle lost).
+
+Benchmark (cov@10, 35 queries, 23 of them without a ticket key):
+
+| Subset | lexical | default | `topicroute=on` | `topicroute` against default |
+|---|---|---|---|---|
+| All 35 | 36.5 | 37.2 | 41.1 | +3.9 [0.6, 7.9], 6 wins, 2 losses, 27 ties |
+| Non-ticket queries (23) | | 32.7 | 38.6 | +5.9 [1.2, 11.7], 6 / 2 / 15 |
+| Development E to J | | 29.3 | 32.2 | +2.9 [-0.3, 7.2] |
+| Held-out C, D, K to O | | 45.5 | 50.4 | +4.9 [-0.6, 11.6] |
+| Ticket-key queries (12) | | | | unchanged (12 of 12 equal) |
+
+Against lexical: +4.5 [-0.2, 10.0]. nDCG@10: 38.3 (default) and 39.9 (`topicroute`), +1.6 [-2.3, 5.5]; on the held-out tasks nDCG@10 is -0.4. Precision@10: 58.0 and 58.9. Median wall time of the non-ticket queries: 0.96 to 1.34 s with routing against 1.63 to 1.70 s for the default (the routed queries skip the re-rank).
+
+Gates (section 6) against the current default: the mean gain over lexical is +4.5, below the 5 required; task K falls by more than 3 points; the interval against the default is above zero; the runs are reproducible; time is lower; precision does not fall. So the gates are **not met** (gate 1: +4.5 over lexical, one task below -3). The per-task limit is the owner's open question R10 (c).
+
+### 17.4 Phase 2b: depth and passages (cov@10 against the default, depth 30, 3 passages, overlap)
+
+| Setting | cov@10 | Difference [interval] | Tasks below -3 |
+|---|---|---|---|
+| depth 50 | 36.6 | -0.6 [-1.5, 0.0], 0 wins, 2 losses | J |
+| depth 100 | 36.6 | -0.6 [-1.5, 0.0] | J |
+| depth 50 or 100, passage cap 300 | 36.6 | -0.6 | J |
+| 1 passage per document | 36.0 | -1.2 [-3.7, 1.3] | C, K, M |
+| 5 passages per document (cap 200) | 36.5 | -0.7 [-1.8, 0.0] | M |
+| BM25 passage choice | 36.9 | -0.3 [-0.8, 0.0] | M |
+
+None of them helps. A depth above 30 adds almost nothing because the first stage returns about 50 rows at most (the median number of passages scored rises from 13 to 27 at depth 100, or 37 with a raised cap). Decisions: R18, R23 and R24 are "evaluated, not adopted". The settings stay in the engine with the old defaults.
+
+### 17.5 Recommendation (owner decides)
+
+Keep `topic_route` off for now, and decide with R10 (c): it gives +3.9 over the default (+5.9 on the queries it touches) and keeps narrow questions, but it misses the +5 over lexical, loses on task K, and its nDCG@10 gain is not confirmed on the held-out tasks. If you accept a per-task loss for the mean gain, switching it on is a one-line change (`AI_MEMORY_TOPIC_ROUTE=on`). Proposed decision D-41.
+
+### 17.6 Limits
+
+- All benchmark queries ask for a topic summary. The needle test is made from the ledger anchors, not from real narrow questions; the guard is not proven for natural narrow questions (no owner-written queries yet, T005).
+- The guard limit (0.8) and the minimum share (3) come from this set of 35 queries; the held-out split lowers, but does not remove, the risk of fitting.
+- Detection fails when the query's words match no ticket (task O) or another ticket (task G).
+- Evidence is the first 1,050 characters of a turn.
+- Results: `model-bench-route-{a,b}`, `model-bench-p2b-depth`, `model-bench-p2b-passages`, `needles-baseline`, `needles-route`, `needles-route-guard` in `data/eval/ledger-run/` (git-ignored).
 
 ---
 

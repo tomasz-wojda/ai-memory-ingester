@@ -1487,4 +1487,9 @@ Section 14 of [rerank_enhacement.md](rerank_enhacement.md). For a ticket key wit
 - D-39 (R02): all 13 reviewed ledgers (C, D, E to O) are accepted. Results on this set: section 15 of [rerank_enhacement.md](rerank_enhacement.md). R44 is closed by the owner. D-36 and R10 are deferred (defaults apply).
 
 
+### Topic routing and window ordering (2026-11-09)
+
+Section 17 of [rerank_enhacement.md](rerank_enhacement.md). Adjudicated set, 35 queries. `--topic-route on` (off by default) routes a query without a ticket key to the dominant ticket of its first results and chooses that ticket's turns by coverage, unless the query is specific (guard). cov@10: lexical 36.5, default 37.2, `topicroute` 41.1 (+3.9 over the default [0.6, 7.9]; +5.9 on the 23 non-ticket queries). The needle test (39 narrow queries) shows no loss. The gates are not met (+4.5 over lexical, task K falls). Depth 50 and 100, 1 or 5 passages per document and BM25 passage choice give no gain (-0.3 to -1.2). Proposed decision D-41.
+
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

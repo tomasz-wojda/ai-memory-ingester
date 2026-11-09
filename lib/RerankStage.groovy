@@ -19,10 +19,14 @@ class RerankStage {
         Map info = [depth: rows.size(), degraded: false, reason: null]
         List<Map> passages = []
         Map<String, String> docOfPassage = [:]
+        int perDocument = (options.rerank_passages_per_doc ?: Config.rerankPassagesPerDocument()) as int
+        int passageCap = (options.rerank_max_passages ?: Config.rerankMaxPassages()) as int
+        String passageMode = (options.passage_select ?: Config.passageSelect()).toString()
+        if (!(passageMode in Config.PASSAGE_SELECT_MODES)) passageMode = Config.PASSAGE_SELECT_DEFAULT
         rows.each { Map row ->
-            List<Map> chosen = PassageBuilder.select(PassageBuilder.split(row), queryWords, row.pool == 'neighbor' ? 1 : PassageBuilder.MAX_PER_DOCUMENT)
+            List<Map> chosen = PassageBuilder.select(PassageBuilder.split(row), queryWords, row.pool == 'neighbor' ? 1 : perDocument, passageMode)
             chosen.each { Map passage ->
-                if (passages.size() < 100) {
+                if (passages.size() < passageCap) {
                     passages << passage
                     docOfPassage[passage.id as String] = SignalFusion.stableIdOf(row)
                 }

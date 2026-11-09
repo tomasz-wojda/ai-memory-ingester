@@ -58,17 +58,19 @@ All engine suites, wrapper test and Python service tests unchanged and passing; 
 
 ## IMPLEMENTATION CHECKLIST
 
-1. [ ] Write the needle-query builder (`bench/needles.py`, no ledger text inside) and run lexical and default on it as the baseline.
-2. [ ] Add `Config.topicRoute()` and `Config.TOPIC_ROUTE_*`; write `TopicRoute` (dominant ticket, routing) reusing `TicketCoverage`.
-3. [ ] Change `MemoryRetrieval.searchTopic` for `topic_route`; add the result map and the explain line; add `--topic-route` to `03_query_memory.groovy`.
-4. [ ] Add unit tests; run the engine suites; rebuild the jar; run the wrapper test.
-5. [ ] Add the settings token `topicroute=<mode>` to `bench/model_bench.py` and a needle mode to the harness.
-6. [ ] Run the benchmark and the needle test (section 4); compute statistics and the development and held-out split.
-7. [ ] Decide S1 or the guard by the needle result; build and evaluate the guard if needed.
-8. [ ] Check the flag-off reproduction and the timing limit.
-9. [ ] Phase 2b: measure depth 50 and 100, passages per document, passage choice; record each result.
-10. [ ] Record results in `rerank_enhacement.md` section 17, `comparison.md` and the decision log; tick R29, R31, R18, R23, R24 as built or not built.
-11. [ ] `py_compile`, `git status`, render the commit handoff, record the turn.
+1. [x] Write the needle-query builder (`bench/needles.py`, no ledger text inside) and run lexical and default on it as the baseline.
+2. [x] Add `Config.topicRoute()` and `Config.TOPIC_ROUTE_*`; write `TopicRoute` (dominant ticket, routing) reusing `TicketCoverage`.
+3. [x] Change `MemoryRetrieval.searchTopic` for `topic_route`; add the result map and the explain line; add `--topic-route` to `03_query_memory.groovy`.
+4. [x] Add unit tests; run the engine suites; rebuild the jar; run the wrapper test.
+5. [x] Add the settings token `topicroute=<mode>` to `bench/model_bench.py` and a needle mode to the harness.
+6. [x] Run the benchmark and the needle test (section 4); compute statistics and the development and held-out split.
+7. [x] Decide S1 or the guard by the needle result; build and evaluate the guard if needed.
+8. [x] Check the flag-off reproduction and the timing limit.
+9. [x] Phase 2b: measure depth 50 and 100, passages per document, passage choice; record each result.
+10. [x] Record results in `rerank_enhacement.md` section 17, `comparison.md` and the decision log; tick R29, R31, R18, R23, R24 as built or not built.
+11. [x] `py_compile`, `git status`, render the commit handoff, record the turn.
+
+_Execution note, 2026-11-09: steps 1 to 11 are done. The guard rule was chosen from measurements (section 3 left its form open): the share of the query's content words found in the first 10 chat rows, limit 0.8; the first examples in the plan (strict row count, identifier token) were tested or replaced as described in section 17.2 of `rerank_enhacement.md`. Results: section 17. Phase 2b: no setting was adopted._
 
 Any deviation from this plan returns to PLAN mode.
 

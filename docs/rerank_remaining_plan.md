@@ -44,6 +44,8 @@ Exit per item: pass the gates, or recorded as not built.
 
 _Status 2026-11-08: R28 done (ticket coverage selection, [ticket_coverage_plan.md](ticket_coverage_plan.md), section 14 of `rerank_enhacement.md`; proposed decision D-37). R29 is partly covered for ticket queries with generic words only. R30 to R36 are not started._
 
+_Status 2026-11-09: phase 2a and 2b done in [topic_routing_plan.md](topic_routing_plan.md): topic routing built (off by default; D-41 open); depth, passages per document and BM25 passage choice measured and not adopted (R18, R23, R24 closed); R29 done in the form of topic routing._
+
 ### Phase 3: passages and depth (needs R10)
 
 Order matters: measure before changing.

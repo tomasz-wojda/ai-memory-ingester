@@ -59,8 +59,9 @@ class PassageBuilder {
      * @param max How many to keep
      * @return Up to max passages, best first; the first passage if none share a word
      */
-    static List<Map> select(List<Map> passages, List<String> queryWords, int max = MAX_PER_DOCUMENT) {
+    static List<Map> select(List<Map> passages, List<String> queryWords, int max = MAX_PER_DOCUMENT, String mode = 'overlap') {
         if (passages.size() <= max) return passages
+        if (mode == 'bm25') return selectBm25(passages, queryWords, max)
         Set<String> wanted = queryWords.collect { String word -> TextFold.ascii(word) }.findAll { it } as Set<String>
         List<Map> scored = passages.collect { Map passage ->
             Set<String> found = (TextFold.ascii(passage.text as String) =~ /[a-z0-9_]+/).collect { it.toString() } as Set<String>
@@ -68,6 +69,44 @@ class PassageBuilder {
         }
         List<Map> best = scored.findAll { (it.score as int) > 0 }
             .sort { a, b -> (b.score as int) <=> (a.score as int) ?: (a.passage.start as int) <=> (b.passage.start as int) }
+            .take(max)
+        if (best.isEmpty()) return passages.take(1)
+        return best.collect { it.passage as Map }.sort { (it.start as int) }
+    }
+
+    /**
+     * Keeps the passages with the best BM25 score inside the document (k1 1.2, b 0.75, the passages of the document
+     * are the collection).
+     *
+     * @param passages Passages of one document
+     * @param queryWords Content words of the query
+     * @param max How many to keep
+     * @return Up to max passages in document order; the first passage if none shares a word
+     */
+    static List<Map> selectBm25(List<Map> passages, List<String> queryWords, int max) {
+        Set<String> wanted = queryWords.collect { String word -> TextFold.ascii(word) }.findAll { it } as Set<String>
+        List<List<String>> tokens = passages.collect { Map passage ->
+            (TextFold.ascii(passage.text as String) =~ /[a-z0-9_]+/).collect { it.toString() } as List<String>
+        }
+        double average = Math.max(1.0d, tokens.collect { it.size() }.sum() / (double) tokens.size())
+        Map<String, Integer> documentFrequency = [:]
+        wanted.each { String word -> documentFrequency[word] = tokens.count { it.contains(word) } as int }
+        List<Map> scored = []
+        passages.eachWithIndex { Map passage, int index ->
+            double score = 0.0d
+            List<String> words = tokens[index]
+            wanted.each { String word ->
+                int frequency = words.count { it == word } as int
+                if (frequency > 0) {
+                    int df = documentFrequency[word]
+                    double idf = Math.log(1.0d + (passages.size() - df + 0.5d) / (df + 0.5d))
+                    score += idf * frequency * 2.2d / (frequency + 1.2d * (0.25d + 0.75d * words.size() / average))
+                }
+            }
+            scored << [passage: passage, score: score]
+        }
+        List<Map> best = scored.findAll { (it.score as double) > 0.0d }
+            .sort { a, b -> (b.score as double) <=> (a.score as double) ?: (a.passage.start as int) <=> (b.passage.start as int) }
             .take(max)
         if (best.isEmpty()) return passages.take(1)
         return best.collect { it.passage as Map }.sort { (it.start as int) }

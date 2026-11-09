@@ -237,7 +237,7 @@ ${assistant}
     private static void initialize() {
         loader = new GroovyClassLoader(RetrievalSuite.class.classLoader)
         ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
-         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval', 'FederatedEngine'].each { String name ->
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'TopicRoute', 'ServiceAutostart', 'MemoryRetrieval', 'FederatedEngine'].each { String name ->
             loader.parseClass(new File("lib/${name}.groovy"))
         }
         Thread.currentThread().contextClassLoader = loader

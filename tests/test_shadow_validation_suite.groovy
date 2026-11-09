@@ -69,7 +69,7 @@ class TestShadowValidationSuite {
             'Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FacetPath', 'TurnDocument', 'TimestampRepair', 'ChatLogParser',
             'MemoryExclusion', 'TurnClassifier', 'TurnEmitter', 'JournalEvent', 'JournalStore', 'JournalProjector', 'FrontMatter', 'MemoryEngine',
             'WorklogDocument', 'WorklogParser', 'DatasetRegistry', 'TicketFreshness', 'FederatedEngine',
-            'TicketRetrieval', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval'
+            'TicketRetrieval', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'TopicRoute', 'ServiceAutostart', 'MemoryRetrieval'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         JournalEvent = loader.loadClass('JournalEvent')

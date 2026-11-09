@@ -44,6 +44,8 @@ class TestSemanticSuite {
             testNeighborModes()
             testTicketCoverage()
             testServiceAutostart()
+            testTopicRoute()
+            testPassageSettings()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
             testReindexCommand()
@@ -312,6 +314,114 @@ why do exports fail
         List<Map> plain = [[origin_db: 'd', source_archive: 'a', file_path: 'x', fused_score: 0.0d, signals: [:]] as Map]
         SignalFusion.addSignal(plain, 'rerank', [plain[0]])
         verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 12 / 61.0d) < 1.0e-12d)
+    }
+
+    private static void testPassageSettings() {
+        List<Map> passages = [[start: 0, text: 'alpha beta'], [start: 10, text: 'alpha alpha alpha'], [start: 20, text: 'gamma rare']]
+        List<Map> overlap = PassageBuilder.select(passages, ['alpha', 'rare'], 1) as List<Map>
+        verify('overlap keeps the first passage on a tie of shared words', overlap*.start == [0])
+        List<Map> bm25 = PassageBuilder.select(passages, ['alpha', 'rare'], 1, 'bm25') as List<Map>
+        verify('bm25 prefers the passage with the rarer query word', bm25*.start == [20])
+        verify('bm25 returns the passages in document order', PassageBuilder.select(passages, ['alpha', 'rare'], 2, 'bm25')*.start == [10, 20] || PassageBuilder.select(passages, ['alpha', 'rare'], 2, 'bm25')*.start == [0, 20] || PassageBuilder.select(passages, ['alpha', 'rare'], 2, 'bm25')*.start == [20])
+        verify('bm25 keeps the first passage when no word matches', PassageBuilder.select(passages, ['zzz'], 1, 'bm25')*.start == [0])
+        verify('a document with few passages is kept whole in both modes', PassageBuilder.select(passages, ['alpha'], 5, 'bm25').size() == 3 && PassageBuilder.select(passages, ['alpha'], 5).size() == 3)
+        Map saved = [pd: System.getProperty('ai.memory.rerank_passages_per_doc'), mp: System.getProperty('ai.memory.rerank_max_passages'), ps: System.getProperty('ai.memory.passage_select')]
+        try {
+            ['ai.memory.rerank_passages_per_doc', 'ai.memory.rerank_max_passages', 'ai.memory.passage_select'].each { System.clearProperty(it) }
+            verify('the passage settings have the old defaults', Config.rerankPassagesPerDocument() == 3 && Config.rerankMaxPassages() == 100 && Config.passageSelect() == 'overlap')
+            System.setProperty('ai.memory.rerank_passages_per_doc', '5')
+            System.setProperty('ai.memory.rerank_max_passages', '300')
+            System.setProperty('ai.memory.passage_select', 'bm25')
+            verify('the properties set the passage settings', Config.rerankPassagesPerDocument() == 5 && Config.rerankMaxPassages() == 300 && Config.passageSelect() == 'bm25')
+            System.setProperty('ai.memory.rerank_passages_per_doc', '9')
+            System.setProperty('ai.memory.rerank_max_passages', '0')
+            System.setProperty('ai.memory.passage_select', 'x')
+            verify('bad passage settings give the defaults', Config.rerankPassagesPerDocument() == 3 && Config.rerankMaxPassages() == 100 && Config.passageSelect() == 'overlap')
+        } finally {
+            System.clearProperty('ai.memory.rerank_passages_per_doc'); System.clearProperty('ai.memory.rerank_max_passages'); System.clearProperty('ai.memory.passage_select')
+            if (saved.pd != null) System.setProperty('ai.memory.rerank_passages_per_doc', saved.pd as String)
+            if (saved.mp != null) System.setProperty('ai.memory.rerank_max_passages', saved.mp as String)
+            if (saved.ps != null) System.setProperty('ai.memory.passage_select', saved.ps as String)
+        }
+        Map capped = search('what did we decide about the nginx timeout', [rerank_mode: 'on', rerank_depth: 20, rerank_max_passages: 4])
+        verify('the passage cap limits the passages sent', ((capped.rerank as Map).passages_sent as int) <= 4)
+        Map oneEach = search('what did we decide about the nginx timeout', [rerank_mode: 'on', rerank_depth: 20, rerank_passages_per_doc: 1])
+        Map threeEach = search('what did we decide about the nginx timeout', [rerank_mode: 'on', rerank_depth: 20, rerank_passages_per_doc: 3])
+        verify('one passage per document sends no more passages than three', ((oneEach.rerank as Map).passages_sent as int) <= ((threeEach.rerank as Map).passages_sent as int))
+    }
+
+    private static void testTopicRoute() {
+        Class route = loader.loadClass('TopicRoute')
+        List<Map> rows = (1..10).collect { int i -> [source_archive: 'chat:turns', file_path: (i <= 6 ? 'kd1000/d1/x/turn-00000' + i + '.md' : 'kd2000/d1/x/turn-00000' + i + '.md')] as Map }
+        Map dominant = route.dominant(rows) as Map
+        verify('the dominant ticket is the folder with most rows', dominant.ticket == 'kd1000' && dominant.share == 6)
+        List<Map> mixed = [[source_archive: 'worklog:state', file_path: 'kd9.md'], [source_archive: 'chat:turns', file_path: 'noticket/d1/x/turn-1.md'], [source_archive: 'chat:turns', file_path: 'kd5/d1/x/turn-2.md']]
+        Map skipped = route.dominant(mixed) as Map
+        verify('non-chat rows and the noticket folder are ignored', skipped.ticket == 'kd5' && skipped.share == 1)
+        verify('no ticket folder gives no dominant ticket', route.dominant([[source_archive: 'chat:turns', file_path: 'noticket/d1/x/turn-1.md']]) == null && route.dominant([]) == null)
+        List<Map> late = (1..12).collect { int i -> [source_archive: 'chat:turns', file_path: (i <= 10 ? 'kd1/d/x/t.md' : 'kd2/d/x/t.md')] as Map }
+        verify('only the first ten chat rows count', (route.dominant(late) as Map).share == 10)
+        String saved = System.getProperty('ai.memory.topic_route')
+        String savedMin = System.getProperty('ai.memory.topic_route_min')
+        try {
+            System.clearProperty('ai.memory.topic_route')
+            System.clearProperty('ai.memory.topic_route_min')
+            verify('the topic route is off by default and the minimum is 3', Config.topicRoute() == 'off' && Config.topicRouteMinShare() == 3)
+            System.setProperty('ai.memory.topic_route', 'on')
+            System.setProperty('ai.memory.topic_route_min', '5')
+            verify('the properties set the topic route and the minimum', Config.topicRoute() == 'on' && Config.topicRouteMinShare() == 5)
+            System.setProperty('ai.memory.topic_route', 'x')
+            System.setProperty('ai.memory.topic_route_min', '99')
+            verify('bad values give the defaults', Config.topicRoute() == 'off' && Config.topicRouteMinShare() == 3)
+        } finally {
+            if (saved == null) System.clearProperty('ai.memory.topic_route') else System.setProperty('ai.memory.topic_route', saved)
+            if (savedMin == null) System.clearProperty('ai.memory.topic_route_min') else System.setProperty('ai.memory.topic_route_min', savedMin)
+        }
+        verify('the content words skip stop words and short words', route.queryWords('The nginx of timeout Jak to') == ['nginx', 'timeout'])
+        verify('Polish letters stay in a word', route.queryWords('Jak wygląda zakładanie repozytoriów') == ['wygląda', 'zakładanie', 'repozytoriów'])
+        verify('the covered share counts words found in any text', route.coveredShare('nginx timeout proxy', ['nginx is here', 'a timeout']) == 2.0d / 3.0d)
+        verify('no words or no texts give a covered share of 0', route.coveredShare('the of', ['nginx']) == 0.0d && route.coveredShare('nginx', []) == 0.0d)
+        String savedCovered = System.getProperty('ai.memory.topic_route_covered')
+        try {
+            System.clearProperty('ai.memory.topic_route_covered')
+            verify('the covered share limit is 0.8 by default', Config.topicRouteCovered() == 0.8d)
+            System.setProperty('ai.memory.topic_route_covered', '0.5')
+            verify('the property sets the covered share limit', Config.topicRouteCovered() == 0.5d)
+            System.setProperty('ai.memory.topic_route_covered', '7')
+            verify('a bad covered share limit gives the default', Config.topicRouteCovered() == 0.8d)
+        } finally {
+            if (savedCovered == null) System.clearProperty('ai.memory.topic_route_covered') else System.setProperty('ai.memory.topic_route_covered', savedCovered)
+        }
+        String question = 'what did we decide about the nginx timeout zzqa zzqb zzqc zzqd'
+        Map off = search(question, [rerank_mode: 'on', rerank_depth: 20])
+        verify('the topic route is off by default in a search', (off.topic_route as Map).mode == 'off' && (off.topic_route as Map).applied == false)
+        Map routed = search(question, [rerank_mode: 'on', rerank_depth: 20, topic_route: 'on'])
+        Map info = routed.topic_route as Map
+        verify('a query with a dominant ticket is routed to it', info.applied == true && info.ticket == 'fix101' && (info.selected as int) >= 1)
+        verify('a routed query skips the re-rank', (routed.rerank as Map).reason == 'topic_routed' && (routed.rerank as Map).depth == 0)
+        List<Map> chat = (routed.results as List<Map>).findAll { it.source_archive == 'chat:turns' }
+        verify('the routed turns come first and belong to the ticket', chat.take(info.selected as int).every { it.file_path.toString().startsWith('fix101/') })
+        verify('a routed query adds no neighbor rows', (routed.neighbors as Map).added == 0)
+        Map keyed = search('summary of FIX-101', [topic_route: 'on'])
+        verify('a ticket-key query is not handled by the topic route', (keyed.topic_route as Map).applied == false)
+        System.setProperty('ai.memory.topic_route_min', '10')
+        try {
+            Map strict = search(question, [topic_route: 'on'])
+            verify('a high minimum share stops the routing', (strict.topic_route as Map).applied == false)
+        } finally {
+            if (savedMin == null) System.clearProperty('ai.memory.topic_route_min') else System.setProperty('ai.memory.topic_route_min', savedMin)
+        }
+        verify('the result reports the covered share of the query', info.covered != null && (info.covered as double) < 0.8d)
+        Map specific = search('nginx timeout', [topic_route: 'on'])
+        Map specificInfo = specific.topic_route as Map
+        verify('a query that the first rows already cover is not routed', specificInfo.applied == false && specificInfo.covered != null && (specificInfo.covered as double) >= 0.8d)
+        System.setProperty('ai.memory.topic_route_covered', '0.1')
+        try {
+            Map lowLimit = search(question, [topic_route: 'on'])
+            verify('a covered share limit of 0.1 stops the routing of a partly covered query', (lowLimit.topic_route as Map).applied == false)
+        } finally {
+            if (savedCovered == null) System.clearProperty('ai.memory.topic_route_covered') else System.setProperty('ai.memory.topic_route_covered', savedCovered)
+        }
     }
 
     private static void testServiceAutostart() {
@@ -638,7 +748,7 @@ why do exports fail
         loader = new GroovyClassLoader(TestSemanticSuite.classLoader)
         Thread.currentThread().contextClassLoader = loader
         ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
-         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval', 'FederatedEngine',
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'TopicRoute', 'ServiceAutostart', 'MemoryRetrieval', 'FederatedEngine',
          'EvalMetrics', 'GoldSet', 'SemanticStore', 'EvalRunner'].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         loader.parseClass(new File('tests/SemanticFixtureBuilder.groovy'))
         Config = loader.loadClass('Config')

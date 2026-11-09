@@ -76,9 +76,24 @@ class MemoryRetrieval {
         int depth = (options.rerank_depth ?: Config.RERANK_DEPTH) as int
         int fuseLimit = rerankWanted ? Math.max(Math.max(limit * 2, limit), depth) : Math.max(limit * 2, limit)
         List<Map> fused = SignalFusion.fuse(pools, fuseLimit)
+        String topicRoute = (options.topic_route ?: Config.topicRoute()).toString().trim().toLowerCase()
+        if (!(topicRoute in Config.TOPIC_ROUTE_MODES)) topicRoute = Config.TOPIC_ROUTE_DEFAULT
+        Map topicRouteInfo = [mode: topicRoute, applied: false, ticket: null, share: 0, selected: 0, covered: null]
+        Map routed = null
+        if (topicRoute == 'on' && !parsed.ticket && semanticQuery && fused) {
+            Map dominant = TopicRoute.dominant(fused)
+            if (dominant && (dominant.share as int) >= Config.topicRouteMinShare()) {
+                List<Map> firstChat = hydrateDocuments(fused.findAll { it.source_archive == TicketCoverage.CHAT_TURNS }.take(TopicRoute.WINDOW), dataDir)
+                double covered = TopicRoute.coveredShare(parsed.terms, firstChat.collect { TicketCoverage.headText(it.content?.toString()) })
+                topicRouteInfo.covered = Math.round(covered * 100) / 100.0d
+                if (covered < Config.topicRouteCovered()) routed = dominant
+            }
+        }
+        if (routed) rerankWanted = false
         Map rerankInfo = [degraded: !semanticQuery ? false : true, reason: semanticQuery ? 'rerank_off' : null, depth: 0]
         if (rerankWanted && !fused) rerankInfo = [degraded: false, reason: null, depth: 0]
         if (genericTicket) rerankInfo = [degraded: false, reason: 'generic_ticket_query', depth: 0]
+        if (routed) rerankInfo = [degraded: false, reason: 'topic_routed', depth: 0]
         boolean allowMeta = parsed.terms ==~ /(?is).*(?:retriev|memory|snippet|worklog\s+comparison|stale).*/
         String neighborMode = (options.neighbors ?: Config.neighborMode()).toString().trim().toLowerCase()
         if (!(neighborMode in Config.NEIGHBOR_MODES)) neighborMode = Config.NEIGHBOR_MODE_DEFAULT
@@ -106,7 +121,15 @@ class MemoryRetrieval {
             }
         }
         boolean coverageApplied = false
-        if (genericTicket && ticketSelect == 'coverage') {
+        if (routed) {
+            Map coverage = coverageSelection(databases, new ParsedQuery(ticket: routed.ticket), fused, Math.max(limit * 2, limit))
+            Map coverageInfo = coverage.info as Map
+            topicRouteInfo = [mode: topicRoute, applied: coverageInfo.applied, ticket: routed.ticket, share: routed.share, selected: coverageInfo.selected, covered: topicRouteInfo.covered]
+            if (coverage.rows) {
+                fused = coverage.rows as List<Map>
+                coverageApplied = true
+            }
+        } else if (genericTicket && ticketSelect == 'coverage') {
             Map coverage = coverageSelection(databases, parsed, fused, Math.max(limit * 2, limit))
             ticketSelectInfo = [mode: ticketSelect] + (coverage.info as Map)
             if (coverage.rows) {
@@ -142,6 +165,7 @@ class MemoryRetrieval {
             ],
             rerank: rerankInfo,
             ticket_select: ticketSelectInfo,
+            topic_route: topicRouteInfo,
             neighbors: [mode: neighborMode, added: fused.count { it.pool == 'neighbor' }, scored: fused.count { it.pool == 'neighbor' && it.rerank_score != null }],
             late: lateInfo,
             degraded: rerankInfo.degraded == true,

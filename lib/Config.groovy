@@ -52,6 +52,14 @@ class Config {
     static final List<String> NEIGHBOR_MODES = ['adjacent', 'after', 'scored', 'off'].asImmutable()
     static final int NEIGHBOR_ANCHORS_DEFAULT = 10
     static final String TICKET_SELECT_DEFAULT = 'coverage'
+    static final String TOPIC_ROUTE_DEFAULT = 'off'
+    static final List<String> TOPIC_ROUTE_MODES = ['off', 'on'].asImmutable()
+    static final int TOPIC_ROUTE_MIN_SHARE_DEFAULT = 3
+    static final int RERANK_PASSAGES_PER_DOC_DEFAULT = 3
+    static final int RERANK_MAX_PASSAGES_DEFAULT = 100
+    static final String PASSAGE_SELECT_DEFAULT = 'overlap'
+    static final List<String> PASSAGE_SELECT_MODES = ['overlap', 'bm25'].asImmutable()
+    static final double TOPIC_ROUTE_COVERED_DEFAULT = 0.8d
     static final List<String> TICKET_SELECT_MODES = ['off', 'gate', 'coverage'].asImmutable()
     static final Set<String> GENERIC_QUERY_WORDS = (
         'summary of status overview state about for the what is on ticket current latest update updates tell me give show'
@@ -485,6 +493,90 @@ class Config {
     static String ticketSelect() {
         String value = (System.getProperty('ai.memory.ticket_select') ?: System.getenv('AI_MEMORY_TICKET_SELECT') ?: '').trim().toLowerCase()
         return value in TICKET_SELECT_MODES ? value : TICKET_SELECT_DEFAULT
+    }
+
+    /**
+     * Whether a query without a ticket key may be routed to the dominant ticket of its first results. AI_MEMORY_TOPIC_ROUTE
+     * selects off (the default) or on. Anything else is ignored.
+     *
+     * @return Topic route mode name
+     */
+    static String topicRoute() {
+        String value = (System.getProperty('ai.memory.topic_route') ?: System.getenv('AI_MEMORY_TOPIC_ROUTE') ?: '').trim().toLowerCase()
+        return value in TOPIC_ROUTE_MODES ? value : TOPIC_ROUTE_DEFAULT
+    }
+
+    /**
+     * How many of the first 10 chat rows must belong to one ticket before the query is routed to it.
+     * AI_MEMORY_TOPIC_ROUTE_MIN overrides the default (a whole number from 1 to 10; anything else is ignored).
+     *
+     * @return Minimum share
+     */
+    static int topicRouteMinShare() {
+        String value = System.getProperty('ai.memory.topic_route_min') ?: System.getenv('AI_MEMORY_TOPIC_ROUTE_MIN')
+        try {
+            int parsed = Integer.parseInt(value?.trim() ?: '')
+            return (parsed >= 1 && parsed <= 10) ? parsed : TOPIC_ROUTE_MIN_SHARE_DEFAULT
+        } catch (NumberFormatException ignored) {
+            return TOPIC_ROUTE_MIN_SHARE_DEFAULT
+        }
+    }
+
+    /**
+     * The share of the query words that the first 10 chat rows must hold for the query to count as specific, so that
+     * the topic route leaves the first-stage order alone. AI_MEMORY_TOPIC_ROUTE_COVERED overrides the default (a number
+     * from 0.1 to 1.0; anything else is ignored).
+     *
+     * @return Share from 0.1 to 1.0
+     */
+    static double topicRouteCovered() {
+        String value = System.getProperty('ai.memory.topic_route_covered') ?: System.getenv('AI_MEMORY_TOPIC_ROUTE_COVERED')
+        try {
+            double parsed = Double.parseDouble(value?.trim() ?: '')
+            return (parsed >= 0.1d && parsed <= 1.0d) ? parsed : TOPIC_ROUTE_COVERED_DEFAULT
+        } catch (NumberFormatException ignored) {
+            return TOPIC_ROUTE_COVERED_DEFAULT
+        }
+    }
+
+    /**
+     * How many passages of one document go to the re-ranker. AI_MEMORY_RERANK_PASSAGES_PER_DOC overrides the default of 3
+     * (a whole number from 1 to 5; anything else is ignored).
+     *
+     * @return Passages per document
+     */
+    static int rerankPassagesPerDocument() {
+        return boundedInt(System.getProperty('ai.memory.rerank_passages_per_doc') ?: System.getenv('AI_MEMORY_RERANK_PASSAGES_PER_DOC'), 1, 5, RERANK_PASSAGES_PER_DOC_DEFAULT)
+    }
+
+    /**
+     * The most passages one re-rank request holds. AI_MEMORY_RERANK_MAX_PASSAGES overrides the default of 100 (a whole
+     * number from 1 to 1000; the service has its own limit, max_passages, and refuses a bigger request).
+     *
+     * @return Passage cap
+     */
+    static int rerankMaxPassages() {
+        return boundedInt(System.getProperty('ai.memory.rerank_max_passages') ?: System.getenv('AI_MEMORY_RERANK_MAX_PASSAGES'), 1, 1000, RERANK_MAX_PASSAGES_DEFAULT)
+    }
+
+    /**
+     * How the passages of a document are chosen: overlap (the passages that share most query words, the default) or
+     * bm25 (the passages with the best BM25 score inside the document). AI_MEMORY_PASSAGE_SELECT; anything else is ignored.
+     *
+     * @return Passage select mode name
+     */
+    static String passageSelect() {
+        String value = (System.getProperty('ai.memory.passage_select') ?: System.getenv('AI_MEMORY_PASSAGE_SELECT') ?: '').trim().toLowerCase()
+        return value in PASSAGE_SELECT_MODES ? value : PASSAGE_SELECT_DEFAULT
+    }
+
+    private static int boundedInt(String value, int low, int high, int fallback) {
+        try {
+            int parsed = Integer.parseInt(value?.trim() ?: '')
+            return (parsed >= low && parsed <= high) ? parsed : fallback
+        } catch (NumberFormatException ignored) {
+            return fallback
+        }
     }
 
     /**

@@ -26,6 +26,18 @@ def parse_settings(text):
             if part.startswith('neighbors='):
                 extra += ['--neighbors', part.partition('=')[2]]
                 continue
+            if part.startswith('ppd='):
+                extra += ['--passages-per-doc', part.partition('=')[2]]
+                continue
+            if part.startswith('maxpass='):
+                extra += ['--max-passages', part.partition('=')[2]]
+                continue
+            if part.startswith('psel='):
+                extra += ['--passage-select', part.partition('=')[2]]
+                continue
+            if part.startswith('topicroute='):
+                extra += ['--topic-route', part.partition('=')[2]]
+                continue
             if part.startswith('ticketselect='):
                 extra += ['--ticket-select', part.partition('=')[2]]
                 continue
@@ -105,6 +117,7 @@ def main():
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--evidence', choices=['head', 'best_passage'], default='head')
     parser.add_argument('--max-tokens', type=int, default=512)
+    parser.add_argument('--config-extra', default='{}')
     parser.add_argument('--tasks', default='')
     parser.add_argument('--tag', default='')
     common.add_freeze_arguments(parser)
@@ -124,7 +137,7 @@ def main():
         process, socket_path = None, None
         if folder is not None:
             workspace = work / system
-            common.write_config(workspace, folder, checksums[folder], args.device, args.max_tokens)
+            common.write_config(workspace, folder, checksums[folder], args.device, args.max_tokens, json.loads(args.config_extra))
             process, socket_path = common.start_service(workspace)
             if not common.warm_up(socket_path, cases[0][2], common.task_data_dir(tasks[cases[0][0]])):
                 common.stop_service(process)

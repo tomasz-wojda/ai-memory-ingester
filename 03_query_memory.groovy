@@ -48,6 +48,10 @@ Integer rerankWeight = null
 String rerankFusion = null
 String neighborMode = null
 String ticketSelectMode = null
+String topicRouteMode = null
+Integer passagesPerDoc = null
+Integer maxPassages = null
+String passageSelectMode = null
 int budgetBytes = Config.RESUME_BUDGET_BYTES
 String ticketFacet = null
 String modeFacet = null
@@ -195,6 +199,34 @@ while (i < args.length) {
         ticketSelectMode = args[i + 1].trim().toLowerCase()
         if (!(ticketSelectMode in Config.TICKET_SELECT_MODES)) {
             println "ERROR: --ticket-select needs off, gate or coverage."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--topic-route' && i + 1 < args.length) {
+        topicRouteMode = args[i + 1].trim().toLowerCase()
+        if (!(topicRouteMode in Config.TOPIC_ROUTE_MODES)) {
+            println "ERROR: --topic-route needs off or on."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--passages-per-doc' && i + 1 < args.length) {
+        passagesPerDoc = args[i + 1].isInteger() ? args[i + 1].toInteger() : -1
+        if (passagesPerDoc < 1 || passagesPerDoc > 5) {
+            println "ERROR: --passages-per-doc needs a whole number from 1 to 5."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--max-passages' && i + 1 < args.length) {
+        maxPassages = args[i + 1].isInteger() ? args[i + 1].toInteger() : -1
+        if (maxPassages < 1 || maxPassages > 1000) {
+            println "ERROR: --max-passages needs a whole number from 1 to 1000."
+            exitApp(2); return
+        }
+        i += 2
+    } else if (arg == '--passage-select' && i + 1 < args.length) {
+        passageSelectMode = args[i + 1].trim().toLowerCase()
+        if (!(passageSelectMode in Config.PASSAGE_SELECT_MODES)) {
+            println "ERROR: --passage-select needs overlap or bm25."
             exitApp(2); return
         }
         i += 2
@@ -440,7 +472,7 @@ if (!input.isEmpty()) {
                 String facetedInput = buildFacetMatchExpression(input, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate)
                 executeFederatedSearch(targetDataset, facetedInput, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput)
             } else {
-                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs, rerank_weight: rerankWeight, rerank_fusion: rerankFusion, neighbors: neighborMode, ticket_select: ticketSelectMode])
+                executeEnhancedSearch(targetDataset, input, limit, raw, snippetSize, extFilter, archiveFilter, jsonOutput, ticketFacet, modeFacet, impactFacet, sinceDate, untilDate, showSignals, diagnostics, relaxMode, explain, [rerank_mode: rerankMode, late_mode: lateMode, rerank_depth: rerankDepth, rerank_budget_ms: rerankBudgetMs, rerank_weight: rerankWeight, rerank_fusion: rerankFusion, neighbors: neighborMode, ticket_select: ticketSelectMode, topic_route: topicRouteMode, rerank_passages_per_doc: passagesPerDoc, rerank_max_passages: maxPassages, passage_select: passageSelectMode])
             }
         }
         exitApp(0); return
@@ -856,6 +888,10 @@ static List<String> semanticLines(Map result) {
     if (ticketSelect && ticketSelect.mode && ticketSelect.mode != 'off') {
         lines << "Ticket select: mode=${ticketSelect.mode} applied=${ticketSelect.applied} candidates=${ticketSelect.candidates} selected=${ticketSelect.selected}"
     }
+    Map topicRoute = (result.topic_route ?: [:]) as Map
+    if (topicRoute && topicRoute.mode && topicRoute.mode != 'off') {
+        lines << "Topic route: mode=${topicRoute.mode} applied=${topicRoute.applied} ticket=${topicRoute.ticket} share=${topicRoute.share} covered=${topicRoute.covered} selected=${topicRoute.selected}"
+    }
     return lines
 }
 
@@ -980,6 +1016,10 @@ static void printQueryUsage() {
     println "      --rerank-fusion MODE    How the model score joins the order: rrf (default), score or cut (AI_MEMORY_RERANK_FUSION)"
     println "      --neighbors MODE        Where neighbor turns go: adjacent (default), after, scored or off (AI_MEMORY_NEIGHBORS)"
     println "      --ticket-select MODE    For a ticket key with only generic words: coverage (default; no re-rank, and choose the ticket's turns by coverage), gate (no re-rank) or off (AI_MEMORY_TICKET_SELECT)"
+    println "      --topic-route MODE      Route a query without a ticket key to the dominant ticket of its first results: off (default) or on (AI_MEMORY_TOPIC_ROUTE, AI_MEMORY_TOPIC_ROUTE_MIN, AI_MEMORY_TOPIC_ROUTE_COVERED)"
+    println "      --passages-per-doc N    Passages of one document sent to the re-ranker, 1 to 5 (default 3; AI_MEMORY_RERANK_PASSAGES_PER_DOC)"
+    println "      --max-passages N        Most passages in one re-rank request, 1 to 1000 (default 100; the service limit max_passages must allow it; AI_MEMORY_RERANK_MAX_PASSAGES)"
+    println "      --passage-select MODE   How passages are chosen inside a document: overlap (default) or bm25 (AI_MEMORY_PASSAGE_SELECT)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"

@@ -752,6 +752,27 @@ Against the old default: the new default gains +6.8 [2.5, 12.2] (9 wins, 1 loss,
 - Evidence is the first 1,050 characters of each turn.
 - Results are in `model-bench-adj-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
 
+## 16. Phase 2 research: where facts are lost for non-ticket queries (2026-11-09)
+
+Read-only measurement, no code change. For the 23 adjudicated queries that are not ticket-key queries (task C question form; keyword and Polish forms of tasks E to O) the first-stage (lexical) result list was checked against the strict facts of each ledger. A fact counts as found at rank r when the first r chat turns of the list hold all its anchors in their full text (frozen time-based corpora).
+
+| Query form | n | Weighted facts in the first 10 | in the first 30 | in the first 100 | Facts never found in 100 rows |
+|---|---|---|---|---|---|
+| Question (task C) | 1 | 12.8 | 46.2 | 53.8 | 35% |
+| Keywords (E to O) | 11 | 44.3 | 61.8 | 74.6 | 28% |
+| Polish (E to O) | 11 | 37.7 | 62.2 | 78.4 | 23% |
+| All 23 | 23 | 39.8 | 61.3 | 75.5 | |
+
+What this means:
+- The re-rank window (30 turns) can show at most about 61 points of the facts. The first 10 of the lexical order already hold about 40. So the window leaves room for about +21 points, but the re-ranker with fusion gains only +0.6 on the adjudicated set (section 15). The loss happens inside the window: ordering, the 1,050-character evidence, and the unscored neighbor rows.
+- About a quarter of the facts are never in the first 100 rows (23% to 35%). No re-ranker can reach them. This is a first-stage problem: the words of the query do not match the words of the turns. Examples: task G keywords (0.0 in the first 30, 9 of 17 facts never found), task G Polish (10 of 17 never found), task E keywords (7 of 17), task C question form (6 of 17).
+- Depth 100 would reach about 75 points instead of 61, at a cost of time (R18).
+- For the original tasks A and B the first 30 rows hold 36 to 94 points depending on the form; the Polish forms of task A are the weakest (36.1 at 30).
+
+Candidate work for phase 2, from this evidence (not a plan): (1) query expansion from the ticket vocabulary for keyword and Polish queries (R29, R31) to raise the pool; (2) ordering inside the window: depth, passage choice and evidence (R18, R23, R24, R37 reopened only if the numbers support it); (3) the neighbor setting (D-36, deferred).
+
+Limit: this uses the full text of each turn, while the benchmark scores the first 1,050 characters. The ceiling for the benchmark is therefore lower than shown.
+
 ---
 
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tasks and results refer to internal tickets and memory content: share this document only with people allowed to see them.

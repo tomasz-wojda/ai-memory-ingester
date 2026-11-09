@@ -1480,4 +1480,11 @@ Section 13 of [rerank_enhacement.md](rerank_enhacement.md). Provisional: the led
 
 Section 14 of [rerank_enhacement.md](rerank_enhacement.md). For a ticket key with generic words (`summary of KD-6919`) the re-ranker scored passages against `summary of`, and the candidates were the newest turns of the ticket. New setting `--ticket-select coverage` (off by default) chooses the ticket's turns by coverage of informative tokens. Mean cov@10 over 43 queries: lexical 30.6, default 32.8, `coverage` 38.3, `coverage` + `neighbors=after` 41.0. On the 12 ticket-key queries: lexical 31.1, default 25.9, `coverage` 45.7 (held-out tasks gain as much as development tasks). The other 31 queries do not change. All five gates pass for `coverage` against the default. Proposed decision D-37. Provisional: the new ledgers are not adjudicated.
 
+### Owner decisions of 2026-11-09
+
+- D-37: `coverage` is now the default for ticket queries with generic words (`AI_MEMORY_TICKET_SELECT=off` restores the old behavior).
+- D-40 (R49 option D): `sweep-memory` starts the service when `AI_MEMORY_SERVICE_AUTOSTART=1`, and writes `.ai-worklog/memory-service.json` once with the default model (R50). Tested in a temporary workspace: flag off gives `SERVICE_AUTOSTART off`; flag on starts the service (`started`), a second sweep reports `running`, a missing model gives `skipped (model not installed)`; a real re-rank request scored 29 rows on the Apple GPU (MPS).
+- D-39 (R02): all 13 reviewed ledgers (C, D, E to O) are accepted. Results on this set: section 15 of [rerank_enhacement.md](rerank_enhacement.md). R44 is closed by the owner. D-36 and R10 are deferred (defaults apply).
+
+
 Created using Anthropic Claude. Keep this internal until a person has reviewed and verified it. The tables contain internal ticket content: share them only with people allowed to see it.

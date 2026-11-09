@@ -202,7 +202,7 @@ groovy.grape.Grape.grab(
  'MemoryLock', 'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule',
  'WorklogEmitter', 'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter',
  'TranscriptReconciler', 'JournalProjector', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
- 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'MemoryRetrieval', 'EvalMetrics', 'GoldSet',
+ 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval', 'EvalMetrics', 'GoldSet',
  'SemanticStore', 'EvalRunner'].each { name ->
     gcl.parseClass(new File("lib/${name}.groovy"))
 }

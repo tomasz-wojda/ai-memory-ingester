@@ -110,7 +110,7 @@ class WorklogSuite {
          'FacetPath', 'MemoryExclusion', 'TurnClassifier', 'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
          'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter',
          'TicketRetrieval', 'DatasetRegistry', 'SetRegistry', 'FederatedEngine',
-         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'MemoryRetrieval'].each { String name ->
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval'].each { String name ->
             loader.parseClass(new File("lib/${name}.groovy"))
         }
         Thread.currentThread().contextClassLoader = loader

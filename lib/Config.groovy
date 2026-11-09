@@ -51,7 +51,7 @@ class Config {
     static final String NEIGHBOR_MODE_DEFAULT = 'adjacent'
     static final List<String> NEIGHBOR_MODES = ['adjacent', 'after', 'scored', 'off'].asImmutable()
     static final int NEIGHBOR_ANCHORS_DEFAULT = 10
-    static final String TICKET_SELECT_DEFAULT = 'off'
+    static final String TICKET_SELECT_DEFAULT = 'coverage'
     static final List<String> TICKET_SELECT_MODES = ['off', 'gate', 'coverage'].asImmutable()
     static final Set<String> GENERIC_QUERY_WORDS = (
         'summary of status overview state about for the what is on ticket current latest update updates tell me give show'
@@ -476,9 +476,9 @@ class Config {
     }
 
     /**
-     * How a query with a ticket facet and only generic terms is handled. AI_MEMORY_TICKET_SELECT selects off (the default),
-     * gate (no re-rank for such a query) or coverage (gate, and the ticket's chat turns are chosen by coverage of
-     * informative tokens). Anything else is ignored.
+     * How a query with a ticket facet and only generic terms is handled. AI_MEMORY_TICKET_SELECT selects coverage (the
+     * default: no re-rank for such a query, and the ticket's chat turns are chosen by coverage of informative tokens),
+     * gate (no re-rank for such a query) or off (the old behavior). Anything else is ignored.
      *
      * @return Ticket selection mode name
      */

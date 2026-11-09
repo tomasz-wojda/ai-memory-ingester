@@ -979,7 +979,7 @@ static void printQueryUsage() {
     println "      --rerank-weight N       Weight of the re-rank signal in the rank fusion (1 to 100, default 12; AI_MEMORY_RERANK_WEIGHT)"
     println "      --rerank-fusion MODE    How the model score joins the order: rrf (default), score or cut (AI_MEMORY_RERANK_FUSION)"
     println "      --neighbors MODE        Where neighbor turns go: adjacent (default), after, scored or off (AI_MEMORY_NEIGHBORS)"
-    println "      --ticket-select MODE    For a ticket key with only generic words: off (default), gate (no re-rank) or coverage (gate, and choose the ticket's turns by coverage) (AI_MEMORY_TICKET_SELECT)"
+    println "      --ticket-select MODE    For a ticket key with only generic words: coverage (default; no re-rank, and choose the ticket's turns by coverage), gate (no re-rank) or off (AI_MEMORY_TICKET_SELECT)"
     println "      --late auto|on|off      Late-interaction pool from the service (default auto; AI_MEMORY_LATE=0 turns it off)"
     println "      --signals               Show ranking signals"
     println "      --diagnostics           Show diagnostics (implies --signals)"

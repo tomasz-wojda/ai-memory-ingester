@@ -67,6 +67,10 @@ try {
     digestStore.close()
 }
 
+String serviceNote = 'off'
+if (ServiceAutostart.enabled() && !dryRun) {
+    serviceNote = ServiceAutostart.ensure(repositoryRoot, workspaceRoot)
+}
 String semanticIndexNote = 'off'
 if (System.getenv('AI_MEMORY_SWEEP_INDEX') == '1' && !dryRun) {
     semanticIndexNote = startSemanticIndex(runner, repositoryRoot, workspaceRoot)
@@ -94,6 +98,7 @@ printReconcileLine(reconcileReport)
 printProjectLine(projectReport)
 println "PRUNE_EXCLUDED\tturns=${pruneReport.turns}\tartifacts=${pruneReport.artifacts}\thashes=${pruneReport.hashes}\tdry_run=${dryRun}"
 println worklogs.output.trim()
+println "SERVICE_AUTOSTART\t${serviceNote}"
 println "SEMANTIC_INDEX\t${semanticIndexNote}"
 println "SWEEP_MEMORY\tjournal_changed=${journalChanged}\tchat_turns_changed=${chatTurnsChanged}\tworklogs_changed=${worklogsChanged}\tdatabase_syncs=${chatSyncNeeded && !dryRun ? 3 : 0}\tdigest_updated=${digestUpdated}\tintegrity=${integrityReport?.status}\tconflicts=${lagSummary.conflicts}\tlag=${lagSummary.lag_reports}\tunknown_format=${lagSummary.unknown_format_failures}\tfailures=${failures}\tdigest_bytes=${new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).exists() ? new File(outputRoot, Config.CHAT_RESUME_DIGEST_NAME).length() : 0}\telapsed_ms=${System.currentTimeMillis() - started}\tticket_resumes=${ticketResumes}"
 if (failures > 0) exitApp(1)

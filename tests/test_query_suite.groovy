@@ -533,7 +533,7 @@ class TestQuerySuite {
          'TicketFreshness', 'ResumeDigest', 'WorklogParser', 'WorklogDocument', 'TicketStateCapsule', 'WorklogEmitter',
          'TicketRetrieval', 'CursorTranscriptAdapter', 'ClaudeTranscriptAdapter', 'TranscriptReconciler', 'JournalProjector',
          'DatasetRegistry', 'SetRegistry', 'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage',
-         'TicketCoverage', 'MemoryRetrieval'].each { name ->
+         'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval'].each { name ->
             sharedGcl.parseClass(new File("lib/${name}.groovy"))
         }
         configClass = sharedGcl.loadClass('Config')

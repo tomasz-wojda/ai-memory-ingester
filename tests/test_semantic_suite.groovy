@@ -43,6 +43,7 @@ class TestSemanticSuite {
             testRerankFusion()
             testNeighborModes()
             testTicketCoverage()
+            testServiceAutostart()
             testFallbackAndSwitches()
             testLatePool(fixture.corpus as List<Map>)
             testReindexCommand()
@@ -313,6 +314,48 @@ why do exports fail
         verify('addSignal without an override keeps the table weight', Math.abs((plain[0].fused_score as double) - 12 / 61.0d) < 1.0e-12d)
     }
 
+    private static void testServiceAutostart() {
+        Class autostart = loader.loadClass('ServiceAutostart')
+        String saved = System.getProperty('ai.memory.service_autostart')
+        try {
+            System.clearProperty('ai.memory.service_autostart')
+            verify('autostart is off by default', autostart.enabled() == (System.getenv('AI_MEMORY_SERVICE_AUTOSTART') == '1'))
+            System.setProperty('ai.memory.service_autostart', '1')
+            verify('the property 1 turns autostart on', autostart.enabled())
+            System.setProperty('ai.memory.service_autostart', 'yes')
+            verify('any other value keeps autostart off', !autostart.enabled())
+        } finally {
+            if (saved == null) System.clearProperty('ai.memory.service_autostart') else System.setProperty('ai.memory.service_autostart', saved)
+        }
+        File models = new File(workspace, "autostart-models-${System.nanoTime()}")
+        new File(models, 'good-model').mkdirs()
+        new File(models, 'models.manifest.json').text = '{"models": {"good-model": {"folder_checksum": "abc123", "licence": "Apache-2.0"}, "no-folder": {"folder_checksum": "def"}, "no-checksum": {}}}'
+        new File(models, 'no-checksum').mkdirs()
+        Map entry = autostart.manifestEntry(models, 'good-model') as Map
+        verify('the manifest entry of an installed model is found', entry != null && entry.folder_checksum == 'abc123')
+        verify('a model without a folder has no entry', autostart.manifestEntry(models, 'no-folder') == null)
+        verify('an entry without a checksum has no entry', autostart.manifestEntry(models, 'no-checksum') == null)
+        verify('an unknown model has no entry', autostart.manifestEntry(models, 'other') == null)
+        verify('a missing manifest gives no entry', autostart.manifestEntry(new File(workspace, 'nowhere'), 'good-model') == null)
+        Map config = autostart.buildConfig('good-model', entry) as Map
+        Map model = ((config.models as Map)['good-model']) as Map
+        verify('the configuration names the model, the checksum and 512 tokens', config.rerank_model == 'good-model' && model.sha256 == 'abc123' && model.max_tokens == 512 && model.device == 'auto' && model.licence == 'Apache-2.0')
+        File root = new File(workspace, "autostart-root-${System.nanoTime()}")
+        root.mkdirs()
+        Map first = autostart.prepare(root, models, 'good-model') as Map
+        File written = new File(root, '.ai-worklog/memory-service.json')
+        verify('prepare writes the configuration once', first.ready == true && first.written == true && written.isFile())
+        verify('the written configuration is valid JSON with the model', (new groovy.json.JsonSlurper().parse(written) as Map).rerank_model == 'good-model')
+        written.text = '{"rerank_model": "mine"}'
+        Map second = autostart.prepare(root, models, 'good-model') as Map
+        verify('prepare never changes an existing configuration', second.ready == true && second.written == false && written.text == '{"rerank_model": "mine"}')
+        File emptyRoot = new File(workspace, "autostart-empty-${System.nanoTime()}")
+        emptyRoot.mkdirs()
+        Map missing = autostart.prepare(emptyRoot, models, 'other') as Map
+        verify('prepare skips when the model is not installed', missing.ready == false && missing.note == 'skipped (model not installed)' && !new File(emptyRoot, '.ai-worklog/memory-service.json').exists())
+        verify('ensure skips when the launcher is missing', autostart.ensure(new File(workspace, 'no-repository'), emptyRoot) == 'skipped (service launcher not found)')
+    }
+
     private static void testTicketCoverage() {
         Class coverage = loader.loadClass('TicketCoverage')
         verify('a query of generic words is generic', coverage.genericTerms('summary of') && coverage.genericTerms('Status of the ticket'))
@@ -337,15 +380,19 @@ why do exports fail
         String saved = System.getProperty('ai.memory.ticket_select')
         try {
             System.clearProperty('ai.memory.ticket_select')
-            verify('the ticket select mode is off by default', Config.ticketSelect() == 'off')
+            verify('the ticket select mode is coverage by default', Config.ticketSelect() == 'coverage')
             System.setProperty('ai.memory.ticket_select', 'coverage')
             verify('the property sets the ticket select mode', Config.ticketSelect() == 'coverage')
             System.setProperty('ai.memory.ticket_select', 'nonsense')
-            verify('an unknown ticket select mode gives off', Config.ticketSelect() == 'off')
+            verify('an unknown ticket select mode gives the default', Config.ticketSelect() == 'coverage')
+            System.setProperty('ai.memory.ticket_select', 'off')
+            verify('the property off turns the ticket selection off', Config.ticketSelect() == 'off')
         } finally {
             if (saved == null) System.clearProperty('ai.memory.ticket_select') else System.setProperty('ai.memory.ticket_select', saved)
         }
-        Map off = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20])
+        Map defaultMode = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20])
+        verify('the default mode is coverage and skips the re-rank for a generic ticket query', (defaultMode.ticket_select as Map).mode == 'coverage' && (defaultMode.rerank as Map).reason == 'generic_ticket_query')
+        Map off = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20, ticket_select: 'off'])
         verify('the mode off keeps the re-rank for a generic ticket query', (off.ticket_select as Map).mode == 'off' && (off.rerank as Map).reason != 'generic_ticket_query')
         Map gate = search('summary of FIX-101', [rerank_mode: 'on', rerank_depth: 20, ticket_select: 'gate'])
         verify('the gate skips the re-rank for a generic ticket query', (gate.rerank as Map).reason == 'generic_ticket_query' && (gate.rerank as Map).depth == 0 && gate.degraded == false)
@@ -591,7 +638,7 @@ why do exports fail
         loader = new GroovyClassLoader(TestSemanticSuite.classLoader)
         Thread.currentThread().contextClassLoader = loader
         ['Config', 'TextFold', 'StopWords', 'QueryPlanner', 'TicketKey', 'FrontMatter', 'MemoryEngine', 'DatasetRegistry', 'TicketFreshness', 'TicketRetrieval',
-         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'MemoryRetrieval', 'FederatedEngine',
+         'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval', 'FederatedEngine',
          'EvalMetrics', 'GoldSet', 'SemanticStore', 'EvalRunner'].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         loader.parseClass(new File('tests/SemanticFixtureBuilder.groovy'))
         Config = loader.loadClass('Config')

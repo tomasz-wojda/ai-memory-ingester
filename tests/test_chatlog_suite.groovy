@@ -74,7 +74,7 @@ class TestChatLogSuite {
             'TimestampRepair', 'ChatLogParser', 'FacetPath', 'MemoryExclusion', 'TurnClassifier',
             'TurnDocument', 'TurnEmitter', 'SweepState', 'JournalEvent', 'JournalStore',
             'TicketFreshness', 'ResumeDigest', 'TicketRetrieval', 'DatasetRegistry', 'SetRegistry',
-            'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'MemoryRetrieval'
+            'FederatedEngine', 'SignalFusion', 'NeighborExpansion', 'ContextPacker', 'PassageBuilder', 'SemanticClient', 'RerankStage', 'TicketCoverage', 'ServiceAutostart', 'MemoryRetrieval'
         ].each { String name -> loader.parseClass(new File("lib/${name}.groovy")) }
         Config = loader.loadClass('Config')
         TicketKey = loader.loadClass('TicketKey')

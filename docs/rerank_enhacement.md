@@ -146,7 +146,7 @@ Task A and B values for the worklog and all-source columns come from `three-way-
 The tuning steps below are only safe when the measurement is sound. These steps come first.
 
 - [x] **R01 [ING] Promote the harness into the repository.** The benchmark scripts live in `data/eval/ledger-run/` (git-ignored). Move the generic code (`model_bench.py`, `three_way.py`) into a tracked folder. Keep the ledgers and any internal text out of the repository. Accept: one command runs every task and writes a JSON report.
-- [ ] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`.
+- [x] **R02 OWNER Adjudicate ledgers C and D.** Review the facts, weights and anchors that the author drafted. Accept: owner sign-off recorded in `decision-log.md`. _Done 2026-11-09: the owner accepted all 13 ledgers (C, D, E to O) as they are (D-39). Ledgers A and B were not part of the review and stay unadjudicated. Anchor C10 (1.40% false matches) stays as it is._
 - [x] **R03 [ING] Add at least 10 more tasks** with ledgers from different tickets and topics: long and short tickets, Polish and English, ticket-key questions, keyword questions, and paraphrases. Accept: at least 14 tasks, with at least 3 queries per task. A one-fact change then moves a score by about 1 point or less. _Done 2026-11-08: 15 tasks, 43 queries, ledgers E to O not yet adjudicated (section 13)._
 - [ ] **R04 [ING] Add the measures that are missing**: nDCG@10 and recall@k against graded facts, claim precision, freshness, temporal correctness and contradictions (manual for the last four), and the p50 and p95 latency. Accept: the full seven-dimension score is computed for at least the two newest tasks. _Partly done 2026-11-08: nDCG@10 added (section 13.7); recall@k is cov@k; the four manual dimensions are not scored._
 - [x] **R05 [ING] Score the best passage, not the head.** Add an evidence mode that uses `best_passage` (or the top passage list) as the snippet. Accept: both modes are reported side by side (tests H2).
@@ -154,7 +154,7 @@ The tuning steps below are only safe when the measurement is sound. These steps 
 - [x] **R07 [ING] Add a cutoff for worklog and artifact documents** in the all-source branch (by document date, or a frozen database copy). Accept: no document newer than the freeze point enters the scored set.
 - [x] **R08 [ING] Freeze and version the databases per run.** Record the file sizes, hashes and sweep time of `convo.db`, `worklogs.db` and `artifacts.db` in every report. Accept: a rerun on the same snapshot gives identical numbers.
 - [x] **R09 [ING] Explain the three open anomalies**: the Polish ArgoCD regression (all models identical), the depth 100 speed, and the identical results of different models on some queries. Accept: each has a documented cause or a reproduction.
-- [ ] **R10 OWNER Decide the target and the budget.** Confirm the time budget (1.2 s at depth 30), whether CPU-only machines must also meet it, and the accepted regression per task.
+- [ ] **R10 OWNER Decide the target and the budget.** Confirm the time budget (1.2 s at depth 30), whether CPU-only machines must also meet it, and the accepted regression per task. _Deferred by the owner on 2026-11-09 ("skip this decision for now"): the defaults apply (1.2 s, CPU-only machines must meet it, a loss of 3 points on one task)._
 
 ---
 
@@ -227,7 +227,7 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 - [ ] **R41 [ING] Run the model bake-off on the larger benchmark** (mmarco, bge-reranker-v2-m3, and any new Apache-2.0 or MIT candidate). Accept: a model replaces the default only when it wins on the gates and fits the budget.
 - [ ] **R42 [ING] Test a cascade**: mmarco on 50 passages, then bge-reranker-v2-m3 on the top 10 (about 0.3 s plus 0.6 s on MPS, an estimate). Accept: gates pass within budget on MPS, and a documented CPU fallback.
 - [ ] **R43 OWNER Decide on fine-tuning only after labels exist.** At least a few hundred graded pairs from the owner's real questions, split into dev and test, are needed. Accept: a written decision.
-- [ ] **R44 OWNER IP Legal confirms Apache-2.0** for the chosen models and the 41 packages (`tqdm` is MPL-2.0 AND MIT). No model changes before this. _Proposal and draft request written 2026-11-08: [r44_ip_legal_proposal.md](r44_ip_legal_proposal.md); scope decided by the owner on 2026-11-08 (two models; Apache-2.0 acceptable; D-38); the request keeps two questions about training data and base model; waiting for the owner to send it._
+- [x] **R44 OWNER IP Legal confirms Apache-2.0** for the chosen models and the 41 packages (`tqdm` is MPL-2.0 AND MIT). No model changes before this. _Proposal and draft request written 2026-11-08: [r44_ip_legal_proposal.md](r44_ip_legal_proposal.md); scope decided by the owner on 2026-11-08 (two models; Apache-2.0 acceptable; D-38); the request keeps two questions about training data and base model; closed by the owner on 2026-11-09 ("treat R44 as solved"); no request is needed._
 - [ ] **R45 [ING] Implement the model fallback queue** if wanted (see the earlier design): ordered models, a fallback on load failure, a cost-based passage cut on slowness, and a lexical end of the queue for Polish queries. Accept: tests for each failure case.
 
 ### Phase H: operation and speed
@@ -235,8 +235,8 @@ Order: measure first (section 5), then fusion, then recall, then chunking, then 
 - [x] **R46 [ING] Cache scores** by hash of (model revision, query, passage). Accept: a repeated query is served from the cache with identical results.
 - [ ] **R47 [ING] Tune the batch size and threading** for MPS and CPU, and report the effect. Accept: lower latency at the same scores.
 - [ ] **R48 [ING] Report latency percentiles in the service** (p50, p95, degraded rate, reason counts) so the gates can be watched in daily use. _Partly done: `warmed` and `warm_ms` are in the health reply; p50, p95, degraded rate and reason counts are not._
-- [ ] **R49 OWNER Decide how the service starts.** Today the engine does not start it, so `--rerank auto` does nothing unless it runs. Options: a launcher, a login item, or a documented manual start.
-- [ ] **R50 [ING] Write the default model into the service config** (`.ai-worklog/memory-service.json`) with the folder checksum, after R40 and R44.
+- [x] **R49 OWNER Decide how the service starts.** Today the engine does not start it, so `--rerank auto` does nothing unless it runs. Options: a launcher, a login item, or a documented manual start. _Decided 2026-11-09: option D, `sweep-memory` with the flag `AI_MEMORY_SERVICE_AUTOSTART=1`. Built (plan: [service_autostart_plan.md](service_autostart_plan.md))._
+- [x] **R50 [ING] Write the default model into the service config** (`.ai-worklog/memory-service.json`) with the folder checksum, after R40 and R44. _Done 2026-11-09: written once by the autostart step when the file does not exist (model mmarco, 512 tokens, device auto)._
 
 ### Phase I: rollout
 
@@ -721,6 +721,36 @@ Make `coverage` the default for ticket queries with generic words (D-37). It cha
 - The generic-word list is fixed (`Config.GENERIC_QUERY_WORDS`). A query with any other word keeps the old path.
 - The sidecar holds terms from private conversations and stays in the data folder (git-ignored).
 - Results are in `model-bench-tc-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
+
+## 15. Results on the adjudicated ledgers (2026-11-09)
+
+The owner accepted 13 ledgers on 2026-11-09 (D-39): tasks C, D and E to O. Tasks A and B were not reviewed and are not in this set. This run uses `--adjudicated-only`: 13 tasks, 35 queries, frozen time-based corpora, mmarco, depth 30, two runs that match in all non-timing fields. Since D-37 the default is `coverage`. `ticketselect=off` is the old default.
+
+### 15.1 Results
+
+| Setting | cov@10 | Against lexical (difference, interval, wins/losses/ties) | nDCG@10 | precision@10 |
+|---|---|---|---|---|
+| lexical | 36.5 | | 37.6 | 57.1 |
+| new default (`coverage`, weight 12, `adjacent`) | 37.2 | +0.6 [-2.3, 3.6], 7/10/18 | 38.3 | 58.0 |
+| old default (`ticketselect=off`) | 30.4 | -6.2 [-12.2, -0.7], significant, 8/19/8 | 31.6 | 55.4 |
+| `coverage` + `after` | 38.9 | +2.4 [-1.0, 6.2], 13/8/14 | 38.9 | 63.7 |
+| `after` only (`ticketselect=off`) | 34.6 | -1.9 [-7.0, 3.4] | 33.7 | 59.7 |
+
+Against the old default: the new default gains +6.8 [2.5, 12.2] (9 wins, 1 loss, 25 ties; no task below -3). `coverage` + `after` gains +8.5 [3.5, 14.4] (21 wins, 9 losses; tasks C and I below -3). `coverage` + `after` against `after` only: +4.3 [1.2, 7.9] (task G below -3). nDCG@10 gives the same direction.
+
+### 15.2 What this means
+
+- D-37 repaired a loss. On the adjudicated set the old default was significantly worse than lexical; the new default is level with lexical (+0.6, not significant).
+- No configuration tested is significantly better than lexical on this set. The best one (`coverage` + `after`, +2.4) has an interval that includes zero. The large gains of the re-ranker in section 12 came from tasks A and B, which are not in the adjudicated set.
+- The ticket selection (D-37) adds more than the re-ranker does. The neighbor setting (D-36, deferred) adds a further +1.7 with a per-task loss on C and I.
+- Open: the 31 queries that are not ticket-key queries. For them the re-ranker alone is still not shown to help (phase 2, R29 to R36).
+
+### 15.3 Limits
+
+- Tasks A and B are outside the set, so the result is not a replacement for section 13; it shows what the reviewed ledgers support.
+- 35 queries, 13 tasks. The ledgers of E to O were drafted by a model and accepted by the owner without edits (anchor C10 has 1.40% false matches).
+- Evidence is the first 1,050 characters of each turn.
+- Results are in `model-bench-adj-{a,b}` files in `data/eval/ledger-run/` (git-ignored).
 
 ---
 

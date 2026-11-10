@@ -56,7 +56,7 @@ The owner provides the phrases: the questions as the owner would type them, in P
 | `old` | 10% | a decision from more than 2 months ago |
 | `cross` | 5% | a question that spans two tickets |
 
-At least 40% Polish. Each query goes into `queries.tsv` (tab separated): `id`, `phrase`, `language`, `type`, `ticket` (if any), `asked_on`, `writer`, `grep_terms` (optional, separated by `|`).
+At least 40% Polish. Besides phrases that the owner types, queries can be mined from real Cursor sessions whose first message was followed by a `prompt.log` read: see [real_session_query_mining_plan.md](real_session_query_mining_plan.md) (57 candidates found on 2026-11-10; they also need an as-of snapshot and a ledger from what the session used). Each query goes into `queries.tsv` (tab separated): `id`, `phrase`, `language`, `type`, `ticket` (if any), `asked_on`, `writer`, `grep_terms` (optional, separated by `|`).
 
 ### 3.2 Snapshot and exclusions
 

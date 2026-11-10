@@ -31,7 +31,7 @@ Common rules for all methods:
 
 | # | What runs (template) | Output kept |
 |---|---|---|
-| 1 | Session-start read: `head -n $CUT prompt.log \| tail -n 400`. Topic search: `head -n $CUT prompt.log \| grep -n -i -E "$WORDS" -C 2`, where `$WORDS` are the content words of the phrase joined by `\|` (as typed, no folding). Matches are taken newest first until the budget is full. Rule fixed before the run: for a query of type `recent` the context is the tail; for every other type it is the grep. | `raw-tail.txt`, `raw-grep.txt`, `context.md` |
+| 1 | Session-start read: `head -n $CUT prompt.log \| tail -n 400`. Topic search: `head -n $CUT prompt.log \| grep -n -i -E "$WORDS" -C 2`, where `$WORDS` are the grep words (rule changed on 2026-11-10, see the execution note): the identifiers in the phrase (upper-case or digit tokens such as `BNG`, `GHA`, `KD-6919`), or the terms that the owner gives in the column `grep_terms` of `queries.tsv`; when the phrase holds no identifier, the 3 rarest content words found in the log. Matches are taken newest first until the budget is full. Rule fixed before the run: for a query of type `recent` the context is the tail; for every other type it is the grep. | `raw-tail.txt`, `raw-grep.txt`, `context.md` |
 | 2 | `./ai-memory-ingester query "$PHRASE" --limit 20 --json --rerank off --data-dir $SNAP`. Defaults stay: ticket selection `coverage`, neighbor setting `adjacent`, topic routing off, all archives (chat turns, worklogs, state capsules, artifacts). | `results.json`, `context.md` |
 | 3 | Direct SQL on the snapshot databases: `documents_fts MATCH` with all content words (AND), ordered by `bm25(documents_fts)`; when fewer than 10 rows match, the same words joined by OR (the engine's relax rule). Same archives as method 2; rows from the databases merged by score. No recency, authority, impact, ticket or neighbor logic. | `results.json`, `context.md` |
 | 4 | A service started from a temporary configuration with the model mmarco (512 tokens), then method 2's command with `--rerank on --rerank-depth 30 --rerank-budget-ms 10000`. Fusion weight 12 (today's default). | `results.json`, `context.md` |
@@ -56,7 +56,7 @@ The owner provides the phrases: the questions as the owner would type them, in P
 | `old` | 10% | a decision from more than 2 months ago |
 | `cross` | 5% | a question that spans two tickets |
 
-At least 40% Polish. Each query goes into `queries.tsv` (tab separated): `id`, `phrase`, `language`, `type`, `ticket` (if any), `asked_on`, `writer`.
+At least 40% Polish. Each query goes into `queries.tsv` (tab separated): `id`, `phrase`, `language`, `type`, `ticket` (if any), `asked_on`, `writer`, `grep_terms` (optional, separated by `|`).
 
 ### 3.2 Snapshot and exclusions
 
@@ -170,12 +170,22 @@ The collected files hold internal conversation text and may hold personal data. 
 7. Who writes the ledgers (you), and who scores 20% as the second reviewer?
 8. Tier B (isolated answers by a model): do you want it, or Tier A only at first?
 
+## Execution note, 2026-11-10 (first query q001)
+
+- The owner gave the first phrase (q001, type `topic`, English). The open questions of section 11 were not answered; the defaults of this plan were used: all archives, 22,000 bytes and 20 items, bge with a 10 s limit and the service time recorded.
+- Snapshot frozen after one `sweep-memory` (journal sequence 29552). Excluded from every method: all turns (251) and artifacts (9) of this Claude Code session (found by the journal observation id and the session field), and the 75 `prompt.log` entries of this session (found by their exact text). The snapshot is `data/eval/real/snapshot/` (databases, a filtered `prompt.log`, `snapshot.json`).
+- Collector `bench/gold_collect.py` written (commands `snapshot`, `collect`, `labels`). The blind labels are not made yet: they are made after the last query.
+- Method 1 rule changed during the dry run: the first rule (the 3 rarest content words) picked `informations`, `gather`, `development` and produced a useless context. A person greps identifiers, so the rule now takes the upper-case or digit tokens of the phrase (here `BNG`, `GHA`), or the owner's `grep_terms`.
+- Finding from q001: methods 2 to 5 return only `chat:artifacts` (model reasoning text) in the top 20; no chat turn, worklog chunk or state capsule is among them. The same problem was seen in earlier benchmarks (R32). Method 1 (grep `BNG|GHA`) matches 4,188 lines in 463 windows; the context holds the 20 newest windows.
+- Timings for q001 (cold / warm, process start included): method 1 0.29 / 0.29 s; method 2 1.09 / 0.98 s; method 3 0.02 / 0.02 s; method 4 1.87 / 1.26 s; method 5 10.46 / 1.09 s (the first call loads the 2.1 GB model).
+- Phase 2 for q001 needs the owner's ledger (section 6.2, step 1), written before the results are opened.
+
 ## IMPLEMENTATION CHECKLIST
 
 1. [ ] Owner: provide the phrases (`queries.tsv`) and answer the open questions of section 11.
-2. [ ] Freeze the snapshot (`sweep-memory`, cutoff, hashes, data copy) and list the exclusions.
-3. [ ] Write `bench/gold_collect.py` (methods 1 to 5, folder layout, `meta.json`, failures, blind map).
-4. [ ] Dry run on 2 queries; check the folders, the budget, the exclusions and the determinism.
+2. [x] Freeze the snapshot (`sweep-memory`, cutoff, hashes, data copy) and list the exclusions.
+3. [x] Write `bench/gold_collect.py` (methods 1 to 5, folder layout, `meta.json`, failures, blind map).
+4. [~] Dry run on 2 queries (done on q001 only on 2026-11-10); check the folders, the budget, the exclusions and the determinism.
 5. [ ] Pilot: 6 queries, Phase 1 and Phase 2; report the effort and fix the rules.
 6. [ ] Full set: Phase 1 for all queries.
 7. [ ] Write `bench/gold_score.py` (score sheets from the ledgers, ranks per category, bootstrap, tables) and test it on the pilot.
